@@ -219,6 +219,9 @@ export function connectGateway(host: GatewayHost) {
       void loadHealthState(host as unknown as OpenClawApp);
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
+      void import("./controllers/projects.js").then(({ loadProjects }) =>
+        loadProjects(host as never),
+      );
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
     },
     onClose: ({ code, reason, error }) => {

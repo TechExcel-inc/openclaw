@@ -22,11 +22,13 @@ export const en: TranslationMap = {
     control: "Control",
     agent: "Agent",
     settings: "Settings",
+    workspace: "Workspace",
     expand: "Expand sidebar",
     collapse: "Collapse sidebar",
     resize: "Resize sidebar",
   },
   tabs: {
+    projects: "Projects",
     agents: "Agents",
     overview: "Overview",
     channels: "Channels",

@@ -399,6 +399,67 @@ export class OpenClawApp extends LitElement {
   @state() paletteOpen = false;
   @state() paletteQuery = "";
   @state() paletteActiveIndex = 0;
+
+  // Project workbench state
+  @state() projectsLoading = false;
+  @state() projectsError: string | null = null;
+  @state() projectsList: Array<{
+    id: string;
+    name: string;
+    type: string;
+    boundUrl: string;
+    createdAt: number;
+    updatedAt: number;
+    documentCount: number;
+  }> = [];
+  @state() activeProjectId: string | null = null;
+  @state() projectDetail: {
+    id: string;
+    name: string;
+    type: string;
+    boundUrl: string;
+    createdAt: number;
+    updatedAt: number;
+    documents: Array<{
+      id: string;
+      projectId: string;
+      name: string;
+      type: string;
+      content: string;
+      createdAt: number;
+      updatedAt: number;
+    }>;
+    analysisState?: { lastAnalyzedAt: number | null; status: string; error?: string };
+  } | null = null;
+  @state() projectDetailLoading = false;
+  @state() projectDocuments: Array<{
+    id: string;
+    projectId: string;
+    name: string;
+    type: string;
+    content: string;
+    createdAt: number;
+    updatedAt: number;
+  }> = [];
+  @state() projectDocumentsLoading = false;
+  @state() projectAnalysisStatus: string | null = null;
+  @state() projectCreating = false;
+  @state() showCreateModal = false;
+  @state() createFormName = "";
+  @state() createFormType: string = "general";
+  @state() createFormUrl = "";
+  @state() projectDocumentActive: {
+    id: string;
+    projectId: string;
+    name: string;
+    type: string;
+    content: string;
+    createdAt: number;
+    updatedAt: number;
+  } | null = null;
+  @state() projectDocumentDraft: string | null = null;
+  @state() projectDocumentSaving = false;
+
   @state() overviewShowGatewayToken = false;
   @state() overviewShowGatewayPassword = false;
   @state() overviewLogLines: string[] = [];
@@ -754,6 +815,57 @@ export class OpenClawApp extends LitElement {
     const newRatio = Math.max(0.4, Math.min(0.7, ratio));
     this.splitRatio = newRatio;
     this.applySettings({ ...this.settings, splitRatio: newRatio });
+  }
+
+  // Project workbench handlers
+  async handleProjectCreate(name: string, type: string, boundUrl?: string) {
+    const { createProject } = await import("./controllers/projects.js");
+    await createProject(this as never, name, type as never, boundUrl);
+  }
+
+  async handleProjectDelete(id: string) {
+    const { deleteProject } = await import("./controllers/projects.js");
+    await deleteProject(this as never, id);
+  }
+
+  async handleProjectSetActive(id: string) {
+    const { setActiveProject } = await import("./controllers/projects.js");
+    await setActiveProject(this as never, id);
+    if (this.tab !== "projects") {
+      this.setTab("projects");
+    }
+  }
+
+  async handleProjectUpdateBoundUrl(url: string) {
+    const { updateProjectUrl } = await import("./controllers/projects.js");
+    if (this.activeProjectId) {
+      await updateProjectUrl(this as never, this.activeProjectId, url);
+    }
+  }
+
+  async handleProjectAnalyze() {
+    const { analyzeProject } = await import("./controllers/projects.js");
+    if (this.activeProjectId) {
+      await analyzeProject(this as never, this.activeProjectId);
+    }
+  }
+
+  async handleDocumentCreate(name: string, type?: string, content?: string) {
+    const { createDocument } = await import("./controllers/projects.js");
+    if (this.activeProjectId) {
+      await createDocument(this as never, this.activeProjectId, name, type, content);
+    }
+  }
+
+  async handleDocumentSave(projectId: string, docId: string, content: string) {
+    const { updateDocument } = await import("./controllers/projects.js");
+    await updateDocument(this as never, projectId, docId, { content });
+    this.projectDocumentDraft = null;
+  }
+
+  async handleDocumentDelete(projectId: string, docId: string) {
+    const { deleteDocument } = await import("./controllers/projects.js");
+    await deleteDocument(this as never, projectId, docId);
   }
 
   render() {

@@ -87,6 +87,8 @@ import {
   updateSkillEnabled,
 } from "./controllers/skills.ts";
 import "./components/dashboard-header.ts";
+import "./components/url-bar.ts";
+import "./components/project-sidebar.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "./external-link.ts";
 import { icons } from "./icons.ts";
 import { normalizeBasePath, TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation.ts";
@@ -138,6 +140,7 @@ const lazyLogs = createLazy(() => import("./views/logs.ts"));
 const lazyNodes = createLazy(() => import("./views/nodes.ts"));
 const lazySessions = createLazy(() => import("./views/sessions.ts"));
 const lazySkills = createLazy(() => import("./views/skills.ts"));
+const lazyProjects = createLazy(() => import("./views/projects.ts"));
 
 function lazyRender<M>(getter: () => M | null, render: (mod: M) => unknown) {
   const mod = getter();
@@ -442,6 +445,21 @@ export function renderApp(state: AppViewState) {
             <span class="nav-collapse-toggle__icon" aria-hidden="true">${icons.menu}</span>
           </button>
           <div class="topnav-shell__content">
+            ${
+              state.activeProjectId
+                ? html`
+                  <div class="topbar-url">
+                    <url-bar
+                      .url=${state.projectDetail?.boundUrl ?? state.projectsList.find((p) => p.id === state.activeProjectId)?.boundUrl ?? ""}
+                      .loading=${state.projectAnalysisStatus === "fetching" || state.projectAnalysisStatus === "analyzing"}
+                      @url-change=${(e: CustomEvent) => {
+                        void state.handleProjectUpdateBoundUrl(e.detail);
+                      }}
+                    ></url-bar>
+                  </div>
+                `
+                : nothing
+            }
             <dashboard-header .tab=${state.tab}></dashboard-header>
           </div>
           <div class="topnav-shell__actions">
@@ -496,6 +514,20 @@ export function renderApp(state: AppViewState) {
             </div>
             <div class="sidebar-shell__body">
               <nav class="sidebar-nav">
+                <project-sidebar
+                  .projects=${state.projectsList}
+                  .activeProjectId=${state.activeProjectId}
+                  .collapsed=${navCollapsed}
+                  @project-select=${(e: CustomEvent) => {
+                    state.handleProjectSetActive(e.detail);
+                  }}
+                  @project-create=${() => {
+                    state.showCreateModal = true;
+                  }}
+                  @project-delete=${(e: CustomEvent) => {
+                    void state.handleProjectDelete(e.detail);
+                  }}
+                ></project-sidebar>
                 ${TAB_GROUPS.map((group) => {
                   const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
                   const hasActiveTab = group.tabs.some((tab) => tab === state.tab);
@@ -629,54 +661,56 @@ export function renderApp(state: AppViewState) {
         }
 
         ${
-          state.tab === "overview"
-            ? renderOverview({
-                connected: state.connected,
-                hello: state.hello,
-                settings: state.settings,
-                password: state.password,
-                lastError: state.lastError,
-                lastErrorCode: state.lastErrorCode,
-                presenceCount,
-                sessionsCount,
-                cronEnabled: state.cronStatus?.enabled ?? null,
-                cronNext,
-                lastChannelsRefresh: state.channelsLastSuccess,
-                usageResult: state.usageResult,
-                sessionsResult: state.sessionsResult,
-                skillsReport: state.skillsReport,
-                cronJobs: state.cronJobs,
-                cronStatus: state.cronStatus,
-                attentionItems: state.attentionItems,
-                eventLog: state.eventLog,
-                overviewLogLines: state.overviewLogLines,
-                showGatewayToken: state.overviewShowGatewayToken,
-                showGatewayPassword: state.overviewShowGatewayPassword,
-                onSettingsChange: (next) => state.applySettings(next),
-                onPasswordChange: (next) => (state.password = next),
-                onSessionKeyChange: (next) => {
-                  state.sessionKey = next;
-                  state.chatMessage = "";
-                  state.resetToolStream();
-                  state.applySettings({
-                    ...state.settings,
-                    sessionKey: next,
-                    lastActiveSessionKey: next,
-                  });
-                  void state.loadAssistantIdentity();
-                },
-                onToggleGatewayTokenVisibility: () => {
-                  state.overviewShowGatewayToken = !state.overviewShowGatewayToken;
-                },
-                onToggleGatewayPasswordVisibility: () => {
-                  state.overviewShowGatewayPassword = !state.overviewShowGatewayPassword;
-                },
-                onConnect: () => state.connect(),
-                onRefresh: () => state.loadOverview(),
-                onNavigate: (tab) => state.setTab(tab as import("./navigation.ts").Tab),
-                onRefreshLogs: () => state.loadOverview(),
-              })
-            : nothing
+          state.tab === "projects"
+            ? lazyRender(lazyProjects, (m) => m.renderProjectsView(state))
+            : state.tab === "overview"
+              ? renderOverview({
+                  connected: state.connected,
+                  hello: state.hello,
+                  settings: state.settings,
+                  password: state.password,
+                  lastError: state.lastError,
+                  lastErrorCode: state.lastErrorCode,
+                  presenceCount,
+                  sessionsCount,
+                  cronEnabled: state.cronStatus?.enabled ?? null,
+                  cronNext,
+                  lastChannelsRefresh: state.channelsLastSuccess,
+                  usageResult: state.usageResult,
+                  sessionsResult: state.sessionsResult,
+                  skillsReport: state.skillsReport,
+                  cronJobs: state.cronJobs,
+                  cronStatus: state.cronStatus,
+                  attentionItems: state.attentionItems,
+                  eventLog: state.eventLog,
+                  overviewLogLines: state.overviewLogLines,
+                  showGatewayToken: state.overviewShowGatewayToken,
+                  showGatewayPassword: state.overviewShowGatewayPassword,
+                  onSettingsChange: (next) => state.applySettings(next),
+                  onPasswordChange: (next) => (state.password = next),
+                  onSessionKeyChange: (next) => {
+                    state.sessionKey = next;
+                    state.chatMessage = "";
+                    state.resetToolStream();
+                    state.applySettings({
+                      ...state.settings,
+                      sessionKey: next,
+                      lastActiveSessionKey: next,
+                    });
+                    void state.loadAssistantIdentity();
+                  },
+                  onToggleGatewayTokenVisibility: () => {
+                    state.overviewShowGatewayToken = !state.overviewShowGatewayToken;
+                  },
+                  onToggleGatewayPasswordVisibility: () => {
+                    state.overviewShowGatewayPassword = !state.overviewShowGatewayPassword;
+                  },
+                  onConnect: () => state.connect(),
+                  onRefresh: () => state.loadOverview(),
+                  onNavigate: (tab) => state.setTab(tab as import("./navigation.ts").Tab),
+                  onRefreshLogs: () => state.loadOverview(),
+                })
+              : nothing
         }
 
         ${

@@ -136,6 +136,21 @@ import {
   NodePairVerifyParamsSchema,
   NodeRenameParamsSchema,
 } from "./nodes.js";
+import {
+  ProjectsListParamsSchema,
+  ProjectsGetParamsSchema,
+  ProjectsCreateParamsSchema,
+  ProjectsUpdateParamsSchema,
+  ProjectsDeleteParamsSchema,
+  ProjectsSetActiveParamsSchema,
+  ProjectsDocumentsListParamsSchema,
+  ProjectsDocumentsGetParamsSchema,
+  ProjectsDocumentsCreateParamsSchema,
+  ProjectsDocumentsUpdateParamsSchema,
+  ProjectsDocumentsDeleteParamsSchema,
+  ProjectsAnalyzeParamsSchema,
+  ProjectsAnalyzeStatusParamsSchema,
+} from "./projects.js";
 import { PushTestParamsSchema, PushTestResultSchema } from "./push.js";
 import {
   SecretsReloadParamsSchema,
@@ -318,6 +333,19 @@ export const ProtocolSchemas = {
   UpdateRunParams: UpdateRunParamsSchema,
   TickEvent: TickEventSchema,
   ShutdownEvent: ShutdownEventSchema,
+  ProjectsListParams: ProjectsListParamsSchema,
+  ProjectsGetParams: ProjectsGetParamsSchema,
+  ProjectsCreateParams: ProjectsCreateParamsSchema,
+  ProjectsUpdateParams: ProjectsUpdateParamsSchema,
+  ProjectsDeleteParams: ProjectsDeleteParamsSchema,
+  ProjectsSetActiveParams: ProjectsSetActiveParamsSchema,
+  ProjectsDocumentsListParams: ProjectsDocumentsListParamsSchema,
+  ProjectsDocumentsGetParams: ProjectsDocumentsGetParamsSchema,
+  ProjectsDocumentsCreateParams: ProjectsDocumentsCreateParamsSchema,
+  ProjectsDocumentsUpdateParams: ProjectsDocumentsUpdateParamsSchema,
+  ProjectsDocumentsDeleteParams: ProjectsDocumentsDeleteParamsSchema,
+  ProjectsAnalyzeParams: ProjectsAnalyzeParamsSchema,
+  ProjectsAnalyzeStatusParams: ProjectsAnalyzeStatusParamsSchema,
 } satisfies Record<string, TSchema>;
 
 export const PROTOCOL_VERSION = 3 as const;

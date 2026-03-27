@@ -265,6 +265,32 @@ import {
   WizardStatusResultSchema,
   type WizardStep,
   WizardStepSchema,
+  type ProjectsListParams,
+  ProjectsListParamsSchema,
+  type ProjectsGetParams,
+  ProjectsGetParamsSchema,
+  type ProjectsCreateParams,
+  ProjectsCreateParamsSchema,
+  type ProjectsUpdateParams,
+  ProjectsUpdateParamsSchema,
+  type ProjectsDeleteParams,
+  ProjectsDeleteParamsSchema,
+  type ProjectsSetActiveParams,
+  ProjectsSetActiveParamsSchema,
+  type ProjectsDocumentsListParams,
+  ProjectsDocumentsListParamsSchema,
+  type ProjectsDocumentsGetParams,
+  ProjectsDocumentsGetParamsSchema,
+  type ProjectsDocumentsCreateParams,
+  ProjectsDocumentsCreateParamsSchema,
+  type ProjectsDocumentsUpdateParams,
+  ProjectsDocumentsUpdateParamsSchema,
+  type ProjectsDocumentsDeleteParams,
+  ProjectsDocumentsDeleteParamsSchema,
+  type ProjectsAnalyzeParams,
+  ProjectsAnalyzeParamsSchema,
+  type ProjectsAnalyzeStatusParams,
+  ProjectsAnalyzeStatusParamsSchema,
 } from "./schema.js";
 
 const ajv = new (AjvPkg as unknown as new (opts?: object) => import("ajv").default)({
@@ -407,6 +433,41 @@ export const validateCronUpdateParams = ajv.compile<CronUpdateParams>(CronUpdate
 export const validateCronRemoveParams = ajv.compile<CronRemoveParams>(CronRemoveParamsSchema);
 export const validateCronRunParams = ajv.compile<CronRunParams>(CronRunParamsSchema);
 export const validateCronRunsParams = ajv.compile<CronRunsParams>(CronRunsParamsSchema);
+export const validateProjectsListParams = ajv.compile<ProjectsListParams>(ProjectsListParamsSchema);
+export const validateProjectsGetParams = ajv.compile<ProjectsGetParams>(ProjectsGetParamsSchema);
+export const validateProjectsCreateParams = ajv.compile<ProjectsCreateParams>(
+  ProjectsCreateParamsSchema,
+);
+export const validateProjectsUpdateParams = ajv.compile<ProjectsUpdateParams>(
+  ProjectsUpdateParamsSchema,
+);
+export const validateProjectsDeleteParams = ajv.compile<ProjectsDeleteParams>(
+  ProjectsDeleteParamsSchema,
+);
+export const validateProjectsSetActiveParams = ajv.compile<ProjectsSetActiveParams>(
+  ProjectsSetActiveParamsSchema,
+);
+export const validateProjectsDocumentsListParams = ajv.compile<ProjectsDocumentsListParams>(
+  ProjectsDocumentsListParamsSchema,
+);
+export const validateProjectsDocumentsGetParams = ajv.compile<ProjectsDocumentsGetParams>(
+  ProjectsDocumentsGetParamsSchema,
+);
+export const validateProjectsDocumentsCreateParams = ajv.compile<ProjectsDocumentsCreateParams>(
+  ProjectsDocumentsCreateParamsSchema,
+);
+export const validateProjectsDocumentsUpdateParams = ajv.compile<ProjectsDocumentsUpdateParams>(
+  ProjectsDocumentsUpdateParamsSchema,
+);
+export const validateProjectsDocumentsDeleteParams = ajv.compile<ProjectsDocumentsDeleteParams>(
+  ProjectsDocumentsDeleteParamsSchema,
+);
+export const validateProjectsAnalyzeParams = ajv.compile<ProjectsAnalyzeParams>(
+  ProjectsAnalyzeParamsSchema,
+);
+export const validateProjectsAnalyzeStatusParams = ajv.compile<ProjectsAnalyzeStatusParams>(
+  ProjectsAnalyzeStatusParamsSchema,
+);
 export const validateDevicePairListParams = ajv.compile<DevicePairListParams>(
   DevicePairListParamsSchema,
 );
@@ -589,6 +650,19 @@ export {
   CronRemoveParamsSchema,
   CronRunParamsSchema,
   CronRunsParamsSchema,
+  ProjectsListParamsSchema,
+  ProjectsGetParamsSchema,
+  ProjectsCreateParamsSchema,
+  ProjectsUpdateParamsSchema,
+  ProjectsDeleteParamsSchema,
+  ProjectsSetActiveParamsSchema,
+  ProjectsDocumentsListParamsSchema,
+  ProjectsDocumentsGetParamsSchema,
+  ProjectsDocumentsCreateParamsSchema,
+  ProjectsDocumentsUpdateParamsSchema,
+  ProjectsDocumentsDeleteParamsSchema,
+  ProjectsAnalyzeParamsSchema,
+  ProjectsAnalyzeStatusParamsSchema,
   LogsTailParamsSchema,
   LogsTailResultSchema,
   ChatHistoryParamsSchema,
@@ -705,6 +779,19 @@ export type {
   CronRunParams,
   CronRunsParams,
   CronRunLogEntry,
+  ProjectsListParams,
+  ProjectsGetParams,
+  ProjectsCreateParams,
+  ProjectsUpdateParams,
+  ProjectsDeleteParams,
+  ProjectsSetActiveParams,
+  ProjectsDocumentsListParams,
+  ProjectsDocumentsGetParams,
+  ProjectsDocumentsCreateParams,
+  ProjectsDocumentsUpdateParams,
+  ProjectsDocumentsDeleteParams,
+  ProjectsAnalyzeParams,
+  ProjectsAnalyzeStatusParams,
   ExecApprovalsGetParams,
   ExecApprovalsSetParams,
   ExecApprovalsSnapshot,
