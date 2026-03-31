@@ -1,3 +1,14 @@
+/* Project page overrides */
+.page-subtitle {
+  color: var(--muted, #838387);
+}
+
+/* Project shared icon sizing */
+.projects-empty-state svg {
+  width: 48px;
+  height: 48px;
+}
+
 /* Project sidebar */
 .project-sidebar {
   padding: 8px 0;
@@ -23,7 +34,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-tertiary, var(--text-muted, #8b8f98));
+  color: var(--muted-strong, #75757d);
 }
 
 .project-sidebar__add-btn {
@@ -35,7 +46,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-tertiary, var(--text-muted, #8b8f98));
+  color: var(--muted, #838387);
   cursor: pointer;
   transition:
     background-color 0.15s,
@@ -43,8 +54,8 @@
 }
 
 .project-sidebar__add-btn:hover {
-  background: var(--bg-tertiary, var(--bg-hover, rgba(255, 255, 255, 0.08)));
-  color: var(--text-primary, var(--text-default, #e1e4e8));
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-strong, #f4f4f5);
 }
 
 .project-sidebar__empty {
@@ -69,23 +80,23 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-secondary, var(--text-default, #c9d1d9));
+  color: var(--text, #d4d4d8);
   cursor: pointer;
   text-align: left;
   transition: background-color 0.15s;
 }
 
 .project-sidebar__item:hover {
-  background: var(--bg-tertiary, var(--bg-hover, rgba(255, 255, 255, 0.06)));
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
 }
 
 .project-sidebar__item--active {
-  background: var(--bg-accent, var(--accent-bg, rgba(56, 139, 253, 0.12)));
-  color: var(--text-primary, var(--text-default, #e1e4e8));
+  background: var(--accent-subtle, rgba(255, 92, 92, 0.1));
+  color: var(--text-strong, #f4f4f5);
 }
 
 .project-sidebar__item--active:hover {
-  background: var(--bg-accent, var(--accent-bg, rgba(56, 139, 253, 0.18)));
+  background: var(--accent-subtle, rgba(255, 92, 92, 0.15));
 }
 
 .project-sidebar__item-icon {
@@ -124,7 +135,7 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--text-tertiary, var(--text-muted, #8b8f98));
+  color: var(--muted, #838387);
 }
 
 .project-sidebar__item-type {
@@ -295,29 +306,52 @@
 }
 
 .project-create-modal__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 16px;
   border-radius: 8px;
-  border: 1px solid var(--border, var(--border-default, #2a2d35));
-  background: var(--bg-secondary, var(--bg-hover, rgba(255, 255, 255, 0.08)));
-  color: var(--text-primary, var(--text-default, #e1e4e8));
+  border: 1px solid var(--border-strong, var(--border-hover, rgba(255, 255, 255, 0.15)));
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.06));
+  color: var(--text, var(--text-strong, #e4e4e7));
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.15s;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.project-create-modal__btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .project-create-modal__btn:hover {
-  background: var(--bg-tertiary, var(--bg-hover, rgba(255, 255, 255, 0.12)));
+  background: var(--bg-hover, rgba(255, 255, 255, 0.1));
+  border-color: var(--border-hover, rgba(255, 255, 255, 0.25));
 }
 
 .project-create-modal__btn--primary {
-  background: var(--accent, var(--accent-default, #388bfd));
+  background: var(--accent, #ff5c5c);
   border-color: transparent;
-  color: #fff;
+  color: #ffffff;
+  font-weight: 600;
 }
 
 .project-create-modal__btn--primary:hover {
-  background: var(--accent-hover, var(--accent-default, #58a6ff));
+  background: var(--accent-hover, #ff7070);
+}
+
+.project-create-modal__btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Project detail view */
@@ -335,6 +369,7 @@
   font-size: 20px;
   font-weight: 600;
   margin-bottom: 4px;
+  color: var(--text-strong, #f4f4f5);
 }
 
 .project-detail__meta {
@@ -342,7 +377,7 @@
   align-items: center;
   gap: 12px;
   font-size: 13px;
-  color: var(--text-tertiary, var(--text-muted, #8b8f98));
+  color: var(--muted, #838387);
 }
 
 .project-detail__type-badge {
@@ -352,8 +387,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  background: var(--bg-accent, var(--accent-bg, rgba(56, 139, 253, 0.12)));
-  color: var(--accent, var(--accent-default, #388bfd));
+  background: var(--accent-subtle, rgba(255, 92, 92, 0.12));
+  color: var(--accent, #ff5c5c);
 }
 
 .project-detail__url {
@@ -363,9 +398,20 @@
   margin-top: 12px;
 }
 
+.project-detail__url svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .project-detail__url-text {
   font-size: 14px;
-  color: var(--text-secondary, var(--text-muted, #c9d1d9));
+  color: var(--text, #d4d4d8);
 }
 
 .project-detail__section {
@@ -379,6 +425,17 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.project-detail__section-title svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* Analysis status */
@@ -407,7 +464,7 @@
 
 .analysis-status__label {
   font-size: 13px;
-  color: var(--text-secondary, var(--text-muted, #c9d1d9));
+  color: var(--text, #d4d4d8);
 }
 
 .analysis-status__spinner {
@@ -429,7 +486,7 @@
   border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--text-secondary, var(--text-muted, #c9d1d9));
+  color: var(--text, #d4d4d8);
   cursor: pointer;
   text-align: left;
   transition:
@@ -439,13 +496,13 @@
 }
 
 .document-list__item:hover {
-  background: var(--bg-tertiary, var(--bg-hover, rgba(255, 255, 255, 0.06)));
-  border-color: var(--border, var(--border-default, #2a2d35));
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  border-color: var(--border-strong, rgba(255, 255, 255, 0.12));
 }
 
 .document-list__item--active {
-  background: var(--bg-accent, var(--accent-bg, rgba(56, 139, 253, 0.08)));
-  border-color: var(--accent, var(--accent-default, #388bfd));
+  background: var(--accent-subtle, rgba(255, 92, 92, 0.1));
+  border-color: var(--accent, #ff5c5c);
 }
 
 .document-list__item-icon {
@@ -473,7 +530,7 @@
 
 .document-list__item-date {
   font-size: 11px;
-  color: var(--text-tertiary, var(--text-muted, #8b8f98));
+  color: var(--muted, #838387);
   margin-top: 2px;
 }
 

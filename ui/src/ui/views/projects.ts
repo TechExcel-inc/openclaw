@@ -25,7 +25,7 @@ export function renderProjectsView(state: AppViewState) {
       </div>
       <div class="projects-empty-state" style="padding: 48px 24px; text-align: center;">
         <div style="margin-bottom: 16px; opacity: 0.5;">${icons.folder}</div>
-        <p style="color: var(--text-tertiary, #8b8f98); margin-bottom: 16px;">
+        <p style="color: var(--muted, #838387); margin-bottom: 16px;">
           ${
             state.projectsList.length === 0
               ? "Create your first project to get started"
@@ -133,7 +133,7 @@ function renderProjectDetail(state: AppViewState) {
                 </div>
               `
               : html`
-                  <p style="color: var(--text-tertiary); font-size: 13px">
+                  <p style="color: var(--muted); font-size: 13px">
                     Bind a URL to this project to enable AI analysis.
                   </p>
                 `
@@ -156,7 +156,7 @@ function renderProjectDetail(state: AppViewState) {
           ${
             state.projectDocuments.length === 0
               ? html`
-                  <p style="color: var(--text-tertiary); font-size: 13px">
+                  <p style="color: var(--muted); font-size: 13px">
                     No documents yet. Analyze a URL or create one manually.
                   </p>
                 `
@@ -194,7 +194,7 @@ function renderProjectDetail(state: AppViewState) {
                 </h2>
                 <div class="document-editor">
                   <div class="document-editor__toolbar">
-                    <span style="font-size: 12px; color: var(--text-tertiary);">
+                    <span style="font-size: 12px; color: var(--muted);">
                       Markdown
                     </span>
                     <div class="document-editor__toolbar-actions">
