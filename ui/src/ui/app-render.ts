@@ -6,9 +6,7 @@ import {
 } from "../../../src/routing/session-key.js";
 import { t } from "../i18n/index.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
-import {
-  refreshChatAvatar,
-} from "./app-chat.ts";
+import { refreshChatAvatar } from "./app-chat.ts";
 import { renderUsageTab } from "./app-render-usage-tab.ts";
 import {
   renderChatControls,
@@ -402,11 +400,13 @@ export function renderApp(state: AppViewState) {
 
   let projectChatTitle: string | undefined = undefined;
   if (state.tab === "projects" || state.tab === "autoTestRun") {
-    const exec = state.executionDetail || state.executionsList.find(e => e.id === state.activeExecutionId);
+    const exec =
+      state.executionDetail || state.executionsList.find((e) => e.id === state.activeExecutionId);
     if (state.activeExecutionId && exec) {
-       projectChatTitle = exec.status === "completed" 
-         ? `${exec.name} - Finished`
-         : `${exec.name} - Learning In Progress`;
+      projectChatTitle =
+        exec.status === "completed"
+          ? `${exec.name} - Finished`
+          : `${exec.name} - Learning In Progress`;
     } else if (state.templateDetail) {
       projectChatTitle = `Project Template: ${state.templateDetail.name}`;
     } else {
@@ -504,10 +504,10 @@ export function renderApp(state: AppViewState) {
                   navCollapsed
                     ? nothing
                     : html`
-                        <img class="sidebar-brand__logo" src="${agentLogoUrl(basePath)}" alt="OpenClaw" />
+                        <img class="sidebar-brand__logo" src="${agentLogoUrl(basePath)}" alt="EAD-Test" />
                         <span class="sidebar-brand__copy">
                           <span class="sidebar-brand__eyebrow">${t("nav.control")}</span>
-                          <span class="sidebar-brand__title">OpenClaw</span>
+                          <span class="sidebar-brand__title">EAD-Test</span>
                         </span>
                       `
                 }

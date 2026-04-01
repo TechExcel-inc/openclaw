@@ -801,11 +801,7 @@ export class OpenClawApp extends LitElement {
   }
 
   // Templates & Executions Handlers
-  async handleTemplateCreate(
-    name: string,
-    description?: string,
-    aiPrompt?: string,
-  ) {
+  async handleTemplateCreate(name: string, description?: string, aiPrompt?: string) {
     const { createTemplate } = await import("./controllers/projects.js");
     await createTemplate(this as never, name, description, aiPrompt);
   }

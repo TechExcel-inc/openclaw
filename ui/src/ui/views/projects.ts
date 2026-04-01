@@ -1,10 +1,10 @@
 import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import { renderChat, type ChatProps } from "./chat.js";
 import type { EadFmNodeRun, TestCaseRun } from "../../../../src/projects/types.js";
 import type { AppViewState } from "../app-view-state.js";
 import { icons } from "../icons.js";
 import { toSanitizedMarkdownHtml } from "../markdown.js";
+import { renderChat, type ChatProps } from "./chat.js";
 
 const DEFAULT_AI_PROMPT = `# Role & Objective
 Act as an Expert Automated Website Documentation Agent. Your objective is to systematically explore a target web application and generate comprehensive, production-ready Markdown documentation complete with screenshots. This documentation will serve as a user manual, system guide, and training material.
@@ -66,17 +66,23 @@ Generate a master Markdown file (e.g., \`system-documentation.md\`) structured e
 - If the user later requests expansions or additional screenshots, continue extending the document strictly adhering to this exact structure and style.`;
 
 function renderCustomChatHeader(state: AppViewState, chatProps?: ChatProps) {
-  if (!chatProps) { return nothing; }
-  
+  if (!chatProps) {
+    return nothing;
+  }
+
   const activeExecutionId = state.activeExecutionId;
-  const execution = state.executionDetail || state.executionsList.find((e) => e.id === activeExecutionId);
+  const execution =
+    state.executionDetail || state.executionsList.find((e) => e.id === activeExecutionId);
   const template = state.templateDetail;
-  
-  const titleText = activeExecutionId && execution
-    ? (execution.status === "completed" ? `${execution.name} - Finished` : `${execution.name} - Learning In Progress`)
-    : template
-      ? `Project Template: ${template.name}`
-      : "Project Chat";
+
+  const titleText =
+    activeExecutionId && execution
+      ? execution.status === "completed"
+        ? `${execution.name} - Finished`
+        : `${execution.name} - Learning In Progress`
+      : template
+        ? `Project Template: ${template.name}`
+        : "Project Chat";
 
   return html`
     <div style="padding: 16px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
@@ -92,11 +98,11 @@ function renderCustomChatHeader(state: AppViewState, chatProps?: ChatProps) {
             const btn = e.currentTarget as HTMLElement;
             const menu = btn.nextElementSibling as HTMLElement;
             const isVisible = menu.style.display === "block";
-            
-            document.querySelectorAll('.custom-chat-dropdown-menu').forEach((el) => {
+
+            document.querySelectorAll(".custom-chat-dropdown-menu").forEach((el) => {
               (el as HTMLElement).style.display = "none";
             });
-            
+
             if (!isVisible) {
               menu.style.display = "block";
               const close = (ce: MouseEvent) => {
@@ -117,23 +123,31 @@ function renderCustomChatHeader(state: AppViewState, chatProps?: ChatProps) {
           style="display: none; position: absolute; top: 100%; right: 0; margin-top: 4px; z-index: 100; min-width: 250px; background: var(--bg-surface-2, #161b22); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 8px 0; max-height: 400px; overflow-y: auto;"
         >
           <div style="padding: 4px 12px; font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 600;">Templates</div>
-          ${state.templatesList.map(t => html`
+          ${state.templatesList.map(
+            (t) => html`
             <div 
-              style="padding: 8px 12px; font-size: 13px; cursor: pointer; color: ${template?.id === t.id && !activeExecutionId ? 'var(--blue)' : 'inherit'};"
+              style="padding: 8px 12px; font-size: 13px; cursor: pointer; color: ${template?.id === t.id && !activeExecutionId ? "var(--blue)" : "inherit"};"
               onmouseover="this.style.backgroundColor='rgba(255,255,255,0.05)'"
               onmouseout="this.style.backgroundColor='transparent'"
-              @click=${() => { state.handleExecutionSetActive(null); state.handleTemplateSetActive(t.id); }}
+              @click=${() => {
+                state.handleExecutionSetActive(null);
+                state.handleTemplateSetActive(t.id);
+              }}
             >
               ${t.name}
             </div>
-          `)}
+          `,
+          )}
           
-          ${state.executionsList.length > 0 ? html`
+          ${
+            state.executionsList.length > 0
+              ? html`
             <div style="border-top: 1px solid var(--border-color); margin: 8px 0;"></div>
             <div style="padding: 4px 12px; font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 600;">Run Instances</div>
-            ${state.executionsList.map(e => html`
+            ${state.executionsList.map(
+              (e) => html`
               <div 
-                style="padding: 8px 12px; font-size: 13px; cursor: pointer; color: ${activeExecutionId === e.id ? 'var(--blue)' : 'inherit'}; display: flex; justify-content: space-between; align-items: center;"
+                style="padding: 8px 12px; font-size: 13px; cursor: pointer; color: ${activeExecutionId === e.id ? "var(--blue)" : "inherit"}; display: flex; justify-content: space-between; align-items: center;"
                 onmouseover="this.style.backgroundColor='rgba(255,255,255,0.05)'"
                 onmouseout="this.style.backgroundColor='transparent'"
                 @click=${() => state.handleExecutionSetActive(e.id)}
@@ -141,8 +155,11 @@ function renderCustomChatHeader(state: AppViewState, chatProps?: ChatProps) {
                 <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;">${e.name}</span>
                 <span style="font-size: 11px; color: var(--muted); margin-left: 8px;">${new Date(e.startTime ?? Date.now()).toLocaleTimeString()}</span>
               </div>
-            `)}
-          ` : nothing}
+            `,
+            )}
+          `
+              : nothing
+          }
         </div>
       </div>
     </div>
@@ -267,59 +284,92 @@ function renderTemplateList(state: AppViewState) {
   `;
 }
 
-function renderTemplateDetail(state: AppViewState, chatProps?: ChatProps) {
+function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
   const template = state.templateDetail;
   if (!template) {
     return nothing;
   }
 
   return html`
-    <div style="display: flex; flex: 1; width: 100%; overflow: hidden;">
+    <div style="display: flex; flex: 1; width: 100%; overflow: hidden; background: var(--bg-body);">
       <div class="content content--scroll" style="flex: 1; min-width: 0; overflow-y: auto;">
-        <div class="project-detail" style="border-right: 1px solid var(--border-color); min-height: 100%;">
-          <div class="project-detail__header" style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div>
-            <button class="project-create-modal__btn" @click=${() => state.handleTemplateSetActive(null)} style="margin-bottom: 16px;">
-              ${icons.chevronRight} Return to List
-            </button>
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-              <h1 class="project-detail__name" style="margin: 0;">${template.name}</h1>
-              <span class="pill primary">Template</span>
-            </div>
-            <p style="color: var(--muted); margin-top: 12px; font-size: 14px;">
-               ${template.description || "No description provided."}
-            </p>
-          </div>
-          <div>
-            <button
-              class="project-create-modal__btn project-create-modal__btn--primary"
-              style="font-size: 14px; padding: 12px 24px; border-radius: 8px;"
-              @click=${() => {
-                state.templateModalMode = "run";
-                state.createFormName = template.name;
-                state.createFormDescription = template.description || "";
-                state.createFormAiPrompt = template.aiPrompt || "";
-                state.templateModalPreviewMarkdown = true;
-                state.showCreateModal = true;
-              }}
-            >
-              ${icons.spark} Run Execution
-            </button>
-          </div>
-        </div>
-
-        <div class="project-detail__section" style="margin-top: 32px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h2 class="project-detail__section-title" style="margin: 0;">
-              ${icons.zap} AI Auto-Testing Instructions
-            </h2>
-            <div style="display: flex; gap: 8px;">
+        
+        <!-- Premium Centered Container -->
+        <div style="max-width: 900px; margin: 0 auto; padding: 40px 24px; min-height: 100%; display: flex; flex-direction: column; gap: 40px;">
+          
+          <!-- Header Section -->
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div>
               <button 
-                class="project-create-modal__btn" 
-                style="padding: 4px 12px; font-size: 13px; display: flex; align-items: center; gap: 6px;"
+                class="btn btn--ghost" 
+                @click=${() => state.handleTemplateSetActive(null)} 
+                style="margin-bottom: 24px; color: var(--muted); font-size: 14px; display: inline-flex; align-items: center; gap: 6px; padding: 0;"
+              >
+                ${icons.chevronLeft} Back to Templates
+              </button>
+
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 300px;">
+                  <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                    <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.02em; color: var(--fg-default);">
+                      ${template.name}
+                    </h1>
+                    <span class="pill" style="background: var(--accent); color: white; border: none;">Test Plan</span>
+                  </div>
+                  <p style="color: var(--muted); margin: 0; font-size: 16px; line-height: 1.6; max-width: 600px;">
+                     ${template.description || "No description provided for this test plan."}
+                  </p>
+                </div>
+
+                <div style="display: flex; gap: 12px; align-items: center;">
+                  <button 
+                    class="btn btn--ghost" 
+                    style="padding: 10px 16px; font-size: 14px; border: 1px solid var(--border-color); border-radius: 8px;"
+                    @click=${() => {
+                      state.templateModalMode = "edit";
+                      state.createFormName = template.name;
+                      state.createFormDescription = template.description || "";
+                      state.createFormAiPrompt = template.aiPrompt || "";
+                      state.templateModalPreviewMarkdown = false;
+                      state.showCreateModal = true;
+                    }}
+                  >
+                    ${icons.book} Edit Details
+                  </button>
+
+                  <button
+                    class="btn btn--primary"
+                    style="font-size: 15px; font-weight: 600; padding: 12px 24px; border-radius: 8px; box-shadow: 0 4px 12px var(--shadow-color);"
+                    @click=${() => {
+                      state.templateModalMode = "run";
+                      state.createFormName = template.name;
+                      state.createFormDescription = template.description || "";
+                      state.createFormAiPrompt = template.aiPrompt || "";
+                      state.templateModalPreviewMarkdown = true;
+                      state.showCreateModal = true;
+                    }}
+                  >
+                    ${icons.spark} Run Execution
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Instructions Card -->
+          <div style="background: var(--bg-surface-1); border: 1px solid var(--border-color); border-radius: 16px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+            <div style="padding: 20px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface-2);">
+              <h2 style="margin: 0; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                ${icons.zap} AI Testing Instructions
+              </h2>
+              <button 
+                class="btn btn--ghost" 
+                style="padding: 6px 12px; font-size: 13px; color: var(--accent); border: 1px solid var(--accent); border-radius: 6px; display: flex; align-items: center; gap: 6px;"
                 ?disabled=${state.templateAutoFormatting}
                 @click=${async () => {
-                  if (!template.aiPrompt) { return; }
+                  if (!template.aiPrompt) {
+                    return;
+                  }
                   state.templateAutoFormatting = true;
                   try {
                     const formatted = await state.handleAutoFormatPrompt(template.aiPrompt);
@@ -329,96 +379,81 @@ function renderTemplateDetail(state: AppViewState, chatProps?: ChatProps) {
                   }
                 }}
               >
-                ${state.templateAutoFormatting ? html`<span class="spinner spinner--small" style="border-top-color: currentColor"></span> Formatting...` : "Auto Improve ✨"}
-              </button>
-              <button 
-                class="project-create-modal__btn" 
-                style="padding: 4px 12px; font-size: 13px;"
-                @click=${() => {
-                  state.templateModalMode = "edit";
-                state.createFormName = template.name;
-                state.createFormDescription = template.description || "";
-                state.createFormAiPrompt = template.aiPrompt || "";
-                state.templateModalPreviewMarkdown = false;
-                state.showCreateModal = true;
-              }}
-            >
-              ${icons.book} Edit Template
+                ${
+                  state.templateAutoFormatting
+                    ? html`
+                        <span class="spinner spinner--small"></span> Formatting...
+                      `
+                    : "Auto Improve ✨"
+                }
               </button>
             </div>
+            
+            <div 
+              class="sidebar-markdown" 
+              style="min-height: 150px; padding: 24px; background: var(--bg-surface-1); overflow-y: auto; font-size: 15px; line-height: 1.7;"
+            >
+              ${unsafeHTML(toSanitizedMarkdownHtml(template.aiPrompt || "_No instructions provided._"))}
+            </div>
           </div>
-          <div 
-            class="document-editor__content sidebar-markdown" 
-            style="min-height: 200px; padding: 16px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-surface-2); overflow-y: auto;"
-          >
-            ${unsafeHTML(toSanitizedMarkdownHtml(template.aiPrompt || "_No instructions provided._"))}
-          </div>
-        </div>
 
-        <div class="project-detail__section" style="margin-top: 32px;">
-          <h2 class="project-detail__section-title" style="margin-bottom: 16px;">
-            ${icons.book} Execution History
-          </h2>
-          ${
-            state.executionsList.length === 0
-              ? html`
-                  <div
-                    style="
-                      padding: 24px;
-                      text-align: center;
-                      border: 1px dashed var(--border-color);
-                      border-radius: 6px;
-                    "
-                  >
-                    <p style="color: var(--muted)">No executions have been run yet.</p>
-                  </div>
-                `
-              : html`
-                  <div class="test-table-container project-list">
-                    <table class="test-table" style="width: 100%;">
-                      <thead>
-                        <tr style="border-bottom: 1px solid var(--border-color); text-align: left; color: var(--muted); font-size: 13px; text-transform: uppercase;">
-                          <th style="padding: 12px 0;">Run Name</th>
-                          <th style="padding: 12px 0;">Status</th>
-                          <th style="padding: 12px 0;">Time</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${state.executionsList.map(
-                          (run) => html`
-                              <tr 
-                                style="border-bottom: 1px solid var(--border-color); cursor: pointer;"
-                                @click=${() => state.handleExecutionSetActive(run.id)}
-                              >
-                                <td style="padding: 16px 0; font-weight: 500;">
-                                  ${run.name}
-                                </td>
-                                <td style="padding: 16px 0;">
-                                  <span class="pill ${run.status === "completed" ? "success" : run.status === "running" ? "primary" : "danger"}">
-                                    ${run.status}
-                                  </span>
-                                </td>
-                                <td style="padding: 16px 0; color: var(--muted); font-size: 13px;">
-                                  ${new Date(run.startTime ?? Date.now()).toLocaleString()}
-                                </td>
-                              </tr>
-                            `,
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                `
-          }
+          <!-- Executions History Section -->
+          <div>
+            <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+              ${icons.book} Execution History
+            </h2>
+            
+            ${
+              state.executionsList.length === 0
+                ? html`
+                    <div style="padding: 40px 24px; text-align: center; border: 1px dashed var(--border-color); border-radius: 12px; background: var(--bg-surface-2);">
+                      <div style="color: var(--muted); margin-bottom: 12px;">${icons.spark}</div>
+                      <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600;">No runs yet</h3>
+                      <p style="margin: 0; color: var(--muted); font-size: 14px;">Click "Run Execution" above to test this plan.</p>
+                    </div>
+                  `
+                : html`
+                    <div style="border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: var(--bg-surface-1);">
+                      <table style="width: 100%; border-collapse: collapse;">
+                        <thead style="background: var(--bg-surface-2);">
+                          <tr style="border-bottom: 1px solid var(--border-color); text-align: left; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
+                            <th style="padding: 16px 24px; font-weight: 600;">Run Name</th>
+                            <th style="padding: 16px 24px; font-weight: 600;">Status</th>
+                            <th style="padding: 16px 24px; font-weight: 600; text-align: right;">Time</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${state.executionsList.map(
+                            (run) => html`
+                                <tr 
+                                  style="border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background 0.15s ease;"
+                                  onmouseover="this.style.background='var(--bg-surface-2)'"
+                                  onmouseout="this.style.background='transparent'"
+                                  @click=${() => state.handleExecutionSetActive(run.id)}
+                                >
+                                  <td style="padding: 16px 24px; font-weight: 500; color: var(--fg-default);">
+                                    ${run.name}
+                                  </td>
+                                  <td style="padding: 16px 24px;">
+                                    <span class="pill ${run.status === "completed" ? "success" : run.status === "running" ? "primary" : "danger"}" style="font-size: 12px; font-weight: 500;">
+                                      ${run.status}
+                                    </span>
+                                  </td>
+                                  <td style="padding: 16px 24px; color: var(--muted); font-size: 13px; text-align: right;">
+                                    ${new Date(run.startTime ?? Date.now()).toLocaleString()}
+                                  </td>
+                                </tr>
+                              `,
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  `
+            }
+          </div>
+
         </div>
       </div>
-      
-      <!-- Chat Pane -->
-      ${chatProps ? html`
-        <div style="width: 450px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-surface-1); border-left: 1px solid var(--border-color);">
-          ${renderCustomChatHeader(state, chatProps)}
-          ${renderChat(chatProps)}
-        </div>
-      ` : nothing}
     </div>
     ${state.showCreateModal ? renderCreateModal(state) : nothing}
   `;
@@ -427,11 +462,21 @@ function renderTemplateDetail(state: AppViewState, chatProps?: ChatProps) {
 function renderCreateModal(state: AppViewState) {
   const isEdit = state.templateModalMode === "edit";
   const isRun = state.templateModalMode === "run";
-  const title = isRun ? "Run Project Execution" : (isEdit ? "Edit Project Template" : "New Project Template");
-  const submitText = state.templateCreating 
-    ? (isRun ? "Starting..." : "Saving...") 
-    : (isRun ? "Run Execution" : (isEdit ? "Save Changes" : "Create Template"));
-  
+  const title = isRun
+    ? "Run Project Execution"
+    : isEdit
+      ? "Edit Project Template"
+      : "New Project Template";
+  const submitText = state.templateCreating
+    ? isRun
+      ? "Starting..."
+      : "Saving..."
+    : isRun
+      ? "Run Execution"
+      : isEdit
+        ? "Save Changes"
+        : "Create Template";
+
   return html`
     <div
       class="project-create-modal"
@@ -493,28 +538,31 @@ function renderCreateModal(state: AppViewState) {
               <div style="display: flex; gap: 8px; background: var(--bg-surface-2); padding: 4px; border-radius: 6px; border: 1px solid var(--border-color);">
                 <button 
                   class="project-create-modal__btn" 
-                  style="padding: 4px 12px; font-size: 12px; font-weight: 500; border-radius: 4px; background: ${!state.templateModalPreviewMarkdown ? 'var(--bg-surface-3)' : 'transparent'}; color: ${!state.templateModalPreviewMarkdown ? '#fff' : 'var(--muted)'}; box-shadow: ${!state.templateModalPreviewMarkdown ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'}; border: none;"
-                  @click=${() => state.templateModalPreviewMarkdown = false}
+                  style="padding: 4px 12px; font-size: 12px; font-weight: 500; border-radius: 4px; background: ${!state.templateModalPreviewMarkdown ? "var(--bg-surface-3)" : "transparent"}; color: ${!state.templateModalPreviewMarkdown ? "#fff" : "var(--muted)"}; box-shadow: ${!state.templateModalPreviewMarkdown ? "0 1px 2px rgba(0,0,0,0.2)" : "none"}; border: none;"
+                  @click=${() => (state.templateModalPreviewMarkdown = false)}
                 >
                   Edit
                 </button>
                 <button 
                   class="project-create-modal__btn" 
-                  style="padding: 4px 12px; font-size: 12px; font-weight: 500; border-radius: 4px; background: ${state.templateModalPreviewMarkdown ? 'var(--bg-surface-3, #21262d)' : 'transparent'}; color: ${state.templateModalPreviewMarkdown ? '#fff' : 'var(--muted)'}; box-shadow: ${state.templateModalPreviewMarkdown ? '0 1px 2px rgba(0,0,0,0.2)' : 'none'}; border: none;"
-                  @click=${() => state.templateModalPreviewMarkdown = true}
+                  style="padding: 4px 12px; font-size: 12px; font-weight: 500; border-radius: 4px; background: ${state.templateModalPreviewMarkdown ? "var(--bg-surface-3, #21262d)" : "transparent"}; color: ${state.templateModalPreviewMarkdown ? "#fff" : "var(--muted)"}; box-shadow: ${state.templateModalPreviewMarkdown ? "0 1px 2px rgba(0,0,0,0.2)" : "none"}; border: none;"
+                  @click=${() => (state.templateModalPreviewMarkdown = true)}
                 >
                   Preview
                 </button>
               </div>
             </div>
-            ${state.templateModalPreviewMarkdown ? html`
+            ${
+              state.templateModalPreviewMarkdown
+                ? html`
               <div 
                 class="project-create-modal__input sidebar-markdown" 
                 style="min-height: 240px; max-height: 400px; overflow-y: auto; background: var(--bg-surface-2, #161b22); color: #ffffff;"
               >
                 ${unsafeHTML(toSanitizedMarkdownHtml(state.createFormAiPrompt || "_No instructions provided._"))}
               </div>
-            ` : html`
+            `
+                : html`
               <textarea
                 class="project-create-modal__input document-editor__content"
                 style="min-height: 240px; max-height: 400px; resize: vertical; font-family: monospace; color: #ffffff; background: var(--bg-surface-2, #161b22);"
@@ -524,7 +572,8 @@ function renderCreateModal(state: AppViewState) {
                   state.createFormAiPrompt = (e.target as HTMLTextAreaElement).value;
                 }}
               ></textarea>
-            `}
+            `
+            }
           </div>
         </div>
 
@@ -630,7 +679,8 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
           <h2 class="project-detail__section-title" style="margin-bottom: 16px;">📍 Discovered Feature Map (EAD-FM)</h2>
           
           <div style="display: flex; flex-direction: column; gap: 16px;">
-            ${(execution.results || []).map((node: EadFmNodeRun) => html`
+            ${(execution.results || []).map(
+              (node: EadFmNodeRun) => html`
               <details class="test-case-accordion" style="background: var(--bg-surface-2, #21262d); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden;" open>
                 <summary style="padding: 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-weight: 500; outline: none; user-select: none;">
                   <div style="display: flex; align-items: center; gap: 12px;">
@@ -642,7 +692,8 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
                 <div style="border-top: 1px solid var(--border-color); padding: 16px;">
                   <!-- List the Test Cases generated for this Node -->
                   <h4 style="margin: 0 0 12px; font-size: 13px; color: var(--muted); text-transform: uppercase;">Generated Test Cases</h4>
-                  ${(node.testCaseRuns || []).map((tc: TestCaseRun) => html`
+                  ${(node.testCaseRuns || []).map(
+                    (tc: TestCaseRun) => html`
                     <div style="margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 6px; border: 1px solid var(--border-color);">
                       <div style="display: flex; align-items: center; gap: 8px; font-weight: 500; margin-bottom: 8px;">
                         <span class="pill ${tc.status === "Success" ? "success" : tc.status === "Failed" ? "danger" : ""}">${tc.status}</span>
@@ -652,28 +703,52 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
                         tc.testCaseStepRuns && tc.testCaseStepRuns.length > 0
                           ? html`
                             <ul style="margin: 0; padding-left: 20px; color: var(--text-color); font-size: 13px; line-height: 1.6;">
-                              ${tc.testCaseStepRuns.map((step) => html`
+                              ${tc.testCaseStepRuns.map(
+                                (step) => html`
                                 <li>
                                   <div>Found: <strong>${step.procedureText}</strong></div>
                                   ${step.screenshotUrl ? html`<img src=${step.screenshotUrl} style="max-width: 100%; max-height: 200px; display: block; margin-top: 8px; border: 1px solid var(--border-color); border-radius: 4px;" alt="Evidence" />` : nothing}
                                 </li>
-                              `)}
+                              `,
+                              )}
                             </ul>
                           `
-                          : html`<div style="color: var(--muted); font-size: 13px;">Scanning steps...</div>`
+                          : html`
+                              <div style="color: var(--muted); font-size: 13px">Scanning steps...</div>
+                            `
                       }
                     </div>
-                  `)}
-                  ${(!node.testCaseRuns || node.testCaseRuns.length === 0) ? html`<div style="color: var(--muted); font-size: 13px;">No test cases drafted yet...</div>` : nothing}
+                  `,
+                  )}
+                  ${
+                    !node.testCaseRuns || node.testCaseRuns.length === 0
+                      ? html`
+                          <div style="color: var(--muted); font-size: 13px">No test cases drafted yet...</div>
+                        `
+                      : nothing
+                  }
                 </div>
               </details>
-            `)}
+            `,
+            )}
             
-            ${(!execution.results || execution.results.length === 0) ? html`
-              <div style="padding: 24px; text-align: center; color: var(--muted); border: 1px dashed var(--border-color); border-radius: 8px;">
-                Waiting for AI to discover feature nodes...
-              </div>
-            ` : nothing}
+            ${
+              !execution.results || execution.results.length === 0
+                ? html`
+                    <div
+                      style="
+                        padding: 24px;
+                        text-align: center;
+                        color: var(--muted);
+                        border: 1px dashed var(--border-color);
+                        border-radius: 8px;
+                      "
+                    >
+                      Waiting for AI to discover feature nodes...
+                    </div>
+                  `
+                : nothing
+            }
             </div>
             
             <div style="margin-top: 24px; padding: 16px; background: var(--bg-surface-2, #21262d); border-radius: 8px; border: 1px solid var(--border-color);">
@@ -691,12 +766,16 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
       </div>
       
       <!-- Embedded Contextual Chat widget -->
-      ${chatProps ? html`
+      ${
+        chatProps
+          ? html`
         <div style="width: 450px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-surface-1, #0d1117); border-left: 1px solid var(--border-color);">
           ${renderCustomChatHeader(state, chatProps)}
           ${renderChat(chatProps)}
         </div>
-      ` : nothing}
+      `
+          : nothing
+      }
     </div>
   `;
 }

@@ -161,7 +161,9 @@ export async function autoFormatPrompt(state: ProjectsState, text: string): Prom
     return text;
   }
   try {
-    const res = await state.client.request<{ formattedText: string }>("projects.autoFormatPrompt", { text });
+    const res = await state.client.request<{ formattedText: string }>("projects.autoFormatPrompt", {
+      text,
+    });
     if (res?.formattedText) {
       return res.formattedText;
     }
@@ -338,10 +340,12 @@ export async function setActiveExecution(
   state.activeExecutionId = id;
   if (id) {
     if (state.client && state.sessionKey) {
-      void state.client.request("chat.inject", {
-        sessionKey: state.sessionKey,
-        message: `[System] The user is viewing Execution Run ID: ${id}. This is a Learning/Exploration Phase. Please use the \`read_ead_execution\` tool to load the feature map (EAD-FM) nodes and generated test cases to answer their questions.`,
-      }).catch(err => console.error("Failed to inject context:", err));
+      void state.client
+        .request("chat.inject", {
+          sessionKey: state.sessionKey,
+          message: `[System] The user is viewing Execution Run ID: ${id}. This is a Learning/Exploration Phase. Please use the \`read_ead_execution\` tool to load the feature map (EAD-FM) nodes and generated test cases to answer their questions.`,
+        })
+        .catch((err) => console.error("Failed to inject context:", err));
     }
     void loadExecutionDetail(state, id);
   } else {

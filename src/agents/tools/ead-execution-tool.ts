@@ -10,7 +10,8 @@ export function createEadExecutionTool(): AnyAgentTool {
   return {
     label: "EAD Execution Reader",
     name: "read_ead_execution",
-    description: "Retrieve the JSON data for a specific EAD Auto-Test execution, including its discovered EAD-FM nodes, generated test cases, and outcomes.",
+    description:
+      "Retrieve the JSON data for a specific EAD Auto-Test execution, including its discovered EAD-FM nodes, generated test cases, and outcomes.",
     parameters: PARAM_SCHEMA,
     async execute({ executionId }: { executionId: string }) {
       try {
@@ -29,8 +30,8 @@ export function createEadExecutionTool(): AnyAgentTool {
             title: tc.title,
             status: tc.status,
             stepCount: tc.testCaseStepRuns?.length || 0,
-            procedures: (tc.testCaseStepRuns || []).map((step) => step.procedureText)
-          }))
+            procedures: (tc.testCaseStepRuns || []).map((step) => step.procedureText),
+          })),
         }));
 
         return {

@@ -466,14 +466,18 @@ export function renderChatProjectToolbar(state: AppViewState) {
 
 export function renderChatProjectModal(state: AppViewState) {
   return html`
-    <div class="modal-overlay" @click=${() => { state.showChatProjectModal = false; }}></div>
+    <div class="modal-overlay" @click=${() => {
+      state.showChatProjectModal = false;
+    }}></div>
     <div class="modal-dialog" style="max-width: 600px; max-height: 80vh; display: flex; flex-direction: column;">
       <div class="modal-header">
         <h2 class="modal-title" style="font-size: 16px; font-weight: 600;">Select Project Context</h2>
         <button
           type="button"
           class="modal-close"
-          @click=${() => { state.showChatProjectModal = false; }}
+          @click=${() => {
+            state.showChatProjectModal = false;
+          }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
         </button>
@@ -496,10 +500,26 @@ export function renderChatProjectModal(state: AppViewState) {
             }}
           >
             <span style="font-weight: 500;">No Project (Clear Context)</span>
-            ${!state.chatActiveTemplateId ? html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="2"><path d="M20 6L9 17l-5-5"></path></svg>` : nothing}
+            ${
+              !state.chatActiveTemplateId
+                ? html`
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="var(--accent-color)"
+                      stroke-width="2"
+                    >
+                      <path d="M20 6L9 17l-5-5"></path>
+                    </svg>
+                  `
+                : nothing
+            }
           </button>
 
-          ${state.templatesList.map(template => html`
+          ${state.templatesList.map(
+            (template) => html`
             <button
               class="btn btn--secondary"
               style="width: 100%; text-align: left; padding: 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 4px;"
@@ -510,11 +530,27 @@ export function renderChatProjectModal(state: AppViewState) {
             >
               <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                 <span style="font-weight: 500;">${template.name}</span>
-                ${state.chatActiveTemplateId === template.id ? html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" stroke-width="2"><path d="M20 6L9 17l-5-5"></path></svg>` : nothing}
+                ${
+                  state.chatActiveTemplateId === template.id
+                    ? html`
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="var(--accent-color)"
+                          stroke-width="2"
+                        >
+                          <path d="M20 6L9 17l-5-5"></path>
+                        </svg>
+                      `
+                    : nothing
+                }
               </div>
               <span style="font-size: 12px; color: var(--muted);">${template.description || "No description"}</span>
             </button>
-          `)}
+          `,
+          )}
         </div>
       </div>
     </div>

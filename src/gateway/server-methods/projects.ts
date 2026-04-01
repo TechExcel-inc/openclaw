@@ -1,8 +1,8 @@
 import { completeSimple, type TextContent } from "@mariozechner/pi-ai";
+import { getApiKeyForModel, requireApiKey } from "../../agents/model-auth.js";
 import { resolveDefaultModelForAgent } from "../../agents/model-selection.js";
 import { resolveModelAsync } from "../../agents/pi-embedded-runner/model.js";
 import { prepareModelForSimpleCompletion } from "../../agents/simple-completion-transport.js";
-import { getApiKeyForModel, requireApiKey } from "../../agents/model-auth.js";
 import { loadConfig } from "../../config/config.js";
 import {
   loadProjectsStore,
@@ -409,7 +409,11 @@ export const projectsHandlers: GatewayRequestHandlers = {
       const modelRef = resolveDefaultModelForAgent({ cfg });
       const resolved = await resolveModelAsync(modelRef.provider, modelRef.model, undefined, cfg);
       if (!resolved.model) {
-        respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, "failed to resolve model for auto formatting"));
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.UNAVAILABLE, "failed to resolve model for auto formatting"),
+        );
         return;
       }
       const completionModel = prepareModelForSimpleCompletion({ model: resolved.model, cfg });
@@ -460,7 +464,7 @@ export const projectsHandlers: GatewayRequestHandlers = {
         clearTimeout(timeout);
       }
     } catch (err) {
-       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 };

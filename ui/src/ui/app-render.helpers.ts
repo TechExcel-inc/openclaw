@@ -139,7 +139,9 @@ export function renderChatSessionSelect(state: AppViewState) {
     if (activeTemplate) {
       projectName = `Test Template = ${activeTemplate.name}`;
     } else {
-      const activeExecution = state.globalExecutionsList?.find((e) => e.id === state.chatActiveTemplateId);
+      const activeExecution = state.globalExecutionsList?.find(
+        (e) => e.id === state.chatActiveTemplateId,
+      );
       if (activeExecution) {
         projectName = `Test Run = ${activeExecution.name || activeExecution.id.slice(0, 8)}`;
       }
@@ -196,7 +198,9 @@ export function renderChatProjectModal(state: AppViewState) {
             type="button"
             class="modal-close"
             style="background: transparent; border: none; color: var(--muted); cursor: pointer;"
-            @click=${() => { state.showChatProjectModal = false; }}
+            @click=${() => {
+              state.showChatProjectModal = false;
+            }}
           >
             ${icons.x}
           </button>
@@ -207,17 +211,21 @@ export function renderChatProjectModal(state: AppViewState) {
             <div style="display: flex; gap: 24px;">
               <button
                 class="btn btn--clear"
-                style="font-size: 14px; padding-bottom: 10px; font-weight: 600; color: ${state.chatProjectTab === 'templates' ? 'var(--text)' : 'var(--muted)'}; border-bottom: ${state.chatProjectTab === 'templates' ? '2px solid var(--accent-color)' : '2px solid transparent'}; border-radius: 0;"
-                @click=${() => { state.chatProjectTab = "templates"; }}
+                style="font-size: 14px; padding-bottom: 10px; font-weight: 600; color: ${state.chatProjectTab === "templates" ? "var(--text)" : "var(--muted)"}; border-bottom: ${state.chatProjectTab === "templates" ? "2px solid var(--accent-color)" : "2px solid transparent"}; border-radius: 0;"
+                @click=${() => {
+                  state.chatProjectTab = "templates";
+                }}
               >Test Template</button>
               <button
                 class="btn btn--clear"
-                style="font-size: 14px; padding-bottom: 10px; font-weight: 600; color: ${state.chatProjectTab === 'executions' ? 'var(--text)' : 'var(--muted)'}; border-bottom: ${state.chatProjectTab === 'executions' ? '2px solid var(--accent-color)' : '2px solid transparent'}; border-radius: 0;"
+                style="font-size: 14px; padding-bottom: 10px; font-weight: 600; color: ${state.chatProjectTab === "executions" ? "var(--text)" : "var(--muted)"}; border-bottom: ${state.chatProjectTab === "executions" ? "2px solid var(--accent-color)" : "2px solid transparent"}; border-radius: 0;"
                 @click=${() => {
                   state.chatProjectTab = "executions";
                   if (!state.globalExecutionsList?.length) {
                     void import("./controllers/projects.js").then((m) =>
-                      m.loadGlobalExecutions(state as unknown as Parameters<typeof m.loadGlobalExecutions>[0])
+                      m.loadGlobalExecutions(
+                        state as unknown as Parameters<typeof m.loadGlobalExecutions>[0],
+                      ),
                     );
                   }
                 }}
@@ -227,7 +235,7 @@ export function renderChatProjectModal(state: AppViewState) {
           
           <div style="padding: 20px; background: var(--bg-surface-1);">
             <div
-              style="padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: ${state.chatSelectedTemplateId === null ? 'var(--bg-surface-2)' : 'transparent'}; transition: background 0.15s ease;"
+              style="padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: ${state.chatSelectedTemplateId === null ? "var(--bg-surface-2)" : "transparent"}; transition: background 0.15s ease;"
               class="hover-bg-surface-2"
               @click=${() => {
                 state.chatSelectedTemplateId = null;
@@ -240,10 +248,12 @@ export function renderChatProjectModal(state: AppViewState) {
               ${state.chatSelectedTemplateId === null ? html`<span style="color: var(--accent-color);">${icons.check}</span>` : nothing}
             </div>
 
-            ${state.chatProjectTab === "templates"
-              ? state.templatesList.map(template => html`
+            ${
+              state.chatProjectTab === "templates"
+                ? state.templatesList.map(
+                    (template) => html`
                   <div
-                    style="padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: ${state.chatSelectedTemplateId === template.id ? 'var(--bg-surface-2)' : 'transparent'}; transition: background 0.15s ease;"
+                    style="padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: ${state.chatSelectedTemplateId === template.id ? "var(--bg-surface-2)" : "transparent"}; transition: background 0.15s ease;"
                     class="hover-bg-surface-2"
                     @click=${() => {
                       state.chatSelectedTemplateId = template.id;
@@ -255,12 +265,18 @@ export function renderChatProjectModal(state: AppViewState) {
                     </div>
                     ${state.chatSelectedTemplateId === template.id ? html`<span style="color: var(--accent-color); flex-shrink: 0;">${icons.check}</span>` : nothing}
                   </div>
-                `)
-              : (state.globalExecutionsList || []).length === 0 
-                ? html`<div style="padding: 32px 0; text-align: center; color: var(--muted); font-size: 13px;">No Test Runs available.</div>`
-                : (state.globalExecutionsList || []).map(execution => html`
+                `,
+                  )
+                : (state.globalExecutionsList || []).length === 0
+                  ? html`
+                      <div style="padding: 32px 0; text-align: center; color: var(--muted); font-size: 13px">
+                        No Test Runs available.
+                      </div>
+                    `
+                  : (state.globalExecutionsList || []).map(
+                      (execution) => html`
                   <div
-                    style="padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: ${state.chatSelectedTemplateId === execution.id ? 'var(--bg-surface-2)' : 'transparent'}; transition: background 0.15s ease;"
+                    style="padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: ${state.chatSelectedTemplateId === execution.id ? "var(--bg-surface-2)" : "transparent"}; transition: background 0.15s ease;"
                     class="hover-bg-surface-2"
                     @click=${() => {
                       state.chatSelectedTemplateId = execution.id;
@@ -272,13 +288,14 @@ export function renderChatProjectModal(state: AppViewState) {
                         <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); color: var(--muted);">${execution.status}</span>
                       </div>
                       <span style="font-size: 13px; color: var(--muted); line-height: 1.4;">
-                        ${execution.logTokens ? execution.logTokens + ' tokens used' : 'Executing...'} 
-                        ${execution.targetUrl ? '· ' + execution.targetUrl : ''}
+                        ${execution.logTokens ? execution.logTokens + " tokens used" : "Executing..."} 
+                        ${execution.targetUrl ? "· " + execution.targetUrl : ""}
                       </span>
                     </div>
                     ${state.chatSelectedTemplateId === execution.id ? html`<span style="color: var(--accent-color); flex-shrink: 0;">${icons.check}</span>` : nothing}
                   </div>
-                `)
+                `,
+                    )
             }
           </div>
         </div>
@@ -370,19 +387,37 @@ export function renderChatControls(state: AppViewState) {
     </svg>
   `;
   const sessionsIcon = html`
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
       <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
       <line x1="8" y1="21" x2="16" y2="21"></line>
       <line x1="12" y1="17" x2="12" y2="21"></line>
     </svg>
   `;
   const llmIcon = html`
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
       <path d="M12 2v20"></path>
       <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
     </svg>
   `;
-  
+
   const sessionGroups = resolveSessionOptionGroups(state, state.sessionKey, state.sessionsResult);
   const modelSelect = renderChatModelSelect(state);
 

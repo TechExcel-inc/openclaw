@@ -582,8 +582,8 @@ function selectSlashArg(
   }
 }
 
-function tokenEstimate(draft: string): string | null {
-  if (draft.length < 100) {
+function tokenEstimate(draft: string | undefined): string | null {
+  if (!draft || draft.length < 100) {
     return null;
   }
   return `~${Math.ceil(draft.length / 4)} tokens`;
@@ -1175,7 +1175,7 @@ export function renderChat(props: ChatProps) {
       </div>
 
       ${
-        props.queue.length
+        props.queue?.length
           ? html`
             <div class="chat-queue" role="status" aria-live="polite">
               <div class="chat-queue__title">Queued (${props.queue.length})</div>
@@ -1494,7 +1494,7 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
     }
   }
 
-  if (props.stream !== null) {
+  if (typeof props.stream === "string") {
     const key = `stream:${props.sessionKey}:${props.streamStartedAt ?? "live"}`;
     if (props.stream.trim().length > 0) {
       items.push({
