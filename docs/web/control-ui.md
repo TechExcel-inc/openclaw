@@ -210,6 +210,8 @@ The Gateway serves static files from `dist/control-ui`. Build them with:
 pnpm ui:build # auto-installs UI deps on first run
 ```
 
+**Stale UI at `http://127.0.0.1:18789/` after editing `ui/src`:** The repo root `pnpm build` **does not** rebuild the Control UI. Only **`pnpm ui:build`** writes `dist/control-ui`, which the Gateway serves. After UI changes, run `pnpm ui:build`, restart the Gateway, then hard-refresh the browser. For iterative work, use **`pnpm ui:dev`** (typically port **5173**) with the Gateway still on **18789** so Vite serves from source without relying on `dist/control-ui`. Local scratch zip handoff files matching `EAD-EXP-pending-changes-*.zip` are gitignored; prefer branches and normal commits instead of ad-hoc archives.
+
 Optional absolute base (when you want fixed asset URLs):
 
 ```bash
