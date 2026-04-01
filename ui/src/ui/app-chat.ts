@@ -1,7 +1,10 @@
+import { html, nothing } from "lit";
+import type { ProjectTemplate } from "../../../src/projects/types.js";
 import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
 import { scheduleChatScroll, resetChatScroll } from "./app-scroll.ts";
 import { setLastActiveSessionKey } from "./app-settings.ts";
 import { resetToolStream } from "./app-tool-stream.ts";
+import type { AppViewState } from "./app-view-state.ts";
 import type { OpenClawApp } from "./app.ts";
 import { executeSlashCommand } from "./chat/slash-command-executor.ts";
 import { parseSlashCommand } from "./chat/slash-commands.ts";
@@ -519,7 +522,7 @@ export function renderChatProjectModal(state: AppViewState) {
           </button>
 
           ${state.templatesList.map(
-            (template) => html`
+            (template: ProjectTemplate) => html`
             <button
               class="btn btn--secondary"
               style="width: 100%; text-align: left; padding: 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 4px;"

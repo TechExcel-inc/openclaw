@@ -83,6 +83,8 @@ export type ProjectExecute = {
   progressPercentage: number;
   startTime: number | null;
   durationMs: number | null;
+  /** Optional UI hint when the gateway reports token usage for a run. */
+  logTokens?: number;
   results: EadFmNodeRun[];
 };
 

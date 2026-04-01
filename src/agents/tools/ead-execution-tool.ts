@@ -1,6 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import { loadProjectsStore, resolveProjectsStorePath } from "../../projects/store.js";
 import type { AnyAgentTool } from "./common.js";
+import { jsonResult } from "./common.js";
 
 const PARAM_SCHEMA = Type.Object({
   executionId: Type.String({ description: "The ID of the execution to read." }),
@@ -13,14 +14,21 @@ export function createEadExecutionTool(): AnyAgentTool {
     description:
       "Retrieve the JSON data for a specific EAD Auto-Test execution, including its discovered EAD-FM nodes, generated test cases, and outcomes.",
     parameters: PARAM_SCHEMA,
-    async execute({ executionId }: { executionId: string }) {
+    async execute(_toolCallId, params) {
+      const executionId =
+        typeof params === "object" && params !== null && "executionId" in params
+          ? String((params as { executionId: unknown }).executionId)
+          : "";
+      if (!executionId) {
+        return jsonResult({ error: "executionId required" });
+      }
       try {
         const storePath = resolveProjectsStorePath();
         const store = await loadProjectsStore(storePath);
         const execution = store.executions.find((e) => e.id === executionId);
 
         if (!execution) {
-          return { error: `Execution with ID ${executionId} not found.` };
+          return jsonResult({ error: `Execution with ID ${executionId} not found.` });
         }
 
         // Return a summarized structure to save token context
@@ -34,16 +42,16 @@ export function createEadExecutionTool(): AnyAgentTool {
           })),
         }));
 
-        return {
+        return jsonResult({
           id: execution.id,
           linkedTemplateId: execution.linkedTemplateId,
           status: execution.status,
           startTime: execution.startTime,
           durationMs: execution.durationMs,
           resultsSummary: summarizedResults,
-        };
+        });
       } catch (err) {
-        return { error: String(err) };
+        return jsonResult({ error: String(err) });
       }
     },
   };
