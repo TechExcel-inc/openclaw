@@ -91,6 +91,10 @@ const METHOD_SCOPE_GROUPS: Record<OperatorScope, readonly string[]> = {
     "talk.config",
     "agents.files.list",
     "agents.files.get",
+    "templates.list",
+    "templates.get",
+    "executions.list",
+    "executions.get",
   ],
   [WRITE_SCOPE]: [
     "send",
@@ -115,6 +119,12 @@ const METHOD_SCOPE_GROUPS: Record<OperatorScope, readonly string[]> = {
     "browser.request",
     "push.test",
     "node.pending.enqueue",
+    "templates.create",
+    "templates.update",
+    "templates.delete",
+    "templates.setActive",
+    "executions.run",
+    "executions.cancel",
   ],
   [ADMIN_SCOPE]: [
     "channels.logout",
