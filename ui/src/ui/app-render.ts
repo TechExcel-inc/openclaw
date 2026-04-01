@@ -446,14 +446,16 @@ export function renderApp(state: AppViewState) {
           </button>
           <div class="topnav-shell__content">
             ${
-              state.activeProjectId
+              state.activeTemplateId
                 ? html`
                   <div class="topbar-url">
                     <url-bar
-                      .url=${state.projectDetail?.boundUrl ?? state.projectsList.find((p) => p.id === state.activeProjectId)?.boundUrl ?? ""}
-                      .loading=${state.projectAnalysisStatus === "fetching" || state.projectAnalysisStatus === "analyzing"}
+                      .url=${state.templateDetail?.targetUrl ?? state.templatesList.find((p) => p.id === state.activeTemplateId)?.targetUrl ?? ""}
+                      .loading=${false}
                       @url-change=${(e: CustomEvent) => {
-                        void state.handleProjectUpdateBoundUrl(e.detail);
+                        void state.handleTemplateUpdate(state.activeTemplateId!, {
+                          targetUrl: e.detail,
+                        });
                       }}
                     ></url-bar>
                   </div>
@@ -514,51 +516,23 @@ export function renderApp(state: AppViewState) {
             </div>
             <div class="sidebar-shell__body">
               <nav class="sidebar-nav">
-                <project-sidebar
-                  .projects=${state.projectsList}
-                  .activeProjectId=${state.activeProjectId}
-                  .collapsed=${navCollapsed}
-                  @project-select=${(e: CustomEvent) => {
-                    state.handleProjectSetActive(e.detail);
-                  }}
-                  @project-create=${() => {
-                    state.showCreateModal = true;
-                  }}
-                  @project-delete=${(e: CustomEvent) => {
-                    void state.handleProjectDelete(e.detail);
-                  }}
-                ></project-sidebar>
                 ${TAB_GROUPS.map((group) => {
-                  const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
-                  const hasActiveTab = group.tabs.some((tab) => tab === state.tab);
-                  const showItems = navCollapsed || hasActiveTab || !isGroupCollapsed;
-
                   return html`
-                    <section class="nav-section ${!showItems ? "nav-section--collapsed" : ""}">
+                    <section class="nav-section">
                       ${
                         !navCollapsed
                           ? html`
-                              <button
+                              <div
                                 class="nav-section__label"
-                                @click=${() => {
-                                  const next = { ...state.settings.navGroupsCollapsed };
-                                  next[group.label] = !isGroupCollapsed;
-                                  state.applySettings({
-                                    ...state.settings,
-                                    navGroupsCollapsed: next,
-                                  });
-                                }}
-                                aria-expanded=${showItems}
+                                style="cursor: default;"
+                                aria-expanded="true"
                               >
                                 <span class="nav-section__label-text">${t(`nav.${group.label}`)}</span>
-                                <span class="nav-section__chevron">
-                                  ${icons.chevronDown}
-                                </span>
-                              </button>
+                              </div>
                             `
                           : nothing
                       }
-                      <div class="nav-section__items">
+                      <div class="nav-section__items" style=${!navCollapsed ? "padding-left: 12px;" : ""}>
                         ${group.tabs.map((tab) => renderTab(state, tab, { collapsed: navCollapsed }))}
                       </div>
                     </section>
@@ -663,54 +637,56 @@ export function renderApp(state: AppViewState) {
         ${
           state.tab === "projects"
             ? lazyRender(lazyProjects, (m) => m.renderProjectsView(state))
-            : state.tab === "overview"
-              ? renderOverview({
-                  connected: state.connected,
-                  hello: state.hello,
-                  settings: state.settings,
-                  password: state.password,
-                  lastError: state.lastError,
-                  lastErrorCode: state.lastErrorCode,
-                  presenceCount,
-                  sessionsCount,
-                  cronEnabled: state.cronStatus?.enabled ?? null,
-                  cronNext,
-                  lastChannelsRefresh: state.channelsLastSuccess,
-                  usageResult: state.usageResult,
-                  sessionsResult: state.sessionsResult,
-                  skillsReport: state.skillsReport,
-                  cronJobs: state.cronJobs,
-                  cronStatus: state.cronStatus,
-                  attentionItems: state.attentionItems,
-                  eventLog: state.eventLog,
-                  overviewLogLines: state.overviewLogLines,
-                  showGatewayToken: state.overviewShowGatewayToken,
-                  showGatewayPassword: state.overviewShowGatewayPassword,
-                  onSettingsChange: (next) => state.applySettings(next),
-                  onPasswordChange: (next) => (state.password = next),
-                  onSessionKeyChange: (next) => {
-                    state.sessionKey = next;
-                    state.chatMessage = "";
-                    state.resetToolStream();
-                    state.applySettings({
-                      ...state.settings,
-                      sessionKey: next,
-                      lastActiveSessionKey: next,
-                    });
-                    void state.loadAssistantIdentity();
-                  },
-                  onToggleGatewayTokenVisibility: () => {
-                    state.overviewShowGatewayToken = !state.overviewShowGatewayToken;
-                  },
-                  onToggleGatewayPasswordVisibility: () => {
-                    state.overviewShowGatewayPassword = !state.overviewShowGatewayPassword;
-                  },
-                  onConnect: () => state.connect(),
-                  onRefresh: () => state.loadOverview(),
-                  onNavigate: (tab) => state.setTab(tab as import("./navigation.ts").Tab),
-                  onRefreshLogs: () => state.loadOverview(),
-                })
-              : nothing
+            : state.tab === "autoTestRun"
+              ? lazyRender(lazyProjects, (m) => m.renderAutoTestRunView(state))
+              : state.tab === "overview"
+                ? renderOverview({
+                    connected: state.connected,
+                    hello: state.hello,
+                    settings: state.settings,
+                    password: state.password,
+                    lastError: state.lastError,
+                    lastErrorCode: state.lastErrorCode,
+                    presenceCount,
+                    sessionsCount,
+                    cronEnabled: state.cronStatus?.enabled ?? null,
+                    cronNext,
+                    lastChannelsRefresh: state.channelsLastSuccess,
+                    usageResult: state.usageResult,
+                    sessionsResult: state.sessionsResult,
+                    skillsReport: state.skillsReport,
+                    cronJobs: state.cronJobs,
+                    cronStatus: state.cronStatus,
+                    attentionItems: state.attentionItems,
+                    eventLog: state.eventLog,
+                    overviewLogLines: state.overviewLogLines,
+                    showGatewayToken: state.overviewShowGatewayToken,
+                    showGatewayPassword: state.overviewShowGatewayPassword,
+                    onSettingsChange: (next) => state.applySettings(next),
+                    onPasswordChange: (next) => (state.password = next),
+                    onSessionKeyChange: (next) => {
+                      state.sessionKey = next;
+                      state.chatMessage = "";
+                      state.resetToolStream();
+                      state.applySettings({
+                        ...state.settings,
+                        sessionKey: next,
+                        lastActiveSessionKey: next,
+                      });
+                      void state.loadAssistantIdentity();
+                    },
+                    onToggleGatewayTokenVisibility: () => {
+                      state.overviewShowGatewayToken = !state.overviewShowGatewayToken;
+                    },
+                    onToggleGatewayPasswordVisibility: () => {
+                      state.overviewShowGatewayPassword = !state.overviewShowGatewayPassword;
+                    },
+                    onConnect: () => state.connect(),
+                    onRefresh: () => state.loadOverview(),
+                    onNavigate: (tab) => state.setTab(tab as import("./navigation.ts").Tab),
+                    onRefreshLogs: () => state.loadOverview(),
+                  })
+                : nothing
         }
 
         ${

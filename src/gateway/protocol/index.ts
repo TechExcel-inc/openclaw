@@ -265,32 +265,26 @@ import {
   WizardStatusResultSchema,
   type WizardStep,
   WizardStepSchema,
-  type ProjectsListParams,
-  ProjectsListParamsSchema,
-  type ProjectsGetParams,
-  ProjectsGetParamsSchema,
-  type ProjectsCreateParams,
-  ProjectsCreateParamsSchema,
-  type ProjectsUpdateParams,
-  ProjectsUpdateParamsSchema,
-  type ProjectsDeleteParams,
-  ProjectsDeleteParamsSchema,
-  type ProjectsSetActiveParams,
-  ProjectsSetActiveParamsSchema,
-  type ProjectsDocumentsListParams,
-  ProjectsDocumentsListParamsSchema,
-  type ProjectsDocumentsGetParams,
-  ProjectsDocumentsGetParamsSchema,
-  type ProjectsDocumentsCreateParams,
-  ProjectsDocumentsCreateParamsSchema,
-  type ProjectsDocumentsUpdateParams,
-  ProjectsDocumentsUpdateParamsSchema,
-  type ProjectsDocumentsDeleteParams,
-  ProjectsDocumentsDeleteParamsSchema,
-  type ProjectsAnalyzeParams,
-  ProjectsAnalyzeParamsSchema,
-  type ProjectsAnalyzeStatusParams,
-  ProjectsAnalyzeStatusParamsSchema,
+  type TemplatesListParams,
+  TemplatesListParamsSchema,
+  type TemplatesGetParams,
+  TemplatesGetParamsSchema,
+  type TemplatesCreateParams,
+  TemplatesCreateParamsSchema,
+  type TemplatesUpdateParams,
+  TemplatesUpdateParamsSchema,
+  type TemplatesDeleteParams,
+  TemplatesDeleteParamsSchema,
+  type TemplatesSetActiveParams,
+  TemplatesSetActiveParamsSchema,
+  type ExecutionsListParams,
+  ExecutionsListParamsSchema,
+  type ExecutionsGetParams,
+  ExecutionsGetParamsSchema,
+  type ExecutionsRunParams,
+  ExecutionsRunParamsSchema,
+  type ExecutionsCancelParams,
+  ExecutionsCancelParamsSchema,
 } from "./schema.js";
 
 const ajv = new (AjvPkg as unknown as new (opts?: object) => import("ajv").default)({
@@ -433,40 +427,31 @@ export const validateCronUpdateParams = ajv.compile<CronUpdateParams>(CronUpdate
 export const validateCronRemoveParams = ajv.compile<CronRemoveParams>(CronRemoveParamsSchema);
 export const validateCronRunParams = ajv.compile<CronRunParams>(CronRunParamsSchema);
 export const validateCronRunsParams = ajv.compile<CronRunsParams>(CronRunsParamsSchema);
-export const validateProjectsListParams = ajv.compile<ProjectsListParams>(ProjectsListParamsSchema);
-export const validateProjectsGetParams = ajv.compile<ProjectsGetParams>(ProjectsGetParamsSchema);
-export const validateProjectsCreateParams = ajv.compile<ProjectsCreateParams>(
-  ProjectsCreateParamsSchema,
+export const validateTemplatesListParams =
+  ajv.compile<TemplatesListParams>(TemplatesListParamsSchema);
+export const validateTemplatesGetParams = ajv.compile<TemplatesGetParams>(TemplatesGetParamsSchema);
+export const validateTemplatesCreateParams = ajv.compile<TemplatesCreateParams>(
+  TemplatesCreateParamsSchema,
 );
-export const validateProjectsUpdateParams = ajv.compile<ProjectsUpdateParams>(
-  ProjectsUpdateParamsSchema,
+export const validateTemplatesUpdateParams = ajv.compile<TemplatesUpdateParams>(
+  TemplatesUpdateParamsSchema,
 );
-export const validateProjectsDeleteParams = ajv.compile<ProjectsDeleteParams>(
-  ProjectsDeleteParamsSchema,
+export const validateTemplatesDeleteParams = ajv.compile<TemplatesDeleteParams>(
+  TemplatesDeleteParamsSchema,
 );
-export const validateProjectsSetActiveParams = ajv.compile<ProjectsSetActiveParams>(
-  ProjectsSetActiveParamsSchema,
+export const validateTemplatesSetActiveParams = ajv.compile<TemplatesSetActiveParams>(
+  TemplatesSetActiveParamsSchema,
 );
-export const validateProjectsDocumentsListParams = ajv.compile<ProjectsDocumentsListParams>(
-  ProjectsDocumentsListParamsSchema,
+
+export const validateExecutionsListParams = ajv.compile<ExecutionsListParams>(
+  ExecutionsListParamsSchema,
 );
-export const validateProjectsDocumentsGetParams = ajv.compile<ProjectsDocumentsGetParams>(
-  ProjectsDocumentsGetParamsSchema,
-);
-export const validateProjectsDocumentsCreateParams = ajv.compile<ProjectsDocumentsCreateParams>(
-  ProjectsDocumentsCreateParamsSchema,
-);
-export const validateProjectsDocumentsUpdateParams = ajv.compile<ProjectsDocumentsUpdateParams>(
-  ProjectsDocumentsUpdateParamsSchema,
-);
-export const validateProjectsDocumentsDeleteParams = ajv.compile<ProjectsDocumentsDeleteParams>(
-  ProjectsDocumentsDeleteParamsSchema,
-);
-export const validateProjectsAnalyzeParams = ajv.compile<ProjectsAnalyzeParams>(
-  ProjectsAnalyzeParamsSchema,
-);
-export const validateProjectsAnalyzeStatusParams = ajv.compile<ProjectsAnalyzeStatusParams>(
-  ProjectsAnalyzeStatusParamsSchema,
+export const validateExecutionsGetParams =
+  ajv.compile<ExecutionsGetParams>(ExecutionsGetParamsSchema);
+export const validateExecutionsRunParams =
+  ajv.compile<ExecutionsRunParams>(ExecutionsRunParamsSchema);
+export const validateExecutionsCancelParams = ajv.compile<ExecutionsCancelParams>(
+  ExecutionsCancelParamsSchema,
 );
 export const validateDevicePairListParams = ajv.compile<DevicePairListParams>(
   DevicePairListParamsSchema,
@@ -650,19 +635,16 @@ export {
   CronRemoveParamsSchema,
   CronRunParamsSchema,
   CronRunsParamsSchema,
-  ProjectsListParamsSchema,
-  ProjectsGetParamsSchema,
-  ProjectsCreateParamsSchema,
-  ProjectsUpdateParamsSchema,
-  ProjectsDeleteParamsSchema,
-  ProjectsSetActiveParamsSchema,
-  ProjectsDocumentsListParamsSchema,
-  ProjectsDocumentsGetParamsSchema,
-  ProjectsDocumentsCreateParamsSchema,
-  ProjectsDocumentsUpdateParamsSchema,
-  ProjectsDocumentsDeleteParamsSchema,
-  ProjectsAnalyzeParamsSchema,
-  ProjectsAnalyzeStatusParamsSchema,
+  TemplatesListParamsSchema,
+  TemplatesGetParamsSchema,
+  TemplatesCreateParamsSchema,
+  TemplatesUpdateParamsSchema,
+  TemplatesDeleteParamsSchema,
+  TemplatesSetActiveParamsSchema,
+  ExecutionsListParamsSchema,
+  ExecutionsGetParamsSchema,
+  ExecutionsRunParamsSchema,
+  ExecutionsCancelParamsSchema,
   LogsTailParamsSchema,
   LogsTailResultSchema,
   ChatHistoryParamsSchema,
@@ -779,19 +761,16 @@ export type {
   CronRunParams,
   CronRunsParams,
   CronRunLogEntry,
-  ProjectsListParams,
-  ProjectsGetParams,
-  ProjectsCreateParams,
-  ProjectsUpdateParams,
-  ProjectsDeleteParams,
-  ProjectsSetActiveParams,
-  ProjectsDocumentsListParams,
-  ProjectsDocumentsGetParams,
-  ProjectsDocumentsCreateParams,
-  ProjectsDocumentsUpdateParams,
-  ProjectsDocumentsDeleteParams,
-  ProjectsAnalyzeParams,
-  ProjectsAnalyzeStatusParams,
+  TemplatesListParams,
+  TemplatesGetParams,
+  TemplatesCreateParams,
+  TemplatesUpdateParams,
+  TemplatesDeleteParams,
+  TemplatesSetActiveParams,
+  ExecutionsListParams,
+  ExecutionsGetParams,
+  ExecutionsRunParams,
+  ExecutionsCancelParams,
   ExecApprovalsGetParams,
   ExecApprovalsSetParams,
   ExecApprovalsSnapshot,

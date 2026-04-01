@@ -35,6 +35,9 @@ importers:
       '@aws-sdk/client-bedrock':
         specifier: ^3.1014.0
         version: 3.1014.0
+      '@aws-sdk/client-s3':
+        specifier: 3.1014.0
+        version: 3.1014.0
       '@clack/prompts':
         specifier: ^1.1.0
         version: 1.1.0
@@ -125,6 +128,9 @@ importers:
       markdown-it:
         specifier: ^14.1.1
         version: 14.1.1
+      marked:
+        specifier: ^17.0.5
+        version: 17.0.5
       node-edge-tts:
         specifier: ^1.2.10
         version: 1.2.10

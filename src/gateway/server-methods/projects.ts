@@ -3,54 +3,49 @@ import {
   resolveProjectsStorePath,
   saveProjectsStore,
 } from "../../projects/store.js";
-import type {
-  Project,
-  ProjectDocument,
-  ProjectDocumentType,
-  ProjectType,
-} from "../../projects/types.js";
+import type { ProjectTemplate, ProjectExecute } from "../../projects/types.js";
 import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
-  validateProjectsAnalyzeParams,
-  validateProjectsAnalyzeStatusParams,
-  validateProjectsCreateParams,
-  validateProjectsDeleteParams,
-  validateProjectsDocumentsCreateParams,
-  validateProjectsDocumentsDeleteParams,
-  validateProjectsDocumentsGetParams,
-  validateProjectsDocumentsListParams,
-  validateProjectsDocumentsUpdateParams,
-  validateProjectsGetParams,
-  validateProjectsSetActiveParams,
-  validateProjectsUpdateParams,
+  validateTemplatesGetParams,
+  validateTemplatesCreateParams,
+  validateTemplatesUpdateParams,
+  validateTemplatesDeleteParams,
+  validateTemplatesSetActiveParams,
+  validateExecutionsListParams,
+  validateExecutionsGetParams,
+  validateExecutionsRunParams,
+  validateExecutionsCancelParams,
 } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
 const storePath = resolveProjectsStorePath();
 
 export const projectsHandlers: GatewayRequestHandlers = {
-  "projects.list": async ({ respond }) => {
+  // ---------------------------------------------------------------------------
+  // TEMPLATES
+  // ---------------------------------------------------------------------------
+  "templates.list": async ({ respond }) => {
     try {
       const store = await loadProjectsStore(storePath);
       respond(true, {
-        projects: store.projects.map(stripDocuments),
-        activeProjectId: store.activeProjectId,
+        templates: store.templates,
+        activeTemplateId: store.activeTemplateId,
       });
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 
-  "projects.get": async ({ params, respond }) => {
-    if (!validateProjectsGetParams(params)) {
+  "templates.get": async ({ params, respond }) => {
+    if (!validateTemplatesGetParams(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid projects.get params: ${formatValidationErrors(validateProjectsGetParams.errors)}`,
+          `invalid templates.get params: ${formatValidationErrors(validateTemplatesGetParams.errors)}`,
         ),
       );
       return;
@@ -58,115 +53,126 @@ export const projectsHandlers: GatewayRequestHandlers = {
     const { id } = params as { id: string };
     try {
       const store = await loadProjectsStore(storePath);
-      const project = store.projects.find((p) => p.id === id);
-      if (!project) {
+      const template = store.templates.find((p) => p.id === id);
+      if (!template) {
         respond(
           false,
           undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${id}`),
+          errorShape(ErrorCodes.INVALID_REQUEST, `template not found: ${id}`),
         );
         return;
       }
-      respond(true, project);
+      respond(true, template);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 
-  "projects.create": async ({ params, respond }) => {
-    if (!validateProjectsCreateParams(params)) {
+  "templates.create": async ({ params, respond }) => {
+    if (!validateTemplatesCreateParams(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid projects.create params: ${formatValidationErrors(validateProjectsCreateParams.errors)}`,
+          `invalid templates.create params: ${formatValidationErrors(validateTemplatesCreateParams.errors)}`,
         ),
       );
       return;
     }
-    const { name, type, boundUrl } = params as {
+    const { name, description, targetUrl, aiPrompt } = params as {
       name: string;
-      type: ProjectType;
-      boundUrl?: string;
+      description?: string;
+      targetUrl?: string;
+      aiPrompt?: string;
     };
     try {
       const store = await loadProjectsStore(storePath);
       const now = Date.now();
-      const project: Project = {
+      const template: ProjectTemplate = {
         id: crypto.randomUUID(),
         name,
-        type,
-        boundUrl: boundUrl ?? "",
+        description: description ?? "",
+        targetUrl: targetUrl ?? "",
+        aiPrompt: aiPrompt ?? "",
+        totalTestSteps: 0,
+        failedTestSteps: 0,
+        pfmNodes: [],
         createdAt: now,
-        updatedAt: now,
-        documents: [],
+        createdBy: "system",
+        lastModifiedAt: now,
+        lastModifiedBy: "system",
       };
-      store.projects.push(project);
-      if (!store.activeProjectId) {
-        store.activeProjectId = project.id;
+      store.templates.push(template);
+      if (!store.activeTemplateId) {
+        store.activeTemplateId = template.id;
       }
       await saveProjectsStore(storePath, store);
-      respond(true, project);
+      respond(true, template);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 
-  "projects.update": async ({ params, respond }) => {
-    if (!validateProjectsUpdateParams(params)) {
+  "templates.update": async ({ params, respond }) => {
+    if (!validateTemplatesUpdateParams(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid projects.update params: ${formatValidationErrors(validateProjectsUpdateParams.errors)}`,
+          `invalid templates.update params: ${formatValidationErrors(validateTemplatesUpdateParams.errors)}`,
         ),
       );
       return;
     }
-    const { id, name, type, boundUrl } = params as {
+    const { id, name, description, targetUrl, aiPrompt } = params as {
       id: string;
       name?: string;
-      type?: ProjectType;
-      boundUrl?: string;
+      description?: string;
+      targetUrl?: string;
+      aiPrompt?: string;
     };
     try {
       const store = await loadProjectsStore(storePath);
-      const project = store.projects.find((p) => p.id === id);
-      if (!project) {
+      const template = store.templates.find((p) => p.id === id);
+      if (!template) {
         respond(
           false,
           undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${id}`),
+          errorShape(ErrorCodes.INVALID_REQUEST, `template not found: ${id}`),
         );
         return;
       }
       if (name !== undefined) {
-        project.name = name;
+        template.name = name;
       }
-      if (type !== undefined) {
-        project.type = type;
+      if (description !== undefined) {
+        template.description = description;
       }
-      if (boundUrl !== undefined) {
-        project.boundUrl = boundUrl;
+      if (targetUrl !== undefined) {
+        template.targetUrl = targetUrl;
       }
-      project.updatedAt = Date.now();
+      if (aiPrompt !== undefined) {
+        template.aiPrompt = aiPrompt;
+      }
+
+      template.lastModifiedAt = Date.now();
       await saveProjectsStore(storePath, store);
-      respond(true, stripDocuments(project));
+      respond(true, template);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 
-  "projects.delete": async ({ params, respond }) => {
-    if (!validateProjectsDeleteParams(params)) {
+  "templates.delete": async ({ params, respond }) => {
+    if (!validateTemplatesDeleteParams(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid projects.delete params: ${formatValidationErrors(validateProjectsDeleteParams.errors)}`,
+          `invalid templates.delete params: ${formatValidationErrors(validateTemplatesDeleteParams.errors)}`,
         ),
       );
       return;
@@ -174,19 +180,22 @@ export const projectsHandlers: GatewayRequestHandlers = {
     const { id } = params as { id: string };
     try {
       const store = await loadProjectsStore(storePath);
-      const idx = store.projects.findIndex((p) => p.id === id);
+      const idx = store.templates.findIndex((p) => p.id === id);
       if (idx === -1) {
         respond(
           false,
           undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${id}`),
+          errorShape(ErrorCodes.INVALID_REQUEST, `template not found: ${id}`),
         );
         return;
       }
-      store.projects.splice(idx, 1);
-      if (store.activeProjectId === id) {
-        store.activeProjectId = store.projects[0]?.id ?? null;
+      store.templates.splice(idx, 1);
+      if (store.activeTemplateId === id) {
+        store.activeTemplateId = store.templates[0]?.id ?? null;
       }
+      // cascade delete executions linked to this template
+      store.executions = store.executions.filter((e) => e.linkedTemplateId !== id);
+
       await saveProjectsStore(storePath, store);
       respond(true, { ok: true });
     } catch (err) {
@@ -194,14 +203,14 @@ export const projectsHandlers: GatewayRequestHandlers = {
     }
   },
 
-  "projects.setActive": async ({ params, respond }) => {
-    if (!validateProjectsSetActiveParams(params)) {
+  "templates.setActive": async ({ params, respond }) => {
+    if (!validateTemplatesSetActiveParams(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid projects.setActive params: ${formatValidationErrors(validateProjectsSetActiveParams.errors)}`,
+          `invalid templates.setActive params: ${formatValidationErrors(validateTemplatesSetActiveParams.errors)}`,
         ),
       );
       return;
@@ -209,385 +218,169 @@ export const projectsHandlers: GatewayRequestHandlers = {
     const { id } = params as { id?: string };
     try {
       const store = await loadProjectsStore(storePath);
-      if (id && !store.projects.some((p) => p.id === id)) {
+      if (id && !store.templates.some((p) => p.id === id)) {
         respond(
           false,
           undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${id}`),
+          errorShape(ErrorCodes.INVALID_REQUEST, `template not found: ${id}`),
         );
         return;
       }
-      store.activeProjectId = id ?? null;
+      store.activeTemplateId = id ?? null;
       await saveProjectsStore(storePath, store);
-      respond(true, { activeProjectId: store.activeProjectId });
+      respond(true, { activeTemplateId: store.activeTemplateId });
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 
-  "projects.documents.list": async ({ params, respond }) => {
-    if (!validateProjectsDocumentsListParams(params)) {
+  // ---------------------------------------------------------------------------
+  // EXECUTIONS
+  // ---------------------------------------------------------------------------
+  "executions.list": async ({ params, respond }) => {
+    if (!validateExecutionsListParams(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid projects.documents.list params: ${formatValidationErrors(validateProjectsDocumentsListParams.errors)}`,
+          `invalid executions.list params: ${formatValidationErrors(validateExecutionsListParams.errors)}`,
         ),
       );
       return;
     }
-    const { projectId } = params as { projectId: string };
+    const { templateId } = params as { templateId?: string };
     try {
       const store = await loadProjectsStore(storePath);
-      const project = store.projects.find((p) => p.id === projectId);
-      if (!project) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${projectId}`),
-        );
-        return;
+      let executions = store.executions;
+      if (templateId) {
+        executions = executions.filter((e) => e.linkedTemplateId === templateId);
       }
-      respond(true, { documents: project.documents });
+      respond(true, { executions });
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 
-  "projects.documents.get": async ({ params, respond }) => {
-    if (!validateProjectsDocumentsGetParams(params)) {
+  "executions.get": async ({ params, respond }) => {
+    if (!validateExecutionsGetParams(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid projects.documents.get params: ${formatValidationErrors(validateProjectsDocumentsGetParams.errors)}`,
+          `invalid executions.get params: ${formatValidationErrors(validateExecutionsGetParams.errors)}`,
         ),
       );
       return;
     }
-    const { projectId, id } = params as { projectId: string; id: string };
+    const { id } = params as { id: string };
     try {
       const store = await loadProjectsStore(storePath);
-      const project = store.projects.find((p) => p.id === projectId);
-      if (!project) {
+      const execution = store.executions.find((e) => e.id === id);
+      if (!execution) {
         respond(
           false,
           undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${projectId}`),
+          errorShape(ErrorCodes.INVALID_REQUEST, `execution not found: ${id}`),
         );
         return;
       }
-      const doc = project.documents.find((d) => d.id === id);
-      if (!doc) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `document not found: ${id}`),
-        );
-        return;
-      }
-      respond(true, doc);
+      respond(true, execution);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 
-  "projects.documents.create": async ({ params, respond }) => {
-    if (!validateProjectsDocumentsCreateParams(params)) {
+  "executions.run": async ({ params, respond }) => {
+    if (!validateExecutionsRunParams(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid projects.documents.create params: ${formatValidationErrors(validateProjectsDocumentsCreateParams.errors)}`,
+          `invalid executions.run params: ${formatValidationErrors(validateExecutionsRunParams.errors)}`,
         ),
       );
       return;
     }
-    const { projectId, name, type, content } = params as {
-      projectId: string;
-      name: string;
-      type?: ProjectDocumentType;
-      content?: string;
-    };
+    const { templateId } = params as { templateId: string };
     try {
       const store = await loadProjectsStore(storePath);
-      const project = store.projects.find((p) => p.id === projectId);
-      if (!project) {
+      const template = store.templates.find((t) => t.id === templateId);
+      if (!template) {
         respond(
           false,
           undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${projectId}`),
+          errorShape(ErrorCodes.INVALID_REQUEST, `template not found: ${templateId}`),
         );
         return;
       }
+
       const now = Date.now();
-      const doc: ProjectDocument = {
+      const execution: ProjectExecute = {
         id: crypto.randomUUID(),
-        projectId,
-        name,
-        type: type ?? "general",
-        content: content ?? "",
-        createdAt: now,
-        updatedAt: now,
+        linkedTemplateId: template.id,
+        name: template.name,
+        description: template.description,
+        targetUrl: template.targetUrl,
+        aiPrompt: template.aiPrompt,
+        status: "pending",
+        progressPercentage: 0,
+        startTime: now,
+        durationMs: null,
+        results: [],
       };
-      project.documents.push(doc);
-      project.updatedAt = now;
+
+      store.executions.push(execution);
       await saveProjectsStore(storePath, store);
-      respond(true, doc);
+
+      // Async kickoff to executor engine
+      const { runProjectExecution } = await import("../../projects/executor.js");
+      runProjectExecution(execution.id).catch(() => {});
+
+      respond(true, execution);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 
-  "projects.documents.update": async ({ params, respond }) => {
-    if (!validateProjectsDocumentsUpdateParams(params)) {
+  "executions.cancel": async ({ params, respond }) => {
+    if (!validateExecutionsCancelParams(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid projects.documents.update params: ${formatValidationErrors(validateProjectsDocumentsUpdateParams.errors)}`,
+          `invalid executions.cancel params: ${formatValidationErrors(validateExecutionsCancelParams.errors)}`,
         ),
       );
       return;
     }
-    const { projectId, id, name, type, content } = params as {
-      projectId: string;
-      id: string;
-      name?: string;
-      type?: ProjectDocumentType;
-      content?: string;
-    };
+    const { id } = params as { id: string };
     try {
       const store = await loadProjectsStore(storePath);
-      const project = store.projects.find((p) => p.id === projectId);
-      if (!project) {
+      const execution = store.executions.find((e) => e.id === id);
+      if (!execution) {
         respond(
           false,
           undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${projectId}`),
+          errorShape(ErrorCodes.INVALID_REQUEST, `execution not found: ${id}`),
         );
         return;
       }
-      const doc = project.documents.find((d) => d.id === id);
-      if (!doc) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `document not found: ${id}`),
-        );
-        return;
-      }
-      if (name !== undefined) {
-        doc.name = name;
-      }
-      if (type !== undefined) {
-        doc.type = type;
-      }
-      if (content !== undefined) {
-        doc.content = content;
-      }
-      doc.updatedAt = Date.now();
-      project.updatedAt = Date.now();
-      await saveProjectsStore(storePath, store);
-      respond(true, doc);
-    } catch (err) {
-      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
-    }
-  },
+      if (execution.status === "pending" || execution.status === "running") {
+        execution.status = "cancelled";
+        execution.durationMs = execution.startTime ? Date.now() - execution.startTime : null;
+        await saveProjectsStore(storePath, store);
 
-  "projects.documents.delete": async ({ params, respond }) => {
-    if (!validateProjectsDocumentsDeleteParams(params)) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          `invalid projects.documents.delete params: ${formatValidationErrors(validateProjectsDocumentsDeleteParams.errors)}`,
-        ),
-      );
-      return;
-    }
-    const { projectId, id } = params as { projectId: string; id: string };
-    try {
-      const store = await loadProjectsStore(storePath);
-      const project = store.projects.find((p) => p.id === projectId);
-      if (!project) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${projectId}`),
-        );
-        return;
+        // Signal cancellation to executor engine
+        const { cancelProjectExecution } = await import("../../projects/executor.js");
+        await cancelProjectExecution(execution.id);
       }
-      const idx = project.documents.findIndex((d) => d.id === id);
-      if (idx === -1) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `document not found: ${id}`),
-        );
-        return;
-      }
-      project.documents.splice(idx, 1);
-      project.updatedAt = Date.now();
-      await saveProjectsStore(storePath, store);
-      respond(true, { ok: true });
-    } catch (err) {
-      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
-    }
-  },
-
-  "projects.analyze": async ({ params, respond, context }) => {
-    if (!validateProjectsAnalyzeParams(params)) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          `invalid projects.analyze params: ${formatValidationErrors(validateProjectsAnalyzeParams.errors)}`,
-        ),
-      );
-      return;
-    }
-    const { projectId } = params as { projectId: string };
-    try {
-      const store = await loadProjectsStore(storePath);
-      const project = store.projects.find((p) => p.id === projectId);
-      if (!project) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${projectId}`),
-        );
-        return;
-      }
-      if (!project.boundUrl) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, "project has no bound URL"),
-        );
-        return;
-      }
-      // Start analysis asynchronously
-      project.analysisState = {
-        lastAnalyzedAt: null,
-        status: "fetching",
-      };
-      await saveProjectsStore(storePath, store);
-      respond(true, { status: "fetching" });
-
-      // Run analysis in background
-      runAnalysis(projectId, project.boundUrl, context.logGateway).catch(() => {
-        // Errors are handled inside runAnalysis
-      });
-    } catch (err) {
-      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
-    }
-  },
-
-  "projects.analyze.status": async ({ params, respond }) => {
-    if (!validateProjectsAnalyzeStatusParams(params)) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          `invalid projects.analyze.status params: ${formatValidationErrors(validateProjectsAnalyzeStatusParams.errors)}`,
-        ),
-      );
-      return;
-    }
-    const { projectId } = params as { projectId: string };
-    try {
-      const store = await loadProjectsStore(storePath);
-      const project = store.projects.find((p) => p.id === projectId);
-      if (!project) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, `project not found: ${projectId}`),
-        );
-        return;
-      }
-      respond(true, {
-        analysisState: project.analysisState ?? {
-          lastAnalyzedAt: null,
-          status: "idle",
-        },
-      });
+      respond(true, execution);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 };
-
-function stripDocuments(project: Project) {
-  const { documents: _docs, ...rest } = project;
-  return { ...rest, documentCount: project.documents.length };
-}
-
-async function runAnalysis(
-  projectId: string,
-  url: string,
-  log: { warn: (msg: string) => void; error: (msg: string) => void },
-) {
-  try {
-    // Fetch URL content
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(30_000),
-      headers: { "User-Agent": "OpenClaw-ProjectAnalyzer/1.0" },
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    const content = await response.text();
-
-    // Import analyzer and generate documents
-    const { analyzeProjectContent } = await import("../../projects/analyzer.js");
-    const documents = await analyzeProjectContent(content, url);
-
-    // Update store with results
-    const store = await loadProjectsStore(storePath);
-    const project = store.projects.find((p) => p.id === projectId);
-    if (!project) {
-      return;
-    }
-
-    project.analysisState = {
-      lastAnalyzedAt: Date.now(),
-      status: "complete",
-    };
-    for (const doc of documents) {
-      doc.projectId = projectId;
-      const existingIdx = project.documents.findIndex((d) => d.type === doc.type);
-      if (existingIdx >= 0) {
-        project.documents[existingIdx] = doc;
-      } else {
-        project.documents.push(doc);
-      }
-    }
-    project.updatedAt = Date.now();
-    await saveProjectsStore(storePath, store);
-  } catch (err) {
-    log.error(`project analysis failed for ${projectId}: ${String(err)}`);
-    try {
-      const store = await loadProjectsStore(storePath);
-      const project = store.projects.find((p) => p.id === projectId);
-      if (project) {
-        project.analysisState = {
-          lastAnalyzedAt: null,
-          status: "error",
-          error: String(err),
-        };
-        await saveProjectsStore(storePath, store);
-      }
-    } catch {
-      // Best-effort error state update
-    }
-  }
-}

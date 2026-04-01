@@ -36,20 +36,52 @@ export async function loadProjectsStore(storePath: string): Promise<ProjectsStor
       parsed && typeof parsed === "object" && !Array.isArray(parsed)
         ? (parsed as Record<string, unknown>)
         : {};
-    const projects = Array.isArray(parsedRecord.projects) ? (parsedRecord.projects as never[]) : [];
-    const activeProjectId =
-      typeof parsedRecord.activeProjectId === "string" ? parsedRecord.activeProjectId : null;
-    const store: ProjectsStoreFile = {
-      version: 1,
-      projects: projects.filter(Boolean) as never as ProjectsStoreFile["projects"],
-      activeProjectId,
-    };
+    const templates = Array.isArray(parsedRecord.templates)
+      ? (parsedRecord.templates as never[])
+      : [];
+    const executions = Array.isArray(parsedRecord.executions)
+      ? (parsedRecord.executions as never[])
+      : [];
+    const activeTemplateId =
+      typeof parsedRecord.activeTemplateId === "string" ? parsedRecord.activeTemplateId : null;
+
+    let store: ProjectsStoreFile;
+    if (parsedRecord.version === 2) {
+      store = {
+        version: 2,
+        templates: templates.filter(Boolean) as never as ProjectsStoreFile["templates"],
+        executions: executions.filter(Boolean) as never as ProjectsStoreFile["executions"],
+        activeTemplateId,
+      };
+    } else {
+      // Migrate v1 to v2: map `projects` to `templates` if available
+      const oldProjects = Array.isArray(parsedRecord.projects) ? parsedRecord.projects : [];
+      let migratedTemplates = oldProjects.map((item: unknown) => {
+        const p = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+        return {
+          ...p,
+          id: typeof p.id === "string" ? p.id : randomBytes(8).toString("hex"),
+          name: typeof p.name === "string" ? p.name : "Migrated Project",
+          createdAt: typeof p.createdAt === "number" ? p.createdAt : Date.now(),
+          updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : Date.now(),
+          // Map any old fields correctly
+        };
+      });
+
+      store = {
+        version: 2,
+        templates: migratedTemplates as never as ProjectsStoreFile["templates"],
+        executions: executions.filter(Boolean) as never as ProjectsStoreFile["executions"],
+        activeTemplateId:
+          typeof parsedRecord.activeProjectId === "string" ? parsedRecord.activeProjectId : null,
+      };
+    }
     serializedStoreCache.set(storePath, JSON.stringify(store, null, 2));
     return store;
   } catch (err) {
     if ((err as { code?: unknown })?.code === "ENOENT") {
       serializedStoreCache.delete(storePath);
-      return { version: 1, projects: [], activeProjectId: null };
+      return { version: 2, templates: [], executions: [], activeTemplateId: null };
     }
     throw err;
   }

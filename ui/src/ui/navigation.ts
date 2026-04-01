@@ -2,13 +2,14 @@ import { t } from "../i18n/index.ts";
 import type { IconName } from "./icons.js";
 
 export const TAB_GROUPS = [
-  { label: "workspace", tabs: ["projects"] },
+  { label: "projectTemplates", tabs: ["projects"] },
+  { label: "projectExecute", tabs: ["autoTestRun"] },
   { label: "chat", tabs: ["chat"] },
+  { label: "agent", tabs: ["agents", "skills", "nodes"] },
   {
     label: "control",
-    tabs: ["overview", "channels", "instances", "sessions", "usage", "cron"],
+    tabs: ["channels"],
   },
-  { label: "agent", tabs: ["agents", "skills", "nodes"] },
   {
     label: "settings",
     tabs: [
@@ -26,6 +27,7 @@ export const TAB_GROUPS = [
 
 export type Tab =
   | "projects"
+  | "autoTestRun"
   | "agents"
   | "overview"
   | "channels"
@@ -47,6 +49,7 @@ export type Tab =
 
 const TAB_PATHS: Record<Tab, string> = {
   projects: "/projects",
+  autoTestRun: "/runs",
   agents: "/agents",
   overview: "/overview",
   channels: "/channels",
@@ -151,6 +154,8 @@ export function inferBasePathFromPathname(pathname: string): string {
 export function iconForTab(tab: Tab): IconName {
   switch (tab) {
     case "projects":
+      return "folder";
+    case "autoTestRun":
       return "folder";
     case "agents":
       return "folder";

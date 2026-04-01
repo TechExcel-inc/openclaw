@@ -1,37 +1,12 @@
-import type { ProjectType } from "../../../../src/projects/types.js";
+import type { ProjectTemplate, ProjectExecute } from "../../../../src/projects/types.js";
 
-export type ProjectSummary = {
-  id: string;
-  name: string;
-  type: ProjectType;
-  boundUrl: string;
-  createdAt: number;
-  updatedAt: number;
-  documentCount: number;
+export type TemplatesListResult = {
+  templates: ProjectTemplate[];
+  activeTemplateId: string | null;
 };
 
-export type ProjectsListResult = {
-  projects: ProjectSummary[];
-  activeProjectId: string | null;
-};
-
-export type ProjectDocument = {
-  id: string;
-  projectId: string;
-  name: string;
-  type: string;
-  content: string;
-  createdAt: number;
-  updatedAt: number;
-};
-
-export type Project = ProjectSummary & {
-  documents: ProjectDocument[];
-  analysisState?: {
-    lastAnalyzedAt: number | null;
-    status: string;
-    error?: string;
-  };
+export type ExecutionsListResult = {
+  executions: ProjectExecute[];
 };
 
 export type ProjectsState = {
@@ -40,257 +15,315 @@ export type ProjectsState = {
   } | null;
   connected: boolean;
 
-  projectsLoading: boolean;
-  projectsError: string | null;
-  projectsList: ProjectSummary[];
-  activeProjectId: string | null;
+  // Templates
+  templatesLoading: boolean;
+  templatesError: string | null;
+  templatesList: ProjectTemplate[];
+  activeTemplateId: string | null;
 
-  projectDetail: Project | null;
-  projectDetailLoading: boolean;
+  templateDetail: ProjectTemplate | null;
+  templateDetailLoading: boolean;
 
-  projectDocuments: ProjectDocument[];
-  projectDocumentsLoading: boolean;
-
-  projectAnalysisStatus: string | null;
-
-  projectCreating: boolean;
+  templateCreating: boolean;
 
   showCreateModal: boolean;
   createFormName: string;
-  createFormType: ProjectType;
-  createFormUrl: string;
+  createFormDescription: string;
+  createFormTargetUrl: string;
+  createFormAiPrompt: string;
+
+  // Executions
+  executionsLoading: boolean;
+  executionsError: string | null;
+  executionsList: ProjectExecute[];
+
+  activeExecutionId: string | null;
+
+  executionDetail: ProjectExecute | null;
+  executionDetailLoading: boolean;
+
+  globalExecutionsLoading: boolean;
+  globalExecutionsList: ProjectExecute[];
 };
 
-export async function loadProjects(state: ProjectsState) {
+// ============================================================================
+// TEMPLATES
+// ============================================================================
+
+export async function loadTemplates(state: ProjectsState) {
   if (!state.client || !state.connected) {
     return;
   }
-  if (state.projectsLoading) {
+  if (state.templatesLoading) {
     return;
   }
-  state.projectsLoading = true;
-  state.projectsError = null;
+  state.templatesLoading = true;
+  state.templatesError = null;
   try {
-    const res = await state.client.request<ProjectsListResult>("projects.list", {});
+    const res = await state.client.request<TemplatesListResult>("templates.list", {});
+
     if (res) {
-      state.projectsList = res.projects;
-      state.activeProjectId = res.activeProjectId;
+      state.templatesList = res.templates;
+      state.activeTemplateId = res.activeTemplateId;
+      if (res.activeTemplateId) {
+        void loadTemplateDetail(state, res.activeTemplateId);
+        void loadExecutions(state, res.activeTemplateId);
+      }
     }
   } catch (err) {
-    state.projectsError = String(err);
+    state.templatesError = String(err);
   } finally {
-    state.projectsLoading = false;
+    state.templatesLoading = false;
   }
 }
 
-export async function createProject(
+export async function loadTemplateDetail(state: ProjectsState, id: string) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  state.templateDetailLoading = true;
+  try {
+    const res = await state.client.request<ProjectTemplate>("templates.get", { id });
+    if (res) {
+      state.templateDetail = res;
+    }
+  } catch (err) {
+    state.templatesError = String(err);
+  } finally {
+    state.templateDetailLoading = false;
+  }
+}
+
+export async function createTemplate(
   state: ProjectsState,
   name: string,
-  type: ProjectType,
-  boundUrl?: string,
+  description?: string,
+  targetUrl?: string,
+  aiPrompt?: string,
 ) {
   if (!state.client || !state.connected) {
     return;
   }
-  state.projectCreating = true;
+  state.templatesError = null;
+  state.templateCreating = true;
   try {
-    const res = await state.client.request<Project>("projects.create", {
+    const res = await state.client.request<ProjectTemplate>("templates.create", {
       name,
-      type,
-      boundUrl: boundUrl ?? "",
+      description: description ?? "",
+      targetUrl: targetUrl ?? "",
+      aiPrompt: aiPrompt ?? "",
     });
     if (res) {
-      state.projectsList = [
-        ...state.projectsList,
-        {
-          id: res.id,
-          name: res.name,
-          type: res.type,
-          boundUrl: res.boundUrl,
-          createdAt: res.createdAt,
-          updatedAt: res.updatedAt,
-          documentCount: 0,
-        },
-      ];
-      if (!state.activeProjectId) {
-        state.activeProjectId = res.id;
+      state.templatesList.push(res);
+      if (!state.activeTemplateId) {
+        state.activeTemplateId = res.id;
       }
+      state.templateDetail = res;
       state.showCreateModal = false;
       state.createFormName = "";
-      state.createFormUrl = "";
+      state.createFormDescription = "";
+      state.createFormTargetUrl = "";
+      state.createFormAiPrompt = "";
+      void loadExecutions(state, res.id);
     }
   } catch (err) {
-    state.projectsError = String(err);
+    state.templatesError = String(err);
   } finally {
-    state.projectCreating = false;
+    state.templateCreating = false;
   }
 }
 
-export async function deleteProject(state: ProjectsState, id: string) {
-  if (!state.client || !state.connected) {
-    return;
-  }
-  try {
-    await state.client.request("projects.delete", { id });
-    state.projectsList = state.projectsList.filter((p) => p.id !== id);
-    if (state.activeProjectId === id) {
-      state.activeProjectId = state.projectsList[0]?.id ?? null;
-      state.projectDetail = null;
-    }
-  } catch (err) {
-    state.projectsError = String(err);
-  }
-}
-
-export async function setActiveProject(state: ProjectsState, id: string | null) {
-  if (!state.client || !state.connected) {
-    return;
-  }
-  try {
-    await state.client.request("projects.setActive", { id: id ?? undefined });
-    state.activeProjectId = id;
-    if (id) {
-      await loadProjectDetail(state, id);
-    } else {
-      state.projectDetail = null;
-    }
-  } catch (err) {
-    state.projectsError = String(err);
-  }
-}
-
-export async function updateProjectUrl(state: ProjectsState, id: string, url: string) {
-  if (!state.client || !state.connected) {
-    return;
-  }
-  try {
-    await state.client.request("projects.update", { id, boundUrl: url });
-    state.projectsList = state.projectsList.map((p) => (p.id === id ? { ...p, boundUrl: url } : p));
-    if (state.projectDetail?.id === id) {
-      state.projectDetail = { ...state.projectDetail, boundUrl: url };
-    }
-  } catch (err) {
-    state.projectsError = String(err);
-  }
-}
-
-export async function loadProjectDetail(state: ProjectsState, id: string) {
-  if (!state.client || !state.connected) {
-    return;
-  }
-  state.projectDetailLoading = true;
-  try {
-    const res = await state.client.request<Project>("projects.get", { id });
-    if (res) {
-      state.projectDetail = res;
-      state.projectDocuments = res.documents;
-      state.projectAnalysisStatus = res.analysisState?.status ?? "idle";
-    }
-  } catch (err) {
-    state.projectsError = String(err);
-  } finally {
-    state.projectDetailLoading = false;
-  }
-}
-
-export async function createDocument(
+export async function updateTemplate(
   state: ProjectsState,
-  projectId: string,
-  name: string,
-  type?: string,
-  content?: string,
-) {
-  if (!state.client || !state.connected) {
-    return;
-  }
-  try {
-    const res = await state.client.request<ProjectDocument>("projects.documents.create", {
-      projectId,
-      name,
-      type: type ?? "general",
-      content: content ?? "",
-    });
-    if (res) {
-      state.projectDocuments = [...state.projectDocuments, res];
-    }
-  } catch (err) {
-    state.projectsError = String(err);
-  }
-}
-
-export async function updateDocument(
-  state: ProjectsState,
-  projectId: string,
   id: string,
-  updates: { name?: string; content?: string },
+  updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
 ) {
   if (!state.client || !state.connected) {
     return;
   }
   try {
-    const res = await state.client.request<ProjectDocument>("projects.documents.update", {
-      projectId,
+    const res = await state.client.request<ProjectTemplate>("templates.update", {
       id,
       ...updates,
     });
     if (res) {
-      const idx = state.projectDocuments.findIndex((d) => d.id === id);
-      if (idx >= 0) {
-        state.projectDocuments = state.projectDocuments.map((d) => (d.id === id ? res : d));
+      const idx = state.templatesList.findIndex((t) => t.id === id);
+      if (idx !== -1) {
+        state.templatesList[idx] = res;
+      }
+      if (state.templateDetail?.id === id) {
+        state.templateDetail = res;
       }
     }
   } catch (err) {
-    state.projectsError = String(err);
+    state.templatesError = String(err);
   }
 }
 
-export async function deleteDocument(state: ProjectsState, projectId: string, id: string) {
+export async function deleteTemplate(state: ProjectsState, id: string) {
   if (!state.client || !state.connected) {
     return;
   }
   try {
-    await state.client.request("projects.documents.delete", { projectId, id });
-    state.projectDocuments = state.projectDocuments.filter((d) => d.id !== id);
+    await state.client.request("templates.delete", { id });
+    state.templatesList = state.templatesList.filter((t) => t.id !== id);
+    if (state.activeTemplateId === id) {
+      state.activeTemplateId = state.templatesList[0]?.id ?? null;
+      state.templateDetail = null;
+      if (state.activeTemplateId) {
+        void loadTemplateDetail(state, state.activeTemplateId);
+        void loadExecutions(state, state.activeTemplateId);
+      }
+    }
   } catch (err) {
-    state.projectsError = String(err);
+    state.templatesError = String(err);
   }
 }
 
-export async function analyzeProject(state: ProjectsState, projectId: string) {
+export async function setActiveTemplate(state: ProjectsState, id: string | null) {
   if (!state.client || !state.connected) {
     return;
   }
-  state.projectAnalysisStatus = "fetching";
   try {
-    await state.client.request("projects.analyze", { projectId });
-    // Poll for status
-    void pollAnalysisStatus(state, projectId);
+    await state.client.request("templates.setActive", { id: id ?? undefined });
+    state.activeTemplateId = id;
+    if (id) {
+      void loadTemplateDetail(state, id);
+      void loadExecutions(state, id);
+    } else {
+      state.templateDetail = null;
+      state.executionsList = [];
+    }
   } catch (err) {
-    state.projectAnalysisStatus = "error";
-    state.projectsError = String(err);
+    state.templatesError = String(err);
   }
 }
 
-export async function pollAnalysisStatus(state: ProjectsState, projectId: string) {
+// ============================================================================
+// EXECUTIONS
+// ============================================================================
+
+export async function loadExecutions(state: ProjectsState, templateId?: string) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  state.executionsLoading = true;
+  state.executionsError = null;
+  try {
+    const payload = templateId ? { templateId } : {};
+    const res = await state.client.request<ExecutionsListResult>("executions.list", payload);
+    if (res) {
+      state.executionsList = res.executions;
+    }
+  } catch (err) {
+    state.executionsError = String(err);
+  } finally {
+    state.executionsLoading = false;
+  }
+}
+
+export async function loadGlobalExecutions(state: ProjectsState) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  state.globalExecutionsLoading = true;
+  state.executionsError = null;
+  try {
+    const res = await state.client.request<ExecutionsListResult>("executions.list", {});
+    if (res) {
+      state.globalExecutionsList = res.executions;
+    }
+  } catch (err) {
+    state.executionsError = String(err);
+  } finally {
+    state.globalExecutionsLoading = false;
+  }
+}
+
+export async function loadExecutionDetail(state: ProjectsState, id: string) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  state.executionDetailLoading = true;
+  try {
+    const res = await state.client.request<ProjectExecute>("executions.get", { id });
+    if (res) {
+      state.executionDetail = res;
+    }
+  } catch (err) {
+    state.executionsError = String(err);
+  } finally {
+    state.executionDetailLoading = false;
+  }
+}
+
+export async function runExecution(state: ProjectsState, templateId: string) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  try {
+    const res = await state.client.request<ProjectExecute>("executions.run", { templateId });
+    if (res) {
+      state.executionsList.push(res);
+      // Wait a moment and continuously reload execution details
+      void runExecutionPoller(state, res.id);
+    }
+  } catch (err) {
+    state.executionsError = String(err);
+  }
+}
+
+export async function cancelExecution(state: ProjectsState, id: string) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  try {
+    const res = await state.client.request<ProjectExecute>("executions.cancel", { id });
+    if (res) {
+      const idx = state.executionsList.findIndex((e) => e.id === id);
+      if (idx !== -1) {
+        state.executionsList[idx] = res;
+      }
+      if (state.executionDetail?.id === id) {
+        state.executionDetail = res;
+      }
+    }
+  } catch (err) {
+    state.executionsError = String(err);
+  }
+}
+
+async function runExecutionPoller(state: ProjectsState, executionId: string) {
   for (let i = 0; i < 60; i++) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
     if (!state.client) {
       break;
     }
     try {
-      const res = await state.client.request<{ analysisState: { status: string } }>(
-        "projects.analyze.status",
-        { projectId },
-      );
+      const res = await state.client.request<ProjectExecute>("executions.get", { id: executionId });
       if (res) {
-        state.projectAnalysisStatus = res.analysisState.status;
-        if (res.analysisState.status === "complete" || res.analysisState.status === "error") {
-          await loadProjectDetail(state, projectId);
+        const idx = state.executionsList.findIndex((e) => e.id === executionId);
+        if (idx !== -1) {
+          state.executionsList[idx] = res;
+        }
+        if (state.executionDetail?.id === executionId) {
+          state.executionDetail = res;
+        }
+        if (res.status === "completed" || res.status === "error" || res.status === "cancelled") {
           return;
         }
       }
     } catch {
       break;
     }
+  }
+}
+
+export async function setActiveExecution(state: ProjectsState, id: string | null) {
+  state.activeExecutionId = id;
+  if (id) {
+    void loadExecutionDetail(state, id);
+  } else {
+    state.executionDetail = null;
   }
 }

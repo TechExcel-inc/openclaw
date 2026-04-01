@@ -400,65 +400,55 @@ export class OpenClawApp extends LitElement {
   @state() paletteQuery = "";
   @state() paletteActiveIndex = 0;
 
-  // Project workbench state
-  @state() projectsLoading = false;
-  @state() projectsError: string | null = null;
-  @state() projectsList: Array<{
+  // Templates state
+  @state() templatesLoading = false;
+  @state() templatesError: string | null = null;
+  @state() templatesList: Array<{
     id: string;
     name: string;
-    type: string;
-    boundUrl: string;
-    createdAt: number;
-    updatedAt: number;
-    documentCount: number;
+    targetUrl: string;
+    totalTestExecutions: number;
   }> = [];
-  @state() activeProjectId: string | null = null;
-  @state() projectDetail: {
+  @state() activeTemplateId: string | null = null;
+  @state() templateDetail: {
     id: string;
     name: string;
-    type: string;
-    boundUrl: string;
-    createdAt: number;
-    updatedAt: number;
-    documents: Array<{
-      id: string;
-      projectId: string;
-      name: string;
-      type: string;
-      content: string;
-      createdAt: number;
-      updatedAt: number;
-    }>;
-    analysisState?: { lastAnalyzedAt: number | null; status: string; error?: string };
+    description: string;
+    targetUrl: string;
+    aiPrompt: string;
   } | null = null;
-  @state() projectDetailLoading = false;
-  @state() projectDocuments: Array<{
-    id: string;
-    projectId: string;
-    name: string;
-    type: string;
-    content: string;
-    createdAt: number;
-    updatedAt: number;
-  }> = [];
-  @state() projectDocumentsLoading = false;
-  @state() projectAnalysisStatus: string | null = null;
-  @state() projectCreating = false;
+  @state() templateDetailLoading = false;
+
+  @state() templateCreating = false;
   @state() showCreateModal = false;
   @state() createFormName = "";
-  @state() createFormType: string = "general";
-  @state() createFormUrl = "";
-  @state() projectDocumentActive: {
+  @state() createFormDescription = "";
+  @state() createFormTargetUrl = "";
+  @state() createFormAiPrompt = "";
+
+  // Executions state
+  @state() executionsLoading = false;
+  @state() executionsError: string | null = null;
+  @state() executionsList: Array<{
     id: string;
-    projectId: string;
-    name: string;
-    type: string;
-    content: string;
-    createdAt: number;
-    updatedAt: number;
-  } | null = null;
-  @state() projectDocumentDraft: string | null = null;
-  @state() projectDocumentSaving = false;
+    startTime: number;
+    durationMs: number;
+    progressPercentage: number;
+    status: string;
+  }> = [];
+
+  @state() executionDetail: Record<string, unknown> | null = null;
+  @state() executionDetailLoading = false;
+  @state() activeExecutionId: string | null = null;
+
+  @state() globalExecutionsLoading = false;
+  @state() globalExecutionsList: Array<{
+    id: string;
+    startTime: number;
+    durationMs: number;
+    progressPercentage: number;
+    status: string;
+  }> = [];
 
   @state() overviewShowGatewayToken = false;
   @state() overviewShowGatewayPassword = false;
@@ -638,6 +628,15 @@ export class OpenClawApp extends LitElement {
   }
 
   setTab(next: Tab) {
+    if (next === "autoTestRun") {
+      void import("./controllers/projects.js").then((m) =>
+        m.loadGlobalExecutions(this as unknown as Parameters<typeof m.loadGlobalExecutions>[0]),
+      );
+    }
+    if (next === "projects") {
+      this.activeTemplateId = null;
+      this.templateDetail = null;
+    }
     setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], next);
     this.navDrawerOpen = false;
   }
@@ -817,55 +816,51 @@ export class OpenClawApp extends LitElement {
     this.applySettings({ ...this.settings, splitRatio: newRatio });
   }
 
-  // Project workbench handlers
-  async handleProjectCreate(name: string, type: string, boundUrl?: string) {
-    const { createProject } = await import("./controllers/projects.js");
-    await createProject(this as never, name, type as never, boundUrl);
+  // Templates & Executions Handlers
+  async handleTemplateCreate(
+    name: string,
+    description?: string,
+    targetUrl?: string,
+    aiPrompt?: string,
+  ) {
+    const { createTemplate } = await import("./controllers/projects.js");
+    await createTemplate(this as never, name, description, targetUrl, aiPrompt);
   }
 
-  async handleProjectDelete(id: string) {
-    const { deleteProject } = await import("./controllers/projects.js");
-    await deleteProject(this as never, id);
+  async handleTemplateDelete(id: string) {
+    const { deleteTemplate } = await import("./controllers/projects.js");
+    await deleteTemplate(this as never, id);
   }
 
-  async handleProjectSetActive(id: string) {
-    const { setActiveProject } = await import("./controllers/projects.js");
-    await setActiveProject(this as never, id);
+  async handleTemplateSetActive(id: string | null) {
+    const { setActiveTemplate } = await import("./controllers/projects.js");
+    await setActiveTemplate(this as never, id);
     if (this.tab !== "projects") {
       this.setTab("projects");
     }
   }
 
-  async handleProjectUpdateBoundUrl(url: string) {
-    const { updateProjectUrl } = await import("./controllers/projects.js");
-    if (this.activeProjectId) {
-      await updateProjectUrl(this as never, this.activeProjectId, url);
-    }
+  async handleTemplateUpdate(
+    id: string,
+    updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
+  ) {
+    const { updateTemplate } = await import("./controllers/projects.js");
+    await updateTemplate(this as never, id, updates);
   }
 
-  async handleProjectAnalyze() {
-    const { analyzeProject } = await import("./controllers/projects.js");
-    if (this.activeProjectId) {
-      await analyzeProject(this as never, this.activeProjectId);
-    }
+  async handleExecutionRun(templateId: string) {
+    const { runExecution } = await import("./controllers/projects.js");
+    await runExecution(this as never, templateId);
   }
 
-  async handleDocumentCreate(name: string, type?: string, content?: string) {
-    const { createDocument } = await import("./controllers/projects.js");
-    if (this.activeProjectId) {
-      await createDocument(this as never, this.activeProjectId, name, type, content);
-    }
+  async handleExecutionCancel(executionId: string) {
+    const { cancelExecution } = await import("./controllers/projects.js");
+    await cancelExecution(this as never, executionId);
   }
 
-  async handleDocumentSave(projectId: string, docId: string, content: string) {
-    const { updateDocument } = await import("./controllers/projects.js");
-    await updateDocument(this as never, projectId, docId, { content });
-    this.projectDocumentDraft = null;
-  }
-
-  async handleDocumentDelete(projectId: string, docId: string) {
-    const { deleteDocument } = await import("./controllers/projects.js");
-    await deleteDocument(this as never, projectId, docId);
+  async handleExecutionSetActive(id: string | null) {
+    const { setActiveExecution } = await import("./controllers/projects.js");
+    await setActiveExecution(this as never, id);
   }
 
   render() {

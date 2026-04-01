@@ -1,142 +1,62 @@
 import { Type } from "@sinclair/typebox";
 import { NonEmptyString } from "./primitives.js";
 
-const ProjectTypeSchema = Type.Union([
-  Type.Literal("auto-testing"),
-  Type.Literal("ai-coding"),
-  Type.Literal("customer-support"),
-  Type.Literal("general"),
-]);
+// Template Schemas
+export const TemplatesListParamsSchema = Type.Object({}, { additionalProperties: false });
 
-const ProjectDocumentTypeSchema = Type.Union([
-  Type.Literal("feature-map"),
-  Type.Literal("test-case"),
-  Type.Literal("documentation"),
-  Type.Literal("general"),
-]);
-
-const AnalysisStatusSchema = Type.Union([
-  Type.Literal("idle"),
-  Type.Literal("fetching"),
-  Type.Literal("analyzing"),
-  Type.Literal("complete"),
-  Type.Literal("error"),
-]);
-
-export const ProjectDocumentSchema = Type.Object(
-  {
-    id: NonEmptyString,
-    projectId: NonEmptyString,
-    name: NonEmptyString,
-    type: ProjectDocumentTypeSchema,
-    content: Type.String(),
-    createdAt: Type.Integer({ minimum: 0 }),
-    updatedAt: Type.Integer({ minimum: 0 }),
-  },
-  { additionalProperties: false },
-);
-
-export const ProjectAnalysisStateSchema = Type.Object(
-  {
-    lastAnalyzedAt: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
-    status: AnalysisStatusSchema,
-    error: Type.Optional(Type.String()),
-  },
-  { additionalProperties: false },
-);
-
-export const ProjectSchema = Type.Object(
-  {
-    id: NonEmptyString,
-    name: NonEmptyString,
-    type: ProjectTypeSchema,
-    boundUrl: Type.String(),
-    createdAt: Type.Integer({ minimum: 0 }),
-    updatedAt: Type.Integer({ minimum: 0 }),
-    documents: Type.Array(ProjectDocumentSchema),
-    analysisState: Type.Optional(ProjectAnalysisStateSchema),
-  },
-  { additionalProperties: false },
-);
-
-export const ProjectsListParamsSchema = Type.Object({}, { additionalProperties: false });
-
-export const ProjectsGetParamsSchema = Type.Object(
+export const TemplatesGetParamsSchema = Type.Object(
   { id: NonEmptyString },
   { additionalProperties: false },
 );
 
-export const ProjectsCreateParamsSchema = Type.Object(
+export const TemplatesCreateParamsSchema = Type.Object(
   {
     name: NonEmptyString,
-    type: ProjectTypeSchema,
-    boundUrl: Type.Optional(Type.String()),
+    description: Type.Optional(Type.String()),
+    targetUrl: Type.Optional(Type.String()),
+    aiPrompt: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
 
-export const ProjectsUpdateParamsSchema = Type.Object(
+export const TemplatesUpdateParamsSchema = Type.Object(
   {
     id: NonEmptyString,
     name: Type.Optional(NonEmptyString),
-    type: Type.Optional(ProjectTypeSchema),
-    boundUrl: Type.Optional(Type.String()),
+    description: Type.Optional(Type.String()),
+    targetUrl: Type.Optional(Type.String()),
+    aiPrompt: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
 
-export const ProjectsDeleteParamsSchema = Type.Object(
+export const TemplatesDeleteParamsSchema = Type.Object(
   { id: NonEmptyString },
   { additionalProperties: false },
 );
 
-export const ProjectsSetActiveParamsSchema = Type.Object(
+export const TemplatesSetActiveParamsSchema = Type.Object(
   { id: Type.Optional(NonEmptyString) },
   { additionalProperties: false },
 );
 
-export const ProjectsDocumentsListParamsSchema = Type.Object(
-  { projectId: NonEmptyString },
+// Executions Schemas
+export const ExecutionsListParamsSchema = Type.Object(
+  { templateId: Type.Optional(NonEmptyString) },
   { additionalProperties: false },
 );
 
-export const ProjectsDocumentsGetParamsSchema = Type.Object(
-  { projectId: NonEmptyString, id: NonEmptyString },
+export const ExecutionsGetParamsSchema = Type.Object(
+  { id: NonEmptyString },
   { additionalProperties: false },
 );
 
-export const ProjectsDocumentsCreateParamsSchema = Type.Object(
-  {
-    projectId: NonEmptyString,
-    name: NonEmptyString,
-    type: Type.Optional(ProjectDocumentTypeSchema),
-    content: Type.Optional(Type.String()),
-  },
+export const ExecutionsRunParamsSchema = Type.Object(
+  { templateId: NonEmptyString },
   { additionalProperties: false },
 );
 
-export const ProjectsDocumentsUpdateParamsSchema = Type.Object(
-  {
-    projectId: NonEmptyString,
-    id: NonEmptyString,
-    name: Type.Optional(NonEmptyString),
-    type: Type.Optional(ProjectDocumentTypeSchema),
-    content: Type.Optional(Type.String()),
-  },
-  { additionalProperties: false },
-);
-
-export const ProjectsDocumentsDeleteParamsSchema = Type.Object(
-  { projectId: NonEmptyString, id: NonEmptyString },
-  { additionalProperties: false },
-);
-
-export const ProjectsAnalyzeParamsSchema = Type.Object(
-  { projectId: NonEmptyString },
-  { additionalProperties: false },
-);
-
-export const ProjectsAnalyzeStatusParamsSchema = Type.Object(
-  { projectId: NonEmptyString },
+export const ExecutionsCancelParamsSchema = Type.Object(
+  { id: NonEmptyString },
   { additionalProperties: false },
 );

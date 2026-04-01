@@ -1,3 +1,4 @@
+import type { ProjectExecute } from "../../../src/projects/types.js";
 import type { EventLogEntry } from "./app-events.ts";
 import type { CompactionStatus, FallbackStatus } from "./app-tool-stream.ts";
 import type { CronModelSuggestionsState, CronState } from "./controllers/cron.ts";
@@ -10,9 +11,6 @@ import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
 import type { ResolvedTheme, ThemeMode, ThemeName } from "./theme.ts";
-
-type ProjectType = "auto-testing" | "ai-coding" | "customer-support" | "general";
-
 import type {
   AgentsListResult,
   AgentsFilesListResult,
@@ -379,71 +377,54 @@ export type AppViewState = {
     handleOpenSidebar: (content: string) => void;
     handleCloseSidebar: () => void;
     handleSplitRatioChange: (ratio: number) => void;
-    // Project workbench
-    projectsLoading: boolean;
-    projectsError: string | null;
-    projectsList: Array<{
+    // Templates
+    templatesLoading: boolean;
+    templatesError: string | null;
+    templatesList: Array<{
       id: string;
       name: string;
-      type: ProjectType;
-      boundUrl: string;
-      createdAt: number;
-      updatedAt: number;
-      documentCount: number;
+      targetUrl: string;
+      totalTestExecutions: number;
     }>;
-    activeProjectId: string | null;
-    projectDetail: {
+    activeTemplateId: string | null;
+    templateDetail: {
       id: string;
       name: string;
-      type: ProjectType;
-      boundUrl: string;
-      createdAt: number;
-      updatedAt: number;
-      documents: Array<{
-        id: string;
-        projectId: string;
-        name: string;
-        type: string;
-        content: string;
-        createdAt: number;
-        updatedAt: number;
-      }>;
-      analysisState?: { lastAnalyzedAt: number | null; status: string; error?: string };
+      description: string;
+      targetUrl: string;
+      aiPrompt: string;
     } | null;
-    projectDetailLoading: boolean;
-    projectDocuments: Array<{
-      id: string;
-      projectId: string;
-      name: string;
-      type: string;
-      content: string;
-      createdAt: number;
-      updatedAt: number;
-    }>;
-    projectDocumentsLoading: boolean;
-    projectAnalysisStatus: string | null;
-    projectCreating: boolean;
+    templateDetailLoading: boolean;
+    templateCreating: boolean;
     showCreateModal: boolean;
     createFormName: string;
-    createFormType: ProjectType;
-    createFormUrl: string;
-    projectDocumentActive: {
-      id: string;
-      projectId: string;
-      name: string;
-      type: string;
-      content: string;
-      createdAt: number;
-      updatedAt: number;
-    } | null;
-    projectDocumentDraft: string | null;
-    projectDocumentSaving: boolean;
-    handleProjectCreate: (name: string, type: ProjectType, boundUrl?: string) => Promise<void>;
-    handleProjectDelete: (id: string) => Promise<void>;
-    handleProjectSetActive: (id: string) => void;
-    handleProjectUpdateBoundUrl: (url: string) => Promise<void>;
-    handleProjectAnalyze: () => Promise<void>;
-    handleDocumentCreate: (name: string, type?: string, content?: string) => Promise<void>;
-    handleDocumentSave: (projectId: string, docId: string, content: string) => Promise<void>;
-    handleDocumentDelete: (projectId: string, docId: string) => Promise<void>;
+    createFormDescription: string;
+    createFormTargetUrl: string;
+    createFormAiPrompt: string;
+
+    // Executions
+    executionsLoading: boolean;
+    executionsError: string | null;
+    executionsList: ProjectExecute[];
+    activeExecutionId: string | null;
+    executionDetail: ProjectExecute | null;
+    executionDetailLoading: boolean;
+    globalExecutionsLoading: boolean;
+    globalExecutionsList: ProjectExecute[];
+
+    handleTemplateCreate: (
+      name: string,
+      description?: string,
+      targetUrl?: string,
+      aiPrompt?: string,
+    ) => Promise<void>;
+    handleTemplateDelete: (id: string) => Promise<void>;
+    handleTemplateSetActive: (id: string | null) => void;
+    handleTemplateUpdate: (
+      id: string,
+      updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
+    ) => Promise<void>;
+    handleExecutionSetActive: (id: string | null) => void;
+    handleExecutionRun: (templateId: string) => Promise<void>;
+    handleExecutionCancel: (executionId: string) => Promise<void>;
   };
