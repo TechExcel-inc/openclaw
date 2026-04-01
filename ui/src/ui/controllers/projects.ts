@@ -100,15 +100,18 @@ export async function createProject(
       boundUrl: boundUrl ?? "",
     });
     if (res) {
-      state.projectsList.push({
-        id: res.id,
-        name: res.name,
-        type: res.type,
-        boundUrl: res.boundUrl,
-        createdAt: res.createdAt,
-        updatedAt: res.updatedAt,
-        documentCount: 0,
-      });
+      state.projectsList = [
+        ...state.projectsList,
+        {
+          id: res.id,
+          name: res.name,
+          type: res.type,
+          boundUrl: res.boundUrl,
+          createdAt: res.createdAt,
+          updatedAt: res.updatedAt,
+          documentCount: 0,
+        },
+      ];
       if (!state.activeProjectId) {
         state.activeProjectId = res.id;
       }
@@ -162,12 +165,9 @@ export async function updateProjectUrl(state: ProjectsState, id: string, url: st
   }
   try {
     await state.client.request("projects.update", { id, boundUrl: url });
-    const project = state.projectsList.find((p) => p.id === id);
-    if (project) {
-      project.boundUrl = url;
-    }
+    state.projectsList = state.projectsList.map((p) => (p.id === id ? { ...p, boundUrl: url } : p));
     if (state.projectDetail?.id === id) {
-      state.projectDetail.boundUrl = url;
+      state.projectDetail = { ...state.projectDetail, boundUrl: url };
     }
   } catch (err) {
     state.projectsError = String(err);
@@ -211,7 +211,7 @@ export async function createDocument(
       content: content ?? "",
     });
     if (res) {
-      state.projectDocuments.push(res);
+      state.projectDocuments = [...state.projectDocuments, res];
     }
   } catch (err) {
     state.projectsError = String(err);
@@ -236,7 +236,7 @@ export async function updateDocument(
     if (res) {
       const idx = state.projectDocuments.findIndex((d) => d.id === id);
       if (idx >= 0) {
-        state.projectDocuments[idx] = res;
+        state.projectDocuments = state.projectDocuments.map((d) => (d.id === id ? res : d));
       }
     }
   } catch (err) {
