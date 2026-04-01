@@ -285,6 +285,8 @@ import {
   ExecutionsRunParamsSchema,
   type ExecutionsCancelParams,
   ExecutionsCancelParamsSchema,
+  type ProjectsAutoFormatPromptParams,
+  ProjectsAutoFormatPromptParamsSchema,
 } from "./schema.js";
 
 const ajv = new (AjvPkg as unknown as new (opts?: object) => import("ajv").default)({
@@ -452,6 +454,9 @@ export const validateExecutionsRunParams =
   ajv.compile<ExecutionsRunParams>(ExecutionsRunParamsSchema);
 export const validateExecutionsCancelParams = ajv.compile<ExecutionsCancelParams>(
   ExecutionsCancelParamsSchema,
+);
+export const validateProjectsAutoFormatPromptParams = ajv.compile<ProjectsAutoFormatPromptParams>(
+  ProjectsAutoFormatPromptParamsSchema,
 );
 export const validateDevicePairListParams = ajv.compile<DevicePairListParams>(
   DevicePairListParamsSchema,
@@ -645,6 +650,7 @@ export {
   ExecutionsGetParamsSchema,
   ExecutionsRunParamsSchema,
   ExecutionsCancelParamsSchema,
+  ProjectsAutoFormatPromptParamsSchema,
   LogsTailParamsSchema,
   LogsTailResultSchema,
   ChatHistoryParamsSchema,
@@ -771,6 +777,7 @@ export type {
   ExecutionsGetParams,
   ExecutionsRunParams,
   ExecutionsCancelParams,
+  ProjectsAutoFormatPromptParams,
   ExecApprovalsGetParams,
   ExecApprovalsSetParams,
   ExecApprovalsSnapshot,

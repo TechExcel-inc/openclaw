@@ -25,6 +25,7 @@ import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
 import { createSessionsYieldTool } from "./tools/sessions-yield-tool.js";
 import { createSubagentsTool } from "./tools/subagents-tool.js";
+import { createEadExecutionTool } from "./tools/ead-execution-tool.js";
 import { createTtsTool } from "./tools/tts-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
@@ -233,6 +234,7 @@ export function createOpenClawTools(
     createSubagentsTool({
       agentSessionKey: options?.agentSessionKey,
     }),
+    createEadExecutionTool(),
     createSessionStatusTool({
       agentSessionKey: options?.agentSessionKey,
       config: resolvedConfig,

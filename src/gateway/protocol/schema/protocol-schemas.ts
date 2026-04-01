@@ -147,6 +147,7 @@ import {
   ExecutionsGetParamsSchema,
   ExecutionsRunParamsSchema,
   ExecutionsCancelParamsSchema,
+  ProjectsAutoFormatPromptParamsSchema,
 } from "./projects.js";
 import { PushTestParamsSchema, PushTestResultSchema } from "./push.js";
 import {
@@ -340,6 +341,7 @@ export const ProtocolSchemas = {
   ExecutionsGetParams: ExecutionsGetParamsSchema,
   ExecutionsRunParams: ExecutionsRunParamsSchema,
   ExecutionsCancelParams: ExecutionsCancelParamsSchema,
+  ProjectsAutoFormatPromptParams: ProjectsAutoFormatPromptParamsSchema,
 } satisfies Record<string, TSchema>;
 
 export const PROTOCOL_VERSION = 3 as const;

@@ -6,11 +6,14 @@ import {
 } from "../../../src/routing/session-key.js";
 import { t } from "../i18n/index.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
-import { refreshChatAvatar } from "./app-chat.ts";
+import {
+  refreshChatAvatar,
+} from "./app-chat.ts";
 import { renderUsageTab } from "./app-render-usage-tab.ts";
 import {
   renderChatControls,
   renderChatMobileToggle,
+  renderChatProjectModal,
   renderChatSessionSelect,
   renderTab,
   renderSidebarConnectionStatus,
@@ -397,6 +400,31 @@ export function renderApp(state: AppViewState) {
       ? rawDeliveryToSuggestions.filter((value) => isHttpUrl(value))
       : rawDeliveryToSuggestions;
 
+  let projectChatTitle: string | undefined = undefined;
+  if (state.tab === "projects" || state.tab === "autoTestRun") {
+    const exec = state.executionDetail || state.executionsList.find(e => e.id === state.activeExecutionId);
+    if (state.activeExecutionId && exec) {
+       projectChatTitle = exec.status === "completed" 
+         ? `${exec.name} - Finished`
+         : `${exec.name} - Learning In Progress`;
+    } else if (state.templateDetail) {
+      projectChatTitle = `Project Template: ${state.templateDetail.name}`;
+    } else {
+      projectChatTitle = "Project Chat";
+    }
+  }
+  const projectChatProps: import("./views/chat.js").ChatProps = {
+    state,
+    avatarUrl: chatAvatarUrl,
+    showThinking,
+    showToolCalls,
+    disabledReason: chatDisabledReason,
+    focus: chatFocus,
+    activeAgentId: resolvedAgentId,
+    requestHostUpdate,
+    customAssistantName: projectChatTitle,
+  };
+
   return html`
     ${renderCommandPalette({
       open: state.paletteOpen,
@@ -445,23 +473,7 @@ export function renderApp(state: AppViewState) {
             <span class="nav-collapse-toggle__icon" aria-hidden="true">${icons.menu}</span>
           </button>
           <div class="topnav-shell__content">
-            ${
-              state.activeTemplateId
-                ? html`
-                  <div class="topbar-url">
-                    <url-bar
-                      .url=${state.templateDetail?.targetUrl ?? state.templatesList.find((p) => p.id === state.activeTemplateId)?.targetUrl ?? ""}
-                      .loading=${false}
-                      @url-change=${(e: CustomEvent) => {
-                        void state.handleTemplateUpdate(state.activeTemplateId!, {
-                          targetUrl: e.detail,
-                        });
-                      }}
-                    ></url-bar>
-                  </div>
-                `
-                : nothing
-            }
+            <!-- Legacy URL-bar removed -->
             <dashboard-header .tab=${state.tab}></dashboard-header>
           </div>
           <div class="topnav-shell__actions">
@@ -636,9 +648,9 @@ export function renderApp(state: AppViewState) {
 
         ${
           state.tab === "projects"
-            ? lazyRender(lazyProjects, (m) => m.renderProjectsView(state))
+            ? lazyRender(lazyProjects, (m) => m.renderProjectsView(state, projectChatProps))
             : state.tab === "autoTestRun"
-              ? lazyRender(lazyProjects, (m) => m.renderAutoTestRunView(state))
+              ? lazyRender(lazyProjects, (m) => m.renderAutoTestRunView(state, projectChatProps))
               : state.tab === "overview"
                 ? renderOverview({
                     connected: state.connected,
@@ -2051,6 +2063,7 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
       </main>
+      ${renderChatProjectModal(state)}
       ${renderExecApprovalPrompt(state)}
       ${renderGatewayUrlConfirmation(state)}
       ${nothing}

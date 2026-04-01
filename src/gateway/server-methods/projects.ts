@@ -1,3 +1,9 @@
+import { completeSimple, type TextContent } from "@mariozechner/pi-ai";
+import { resolveDefaultModelForAgent } from "../../agents/model-selection.js";
+import { resolveModelAsync } from "../../agents/pi-embedded-runner/model.js";
+import { prepareModelForSimpleCompletion } from "../../agents/simple-completion-transport.js";
+import { getApiKeyForModel, requireApiKey } from "../../agents/model-auth.js";
+import { loadConfig } from "../../config/config.js";
 import {
   loadProjectsStore,
   resolveProjectsStorePath,
@@ -17,6 +23,7 @@ import {
   validateExecutionsGetParams,
   validateExecutionsRunParams,
   validateExecutionsCancelParams,
+  validateProjectsAutoFormatPromptParams,
 } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -381,6 +388,79 @@ export const projectsHandlers: GatewayRequestHandlers = {
       respond(true, execution);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  "projects.autoFormatPrompt": async ({ params, respond, context: _context }) => {
+    if (!validateProjectsAutoFormatPromptParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid projects.autoFormatPrompt params: ${formatValidationErrors(validateProjectsAutoFormatPromptParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const { text } = params as { text: string };
+    try {
+      const cfg = loadConfig();
+      const modelRef = resolveDefaultModelForAgent({ cfg });
+      const resolved = await resolveModelAsync(modelRef.provider, modelRef.model, undefined, cfg);
+      if (!resolved.model) {
+        respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, "failed to resolve model for auto formatting"));
+        return;
+      }
+      const completionModel = prepareModelForSimpleCompletion({ model: resolved.model, cfg });
+      const apiKey = requireApiKey(
+        await getApiKeyForModel({ model: completionModel, cfg }),
+        modelRef.provider,
+      );
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45_000);
+      try {
+        const result = await completeSimple(
+          completionModel,
+          {
+            messages: [
+              {
+                role: "user",
+                content: `Role: You are an expert Markdown formatter and prompt engineer.\nTask: Re-format the following raw text into a highly structured, well-organized Markdown document with clear headings, bullet points, and sections to make it highly readable and professional as an AI prompt.\n\nCRITICAL CONSTRAINTS:\n1. Do NOT change the core meaning or instructions.\n2. Do NOT output a single run-on paragraph. You MUST use newlines, bullet points, and # headings to space the content meaningfully.\n3. ONLY output the raw Markdown format. Do NOT wrap the output in a markdown \`\`\` code fence block.\n\nText to format:\n${text}`,
+                timestamp: Date.now(),
+              },
+            ],
+          },
+          {
+            apiKey,
+            maxTokens: 4000,
+            temperature: 0.2,
+            signal: controller.signal,
+          },
+        );
+
+        let formattedText = result.content
+          .filter((b): b is TextContent => b.type === "text")
+          .map((b) => b.text)
+          .join("")
+          .trim();
+
+        if (formattedText.startsWith("```markdown")) {
+          formattedText = formattedText.substring("```markdown".length).trim();
+        } else if (formattedText.startsWith("```")) {
+          formattedText = formattedText.substring("```".length).trim();
+        }
+        if (formattedText.endsWith("```")) {
+          formattedText = formattedText.substring(0, formattedText.length - 3).trim();
+        }
+
+        respond(true, { formattedText });
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (err) {
+       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
   },
 };

@@ -49,8 +49,8 @@ export async function loadProjectsStore(storePath: string): Promise<ProjectsStor
     if (parsedRecord.version === 2) {
       store = {
         version: 2,
-        templates: templates.filter(Boolean) as never as ProjectsStoreFile["templates"],
-        executions: executions.filter(Boolean) as never as ProjectsStoreFile["executions"],
+        templates: templates.filter(Boolean) as unknown as ProjectsStoreFile["templates"],
+        executions: executions.filter(Boolean) as unknown as ProjectsStoreFile["executions"],
         activeTemplateId,
       };
     } else {
@@ -70,8 +70,8 @@ export async function loadProjectsStore(storePath: string): Promise<ProjectsStor
 
       store = {
         version: 2,
-        templates: migratedTemplates as never as ProjectsStoreFile["templates"],
-        executions: executions.filter(Boolean) as never as ProjectsStoreFile["executions"],
+        templates: migratedTemplates as unknown as ProjectsStoreFile["templates"],
+        executions: executions.filter(Boolean) as unknown as ProjectsStoreFile["executions"],
         activeTemplateId:
           typeof parsedRecord.activeProjectId === "string" ? parsedRecord.activeProjectId : null,
       };

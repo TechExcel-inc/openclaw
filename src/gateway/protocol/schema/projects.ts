@@ -60,3 +60,8 @@ export const ExecutionsCancelParamsSchema = Type.Object(
   { id: NonEmptyString },
   { additionalProperties: false },
 );
+
+export const ProjectsAutoFormatPromptParamsSchema = Type.Object(
+  { text: NonEmptyString },
+  { additionalProperties: false },
+);

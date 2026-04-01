@@ -28,7 +28,7 @@ export type ProjectTemplate = {
   id: string;
   name: string;
   description: string;
-  targetUrl: string;
+  targetUrl?: string;
   aiPrompt: string;
   totalTestSteps: number;
   failedTestSteps: number;
@@ -77,7 +77,7 @@ export type ProjectExecute = {
   linkedTemplateId: string;
   name: string;
   description: string;
-  targetUrl: string;
+  targetUrl?: string;
   aiPrompt: string; // the prompt used for this run
   status: ExecutionStatus;
   progressPercentage: number;

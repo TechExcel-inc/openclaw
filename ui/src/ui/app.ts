@@ -403,52 +403,35 @@ export class OpenClawApp extends LitElement {
   // Templates state
   @state() templatesLoading = false;
   @state() templatesError: string | null = null;
-  @state() templatesList: Array<{
-    id: string;
-    name: string;
-    targetUrl: string;
-    totalTestExecutions: number;
-  }> = [];
+  @state() templatesList: import("../../../src/projects/types.js").ProjectTemplate[] = [];
   @state() activeTemplateId: string | null = null;
-  @state() templateDetail: {
-    id: string;
-    name: string;
-    description: string;
-    targetUrl: string;
-    aiPrompt: string;
-  } | null = null;
+  @state() templateDetail: import("../../../src/projects/types.js").ProjectTemplate | null = null;
   @state() templateDetailLoading = false;
 
   @state() templateCreating = false;
   @state() showCreateModal = false;
+  @state() templateModalMode: "create" | "edit" | "run" | null = null;
+  @state() templateModalPreviewMarkdown = false;
+  @state() templateAutoFormatting = false;
   @state() createFormName = "";
   @state() createFormDescription = "";
-  @state() createFormTargetUrl = "";
   @state() createFormAiPrompt = "";
+  @state() chatActiveTemplateId: string | null = null;
+  @state() chatSelectedTemplateId: string | null = null;
+  @state() chatProjectTab: "templates" | "executions" = "templates";
+  @state() showChatProjectModal = false;
 
   // Executions state
   @state() executionsLoading = false;
   @state() executionsError: string | null = null;
-  @state() executionsList: Array<{
-    id: string;
-    startTime: number;
-    durationMs: number;
-    progressPercentage: number;
-    status: string;
-  }> = [];
+  @state() executionsList: import("../../../src/projects/types.js").ProjectExecute[] = [];
 
-  @state() executionDetail: Record<string, unknown> | null = null;
+  @state() executionDetail: import("../../../src/projects/types.js").ProjectExecute | null = null;
   @state() executionDetailLoading = false;
   @state() activeExecutionId: string | null = null;
 
   @state() globalExecutionsLoading = false;
-  @state() globalExecutionsList: Array<{
-    id: string;
-    startTime: number;
-    durationMs: number;
-    progressPercentage: number;
-    status: string;
-  }> = [];
+  @state() globalExecutionsList: import("../../../src/projects/types.js").ProjectExecute[] = [];
 
   @state() overviewShowGatewayToken = false;
   @state() overviewShowGatewayPassword = false;
@@ -634,8 +617,9 @@ export class OpenClawApp extends LitElement {
       );
     }
     if (next === "projects") {
-      this.activeTemplateId = null;
+      // Reset page-local view state only — each page manages its own state
       this.templateDetail = null;
+      this.activeExecutionId = null;
     }
     setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], next);
     this.navDrawerOpen = false;
@@ -820,11 +804,10 @@ export class OpenClawApp extends LitElement {
   async handleTemplateCreate(
     name: string,
     description?: string,
-    targetUrl?: string,
     aiPrompt?: string,
   ) {
     const { createTemplate } = await import("./controllers/projects.js");
-    await createTemplate(this as never, name, description, targetUrl, aiPrompt);
+    await createTemplate(this as never, name, description, aiPrompt);
   }
 
   async handleTemplateDelete(id: string) {
@@ -835,22 +818,25 @@ export class OpenClawApp extends LitElement {
   async handleTemplateSetActive(id: string | null) {
     const { setActiveTemplate } = await import("./controllers/projects.js");
     await setActiveTemplate(this as never, id);
-    if (this.tab !== "projects") {
-      this.setTab("projects");
-    }
+    this.requestUpdate();
   }
 
   async handleTemplateUpdate(
     id: string,
-    updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
+    updates: { name?: string; description?: string; aiPrompt?: string },
   ) {
     const { updateTemplate } = await import("./controllers/projects.js");
     await updateTemplate(this as never, id, updates);
   }
 
+  async handleAutoFormatPrompt(text: string): Promise<string> {
+    const { autoFormatPrompt } = await import("./controllers/projects.js");
+    return autoFormatPrompt(this as never, text);
+  }
+
   async handleExecutionRun(templateId: string) {
     const { runExecution } = await import("./controllers/projects.js");
-    await runExecution(this as never, templateId);
+    return await runExecution(this as never, templateId);
   }
 
   async handleExecutionCancel(executionId: string) {

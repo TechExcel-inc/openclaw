@@ -380,27 +380,23 @@ export type AppViewState = {
     // Templates
     templatesLoading: boolean;
     templatesError: string | null;
-    templatesList: Array<{
-      id: string;
-      name: string;
-      targetUrl: string;
-      totalTestExecutions: number;
-    }>;
+    templatesList: import("../../../src/projects/types.js").ProjectTemplate[];
     activeTemplateId: string | null;
-    templateDetail: {
-      id: string;
-      name: string;
-      description: string;
-      targetUrl: string;
-      aiPrompt: string;
-    } | null;
+    templateDetail: import("../../../src/projects/types.js").ProjectTemplate | null;
     templateDetailLoading: boolean;
     templateCreating: boolean;
     showCreateModal: boolean;
+    templateModalMode: "create" | "edit" | "run" | null;
+    templateModalPreviewMarkdown: boolean;
+    templateAutoFormatting: boolean;
     createFormName: string;
     createFormDescription: string;
-    createFormTargetUrl: string;
     createFormAiPrompt: string;
+    // Chat Project Integration
+    chatActiveTemplateId: string | null;
+    chatSelectedTemplateId: string | null;
+    chatProjectTab: "templates" | "executions";
+    showChatProjectModal: boolean;
 
     // Executions
     executionsLoading: boolean;
@@ -424,7 +420,8 @@ export type AppViewState = {
       id: string,
       updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
     ) => Promise<void>;
+    handleAutoFormatPrompt: (text: string) => Promise<string>;
     handleExecutionSetActive: (id: string | null) => void;
-    handleExecutionRun: (templateId: string) => Promise<void>;
+    handleExecutionRun: (templateId: string) => Promise<ProjectExecute | undefined>;
     handleExecutionCancel: (executionId: string) => Promise<void>;
   };

@@ -29,7 +29,6 @@ export type ProjectsState = {
   showCreateModal: boolean;
   createFormName: string;
   createFormDescription: string;
-  createFormTargetUrl: string;
   createFormAiPrompt: string;
 
   // Executions
@@ -98,7 +97,6 @@ export async function createTemplate(
   state: ProjectsState,
   name: string,
   description?: string,
-  targetUrl?: string,
   aiPrompt?: string,
 ) {
   if (!state.client || !state.connected) {
@@ -110,7 +108,6 @@ export async function createTemplate(
     const res = await state.client.request<ProjectTemplate>("templates.create", {
       name,
       description: description ?? "",
-      targetUrl: targetUrl ?? "",
       aiPrompt: aiPrompt ?? "",
     });
     if (res) {
@@ -122,7 +119,6 @@ export async function createTemplate(
       state.showCreateModal = false;
       state.createFormName = "";
       state.createFormDescription = "";
-      state.createFormTargetUrl = "";
       state.createFormAiPrompt = "";
       void loadExecutions(state, res.id);
     }
@@ -136,7 +132,7 @@ export async function createTemplate(
 export async function updateTemplate(
   state: ProjectsState,
   id: string,
-  updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
+  updates: { name?: string; description?: string; aiPrompt?: string },
 ) {
   if (!state.client || !state.connected) {
     return;
@@ -158,6 +154,21 @@ export async function updateTemplate(
   } catch (err) {
     state.templatesError = String(err);
   }
+}
+
+export async function autoFormatPrompt(state: ProjectsState, text: string): Promise<string> {
+  if (!state.client || !state.connected) {
+    return text;
+  }
+  try {
+    const res = await state.client.request<{ formattedText: string }>("projects.autoFormatPrompt", { text });
+    if (res?.formattedText) {
+      return res.formattedText;
+    }
+  } catch (err) {
+    state.templatesError = String(err);
+  }
+  return text;
 }
 
 export async function deleteTemplate(state: ProjectsState, id: string) {
@@ -188,7 +199,7 @@ export async function setActiveTemplate(state: ProjectsState, id: string | null)
     await state.client.request("templates.setActive", { id: id ?? undefined });
     state.activeTemplateId = id;
     if (id) {
-      void loadTemplateDetail(state, id);
+      await loadTemplateDetail(state, id);
       void loadExecutions(state, id);
     } else {
       state.templateDetail = null;
@@ -267,6 +278,7 @@ export async function runExecution(state: ProjectsState, templateId: string) {
       state.executionsList.push(res);
       // Wait a moment and continuously reload execution details
       void runExecutionPoller(state, res.id);
+      return res;
     }
   } catch (err) {
     state.executionsError = String(err);
@@ -319,9 +331,18 @@ async function runExecutionPoller(state: ProjectsState, executionId: string) {
   }
 }
 
-export async function setActiveExecution(state: ProjectsState, id: string | null) {
+export async function setActiveExecution(
+  state: ProjectsState & { sessionKey?: string },
+  id: string | null,
+) {
   state.activeExecutionId = id;
   if (id) {
+    if (state.client && state.sessionKey) {
+      void state.client.request("chat.inject", {
+        sessionKey: state.sessionKey,
+        message: `[System] The user is viewing Execution Run ID: ${id}. This is a Learning/Exploration Phase. Please use the \`read_ead_execution\` tool to load the feature map (EAD-FM) nodes and generated test cases to answer their questions.`,
+      }).catch(err => console.error("Failed to inject context:", err));
+    }
     void loadExecutionDetail(state, id);
   } else {
     state.executionDetail = null;
