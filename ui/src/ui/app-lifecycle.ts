@@ -17,7 +17,7 @@ import {
   syncThemeWithSettings,
 } from "./app-settings.ts";
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
-import type { Tab } from "./navigation.ts";
+import { isChatTab, type Tab } from "./navigation.ts";
 
 type LifecycleHost = {
   basePath: string;
@@ -85,11 +85,11 @@ export function handleDisconnected(host: LifecycleHost) {
 }
 
 export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unknown>) {
-  if (host.tab === "chat" && host.chatManualRefreshInFlight) {
+  if (isChatTab(host.tab) && host.chatManualRefreshInFlight) {
     return;
   }
   if (
-    host.tab === "chat" &&
+    isChatTab(host.tab) &&
     (changed.has("chatMessages") ||
       changed.has("chatToolMessages") ||
       changed.has("chatStream") ||

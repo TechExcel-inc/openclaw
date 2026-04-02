@@ -454,7 +454,7 @@ function renderRow(
   );
   const canLink = row.kind !== "global";
   const chatUrl = canLink
-    ? `${pathForTab("chat", basePath)}?session=${encodeURIComponent(row.key)}`
+    ? `${pathForTab("chatGeneral", basePath)}?session=${encodeURIComponent(row.key)}`
     : null;
   const badgeClass =
     row.kind === "direct"

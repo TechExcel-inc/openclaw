@@ -13,12 +13,17 @@ import {
   renderChatMobileToggle,
   renderChatProjectModal,
   renderChatSessionSelect,
+  renderProjectChatGate,
   renderTab,
   renderSidebarConnectionStatus,
   renderTopbarThemeModeToggle,
   switchChatSession,
 } from "./app-render.helpers.ts";
 import type { AppViewState } from "./app-view-state.ts";
+import {
+  formatExecutionProjectMarkdown,
+  formatTemplateProjectMarkdown,
+} from "./chat/ead-project-markdown.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
@@ -92,7 +97,13 @@ import "./components/url-bar.ts";
 import "./components/project-sidebar.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "./external-link.ts";
 import { icons } from "./icons.ts";
-import { normalizeBasePath, TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation.ts";
+import {
+  isChatTab,
+  normalizeBasePath,
+  TAB_GROUPS,
+  subtitleForTab,
+  titleForTab,
+} from "./navigation.ts";
 import { agentLogoUrl } from "./views/agents-utils.ts";
 import {
   resolveAgentConfig,
@@ -282,6 +293,37 @@ type AutomationSectionKey = (typeof AUTOMATION_SECTION_KEYS)[number];
 type InfrastructureSectionKey = (typeof INFRASTRUCTURE_SECTION_KEYS)[number];
 type AiAgentsSectionKey = (typeof AI_AGENTS_SECTION_KEYS)[number];
 
+function resolveChatProjectLeftMarkdown(state: AppViewState): string | null {
+  if (state.tab !== "chatProject") {
+    return null;
+  }
+  if (!state.chatActiveTemplateId || state.chatShowNoneProjectChat) {
+    return null;
+  }
+  const tid = state.chatActiveTemplateId;
+  const template = state.templatesList.find((t) => t.id === tid);
+  if (template) {
+    return formatTemplateProjectMarkdown(template);
+  }
+  const run = state.globalExecutionsList?.find((e) => e.id === tid);
+  if (run) {
+    return formatExecutionProjectMarkdown(run);
+  }
+  // Lists may still be loading after connect / tab switch — still show the panel.
+  if (state.templatesLoading || state.globalExecutionsLoading) {
+    return "## Project\n\nLoading project details…";
+  }
+  return [
+    "## Project",
+    "",
+    "Project metadata is not loaded yet, or this selection no longer exists on the gateway.",
+    "",
+    `**Selection id:** \`${tid}\``,
+    "",
+    "Try **Test Plan** in the sidebar once, or pick the project again from the chat project picker.",
+  ].join("\n");
+}
+
 function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
   const list = state.agentsList?.agents ?? [];
   const parsed = parseAgentSessionKey(state.sessionKey);
@@ -319,7 +361,9 @@ export function renderApp(state: AppViewState) {
   const sessionsCount = state.sessionsResult?.count ?? null;
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
   const chatDisabledReason = state.connected ? null : t("chat.disconnected");
-  const isChat = state.tab === "chat";
+  const isChat = isChatTab(state.tab);
+  const chatProjectLeftMarkdown = resolveChatProjectLeftMarkdown(state);
+  const chatLeftPanelOpen = Boolean(chatProjectLeftMarkdown) && !state.projectLeftPanelDismissed;
   const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
   const navDrawerOpen = Boolean(state.navDrawerOpen && !chatFocus && !state.onboarding);
   const navCollapsed = Boolean(state.settings.navCollapsed && !navDrawerOpen);
@@ -416,22 +460,7 @@ export function renderApp(state: AppViewState) {
   const projectChatProps: ChatProps = {
     sessionKey: state.sessionKey,
     onSessionKeyChange: (next) => {
-      state.sessionKey = next;
-      state.chatMessage = "";
-      state.chatAttachments = [];
-      state.chatStream = null;
-      state.chatStreamStartedAt = null;
-      state.chatRunId = null;
-      state.chatQueue = [];
-      state.resetToolStream();
-      state.resetChatScroll();
-      state.applySettings({
-        ...state.settings,
-        sessionKey: next,
-        lastActiveSessionKey: next,
-      });
-      void state.loadAssistantIdentity();
-      void loadChatHistory(state);
+      switchChatSession(state, next);
       void refreshChatAvatar(state);
     },
     thinkingLevel: state.chatThinkingLevel,
@@ -496,17 +525,8 @@ export function renderApp(state: AppViewState) {
     agentsList: state.agentsList,
     currentAgentId: resolvedAgentId ?? "main",
     onAgentChange: (agentId: string) => {
-      state.sessionKey = buildAgentMainSessionKey({ agentId });
-      state.chatMessages = [];
-      state.chatStream = null;
-      state.chatRunId = null;
-      state.applySettings({
-        ...state.settings,
-        sessionKey: state.sessionKey,
-        lastActiveSessionKey: state.sessionKey,
-      });
-      void loadChatHistory(state);
-      void state.loadAssistantIdentity();
+      switchChatSession(state, buildAgentMainSessionKey({ agentId }));
+      void refreshChatAvatar(state);
     },
     onNavigateToAgent: () => {
       state.agentsSelectedId = resolvedAgentId;
@@ -524,6 +544,16 @@ export function renderApp(state: AppViewState) {
     onOpenSidebar: (content: string) => state.handleOpenSidebar(content),
     onCloseSidebar: () => state.handleCloseSidebar(),
     onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
+    leftSidebarOpen: chatLeftPanelOpen,
+    leftSidebarMarkdown: chatProjectLeftMarkdown,
+    leftSidebarTitle: "Project",
+    leftSplitRatio: state.projectLeftSplitRatio,
+    onLeftSplitRatioChange: (ratio: number) => {
+      state.projectLeftSplitRatio = ratio;
+    },
+    onCloseLeftSidebar: () => {
+      state.projectLeftPanelDismissed = true;
+    },
     assistantName: projectChatTitle ?? state.assistantName,
     assistantAvatar: state.assistantAvatar,
     basePath: state.basePath ?? "",
@@ -547,7 +577,7 @@ export function renderApp(state: AppViewState) {
         state.setTab(tab as import("./navigation.ts").Tab);
       },
       onSlashCommand: (cmd) => {
-        state.setTab("chat" as import("./navigation.ts").Tab);
+        state.setTab("chatGeneral" as import("./navigation.ts").Tab);
         state.chatMessage = cmd.endsWith(" ") ? cmd : `${cmd} `;
       },
     })}
@@ -608,10 +638,10 @@ export function renderApp(state: AppViewState) {
                   navCollapsed
                     ? nothing
                     : html`
-                        <img class="sidebar-brand__logo" src="${agentLogoUrl(basePath)}" alt="EAD-Test" />
+                        <img class="sidebar-brand__logo" src="${agentLogoUrl(basePath)}" alt="EAD-Exp" />
                         <span class="sidebar-brand__copy">
                           <span class="sidebar-brand__eyebrow">${t("nav.control")}</span>
-                          <span class="sidebar-brand__title">EAD-Test</span>
+                          <span class="sidebar-brand__title">EAD-Exp</span>
                         </span>
                       `
                 }
@@ -734,19 +764,46 @@ export function renderApp(state: AppViewState) {
         ${
           state.tab === "config"
             ? nothing
-            : html`<section class="content-header">
-              <div>
-                ${
-                  isChat
-                    ? renderChatSessionSelect(state)
-                    : html`<div class="page-title">${titleForTab(state.tab)}</div>`
-                }
-                ${isChat ? nothing : html`<div class="page-sub">${subtitleForTab(state.tab)}</div>`}
-              </div>
-              <div class="page-meta">
-                ${state.lastError ? html`<div class="pill danger">${state.lastError}</div>` : nothing}
-                ${isChat ? renderChatControls(state) : nothing}
-              </div>
+            : html`<section class="content-header ${isChat ? "content-header--chat" : ""}">
+              ${
+                isChat
+                  ? state.tab === "chatProject"
+                    ? html`
+                        ${renderChatSessionSelect(state)}
+                        ${
+                          state.lastError
+                            ? html`<div class="content-header__chat-error pill danger">${state.lastError}</div>`
+                            : nothing
+                        }
+                      `
+                    : html`
+                        <div>
+                          <div class="page-title">${titleForTab(state.tab)}</div>
+                          <div class="page-sub">${subtitleForTab(state.tab)}</div>
+                        </div>
+                        <div class="page-meta page-meta--chat-general">
+                          ${renderChatControls(state)}
+                          ${
+                            state.lastError
+                              ? html`<div class="pill danger">${state.lastError}</div>`
+                              : nothing
+                          }
+                        </div>
+                      `
+                  : html`
+                      <div>
+                        <div class="page-title">${titleForTab(state.tab)}</div>
+                        <div class="page-sub">${subtitleForTab(state.tab)}</div>
+                      </div>
+                      <div class="page-meta">
+                        ${
+                          state.lastError
+                            ? html`<div class="pill danger">${state.lastError}</div>`
+                            : nothing
+                        }
+                      </div>
+                    `
+              }
             </section>`
         }
 
@@ -941,7 +998,7 @@ export function renderApp(state: AppViewState) {
                   },
                   onNavigateToChat: (sessionKey) => {
                     switchChatSession(state, sessionKey);
-                    state.setTab("chat" as import("./navigation.ts").Tab);
+                    state.setTab("chatGeneral" as import("./navigation.ts").Tab);
                   },
                 }),
               )
@@ -1045,7 +1102,7 @@ export function renderApp(state: AppViewState) {
                   },
                   onNavigateToChat: (sessionKey) => {
                     switchChatSession(state, sessionKey);
-                    state.setTab("chat" as import("./navigation.ts").Tab);
+                    state.setTab("chatGeneral" as import("./navigation.ts").Tab);
                   },
                 }),
               )
@@ -1565,26 +1622,11 @@ export function renderApp(state: AppViewState) {
         }
 
         ${
-          state.tab === "chat"
+          state.tab === "chatGeneral" || (state.tab === "chatProject" && state.chatActiveTemplateId)
             ? renderChat({
                 sessionKey: state.sessionKey,
                 onSessionKeyChange: (next) => {
-                  state.sessionKey = next;
-                  state.chatMessage = "";
-                  state.chatAttachments = [];
-                  state.chatStream = null;
-                  state.chatStreamStartedAt = null;
-                  state.chatRunId = null;
-                  state.chatQueue = [];
-                  state.resetToolStream();
-                  state.resetChatScroll();
-                  state.applySettings({
-                    ...state.settings,
-                    sessionKey: next,
-                    lastActiveSessionKey: next,
-                  });
-                  void state.loadAssistantIdentity();
-                  void loadChatHistory(state);
+                  switchChatSession(state, next);
                   void refreshChatAvatar(state);
                 },
                 thinkingLevel: state.chatThinkingLevel,
@@ -1649,17 +1691,8 @@ export function renderApp(state: AppViewState) {
                 agentsList: state.agentsList,
                 currentAgentId: resolvedAgentId ?? "main",
                 onAgentChange: (agentId: string) => {
-                  state.sessionKey = buildAgentMainSessionKey({ agentId });
-                  state.chatMessages = [];
-                  state.chatStream = null;
-                  state.chatRunId = null;
-                  state.applySettings({
-                    ...state.settings,
-                    sessionKey: state.sessionKey,
-                    lastActiveSessionKey: state.sessionKey,
-                  });
-                  void loadChatHistory(state);
-                  void state.loadAssistantIdentity();
+                  switchChatSession(state, buildAgentMainSessionKey({ agentId }));
+                  void refreshChatAvatar(state);
                 },
                 onNavigateToAgent: () => {
                   state.agentsSelectedId = resolvedAgentId;
@@ -1678,10 +1711,26 @@ export function renderApp(state: AppViewState) {
                 onOpenSidebar: (content: string) => state.handleOpenSidebar(content),
                 onCloseSidebar: () => state.handleCloseSidebar(),
                 onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
+                leftSidebarOpen: chatLeftPanelOpen,
+                leftSidebarMarkdown: chatProjectLeftMarkdown,
+                leftSidebarTitle: "Project",
+                leftSplitRatio: state.projectLeftSplitRatio,
+                onLeftSplitRatioChange: (ratio: number) => {
+                  state.projectLeftSplitRatio = ratio;
+                },
+                onCloseLeftSidebar: () => {
+                  state.projectLeftPanelDismissed = true;
+                },
                 assistantName: state.assistantName,
                 assistantAvatar: state.assistantAvatar,
                 basePath: state.basePath ?? "",
               })
+            : nothing
+        }
+
+        ${
+          state.tab === "chatProject" && !state.chatActiveTemplateId
+            ? renderProjectChatGate(state)
             : nothing
         }
 

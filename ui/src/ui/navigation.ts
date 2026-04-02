@@ -4,7 +4,7 @@ import type { IconName } from "./icons.js";
 export const TAB_GROUPS = [
   { label: "projectTemplates", tabs: ["projects"] },
   { label: "projectExecute", tabs: ["autoTestRun"] },
-  { label: "chat", tabs: ["chat"] },
+  { label: "chat", tabs: ["chatGeneral", "chatProject"] },
   { label: "agent", tabs: ["agents", "skills", "nodes"] },
   {
     label: "control",
@@ -37,7 +37,8 @@ export type Tab =
   | "cron"
   | "skills"
   | "nodes"
-  | "chat"
+  | "chatGeneral"
+  | "chatProject"
   | "config"
   | "communications"
   | "appearance"
@@ -59,7 +60,8 @@ const TAB_PATHS: Record<Tab, string> = {
   cron: "/cron",
   skills: "/skills",
   nodes: "/nodes",
-  chat: "/chat",
+  chatGeneral: "/chat/general",
+  chatProject: "/chat/project",
   config: "/config",
   communications: "/communications",
   appearance: "/appearance",
@@ -124,9 +126,18 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
     normalized = "/";
   }
   if (normalized === "/") {
-    return "chat";
+    return "chatGeneral";
+  }
+  // Legacy /chat URLs → General Chat
+  if (normalized === "/chat") {
+    return "chatGeneral";
   }
   return PATH_TO_TAB.get(normalized) ?? null;
+}
+
+/** True for both Chat sidebar entries (full chat shell + session UX). */
+export function isChatTab(tab: Tab): boolean {
+  return tab === "chatGeneral" || tab === "chatProject";
 }
 
 export function inferBasePathFromPathname(pathname: string): string {
@@ -135,6 +146,10 @@ export function inferBasePathFromPathname(pathname: string): string {
     normalized = normalizePath(normalized.slice(0, -"/index.html".length));
   }
   if (normalized === "/") {
+    return "";
+  }
+  // Legacy `/chat` (no subpath) resolves like root for base-path inference.
+  if (normalized === "/chat") {
     return "";
   }
   const segments = normalized.split("/").filter(Boolean);
@@ -159,7 +174,8 @@ export function iconForTab(tab: Tab): IconName {
       return "folder";
     case "agents":
       return "folder";
-    case "chat":
+    case "chatGeneral":
+    case "chatProject":
       return "messageSquare";
     case "overview":
       return "barChart";

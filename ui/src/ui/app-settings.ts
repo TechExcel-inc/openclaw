@@ -25,6 +25,7 @@ import { loadSkills } from "./controllers/skills.ts";
 import { loadUsage } from "./controllers/usage.ts";
 import {
   inferBasePathFromPathname,
+  isChatTab,
   normalizeBasePath,
   normalizePath,
   pathForTab,
@@ -263,7 +264,17 @@ export async function refreshActiveTab(host: SettingsHost) {
     await loadConfig(host as unknown as OpenClawApp);
     await loadExecApprovals(host as unknown as OpenClawApp);
   }
-  if (host.tab === "chat") {
+  if (isChatTab(host.tab)) {
+    void import("./controllers/projects.js").then(async (m) => {
+      await m.loadTemplates(host as never);
+      await m.loadGlobalExecutions(host as never);
+      if (host.tab === "chatProject") {
+        const { applyPersistedProjectChatSelection } =
+          await import("./chat/ead-project-chat-persist.ts");
+        applyPersistedProjectChatSelection(host as never);
+        (host as unknown as OpenClawApp).requestUpdate?.();
+      }
+    });
     await refreshChat(host as unknown as Parameters<typeof refreshChat>[0]);
     scheduleChatScroll(
       host as unknown as Parameters<typeof scheduleChatScroll>[0],
@@ -387,7 +398,7 @@ export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
   if (typeof window === "undefined") {
     return;
   }
-  const resolved = tabFromPath(window.location.pathname, host.basePath) ?? "chat";
+  const resolved = tabFromPath(window.location.pathname, host.basePath) ?? "chatGeneral";
   setTabFromRoute(host, resolved);
   syncUrlWithTab(host, resolved, replace);
 }
@@ -429,12 +440,12 @@ function applyTabSelection(
     host.tab = next;
   }
 
-  // Cleanup chat module state when navigating away from chat
-  if (prev === "chat" && next !== "chat") {
+  // Cleanup chat module state when navigating away from chat tabs
+  if (isChatTab(prev) && !isChatTab(next)) {
     resetChatViewState();
   }
 
-  if (next === "chat") {
+  if (isChatTab(next)) {
     host.chatHasAutoScrolled = false;
   }
   if (next === "logs") {
@@ -465,7 +476,7 @@ export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
   const currentPath = normalizePath(window.location.pathname);
   const url = new URL(window.location.href);
 
-  if (tab === "chat" && host.sessionKey) {
+  if (isChatTab(tab) && host.sessionKey) {
     url.searchParams.set("session", host.sessionKey);
   } else {
     url.searchParams.delete("session");

@@ -52,7 +52,7 @@ describe("control UI routing", () => {
   });
 
   it("updates the URL when clicking nav items", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     const link = app.querySelector<HTMLAnchorElement>('a.nav-item[href="/channels"]');
@@ -65,7 +65,7 @@ describe("control UI routing", () => {
   });
 
   it("renders the refreshed top navigation shell", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     expect(app.querySelector(".topnav-shell")).not.toBeNull();
@@ -75,7 +75,7 @@ describe("control UI routing", () => {
   });
 
   it("renders the refreshed sidebar shell structure", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     expect(app.querySelector(".sidebar-shell")).not.toBeNull();
@@ -88,7 +88,7 @@ describe("control UI routing", () => {
   });
 
   it("does not render a desktop sidebar resizer or inject a custom nav width", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     app.applySettings({ ...app.settings, navWidth: 360 });
@@ -100,7 +100,7 @@ describe("control UI routing", () => {
   });
 
   it("hides section labels in collapsed mode", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     app.applySettings({ ...app.settings, navCollapsed: true });
@@ -111,7 +111,7 @@ describe("control UI routing", () => {
   });
 
   it("keeps footer utilities available in collapsed mode", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     app.applySettings({ ...app.settings, navCollapsed: true });
@@ -122,7 +122,7 @@ describe("control UI routing", () => {
   });
 
   it("keeps the collapsed desktop rail compact", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     app.applySettings({ ...app.settings, navCollapsed: true });
@@ -147,19 +147,19 @@ describe("control UI routing", () => {
     const app = mountApp("/sessions?session=agent:main:subagent:task-123");
     await app.updateComplete;
 
-    const link = app.querySelector<HTMLAnchorElement>('a.nav-item[href="/chat"]');
+    const link = app.querySelector<HTMLAnchorElement>('a.nav-item[href="/chat/general"]');
     expect(link).not.toBeNull();
     link?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
 
     await app.updateComplete;
-    expect(app.tab).toBe("chat");
+    expect(app.tab).toBe("chatGeneral");
     expect(app.sessionKey).toBe("main");
-    expect(window.location.pathname).toBe("/chat");
+    expect(window.location.pathname).toBe("/chat/general");
     expect(window.location.search).toBe("?session=main");
   });
 
   it("keeps chat and nav usable on narrow viewports", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
@@ -187,7 +187,7 @@ describe("control UI routing", () => {
   });
 
   it("stacks the refreshed top navigation for narrow viewports", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
@@ -205,7 +205,7 @@ describe("control UI routing", () => {
   });
 
   it("keeps the mobile topbar nav toggle visible beside the search row", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
@@ -229,7 +229,7 @@ describe("control UI routing", () => {
   });
 
   it("opens the mobile sidenav as a drawer from the topbar toggle", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
@@ -255,7 +255,7 @@ describe("control UI routing", () => {
   });
 
   it("closes the mobile sidenav drawer after navigation", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
@@ -277,7 +277,7 @@ describe("control UI routing", () => {
   });
 
   it("auto-scrolls chat history to the latest message", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     const initialContainer: HTMLElement | null = app.querySelector(".chat-thread");

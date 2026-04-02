@@ -19,7 +19,8 @@ type Tab =
   | "cron"
   | "skills"
   | "nodes"
-  | "chat"
+  | "chatGeneral"
+  | "chatProject"
   | "config"
   | "communications"
   | "appearance"
@@ -181,29 +182,29 @@ describe("setTabFromRoute", () => {
   });
 
   it("starts and stops log polling based on the tab", () => {
-    const host = createHost("chat");
+    const host = createHost("chatGeneral");
 
     setTabFromRoute(host, "logs");
     expect(host.logsPollInterval).not.toBeNull();
     expect(host.debugPollInterval).toBeNull();
 
-    setTabFromRoute(host, "chat");
+    setTabFromRoute(host, "chatGeneral");
     expect(host.logsPollInterval).toBeNull();
   });
 
   it("starts and stops debug polling based on the tab", () => {
-    const host = createHost("chat");
+    const host = createHost("chatGeneral");
 
     setTabFromRoute(host, "debug");
     expect(host.debugPollInterval).not.toBeNull();
     expect(host.logsPollInterval).toBeNull();
 
-    setTabFromRoute(host, "chat");
+    setTabFromRoute(host, "chatGeneral");
     expect(host.debugPollInterval).toBeNull();
   });
 
   it("re-resolves the active palette when only themeMode changes", () => {
-    const host = createHost("chat");
+    const host = createHost("chatGeneral");
     host.settings.theme = "knot";
     host.settings.themeMode = "dark";
     host.theme = "knot" as unknown as ThemeName & ThemeMode;
@@ -221,7 +222,7 @@ describe("setTabFromRoute", () => {
   });
 
   it("syncs both theme family and mode from persisted settings", () => {
-    const host = createHost("chat");
+    const host = createHost("chatGeneral");
     host.settings.theme = "dash";
     host.settings.themeMode = "light";
 
@@ -247,7 +248,7 @@ describe("setTabFromRoute", () => {
       value: matchMedia,
     });
 
-    const host = createHost("chat");
+    const host = createHost("chatGeneral");
     host.theme = "knot" as unknown as ThemeName & ThemeMode;
     host.themeMode = "system";
 
@@ -266,7 +267,7 @@ describe("setTabFromRoute", () => {
     };
     vi.stubGlobal("document", { documentElement: root } as Document);
 
-    const host = createHost("chat");
+    const host = createHost("chatGeneral");
     applyResolvedTheme(host, "dash-light");
 
     expect(host.themeResolved).toBe("dash-light");
@@ -328,7 +329,7 @@ describe("applySettingsFromUrl", () => {
 
   it("resets stale persisted session selection to main when a token is supplied without a session", () => {
     setTestWindowUrl("https://control.example/chat#token=test-token");
-    const host = createHost("chat");
+    const host = createHost("chatGeneral");
     host.settings = {
       ...host.settings,
       gatewayUrl: "ws://localhost:18789",
@@ -349,7 +350,7 @@ describe("applySettingsFromUrl", () => {
     setTestWindowUrl(
       "https://control.example/chat?session=agent%3Atest_new%3Amain#token=test-token",
     );
-    const host = createHost("chat");
+    const host = createHost("chatGeneral");
     host.settings = {
       ...host.settings,
       gatewayUrl: "ws://localhost:18789",
@@ -370,7 +371,7 @@ describe("applySettingsFromUrl", () => {
     setTestWindowUrl(
       "https://control.example/chat?gatewayUrl=ws%3A%2F%2Fgateway-b.example%3A18789#token=test-token",
     );
-    const host = createHost("chat");
+    const host = createHost("chatGeneral");
     host.settings = {
       ...host.settings,
       gatewayUrl: "ws://gateway-a.example:18789",

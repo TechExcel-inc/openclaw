@@ -318,6 +318,11 @@ export async function runGatewayUpdateCheck(params: {
   const auto = resolveAutoUpdatePolicy(params.cfg);
   const shouldRunUpdateHints = params.cfg.update?.checkOnStart !== false;
   if (!shouldRunUpdateHints && !auto.enabled) {
+    // Clear any persisted "update available" hint so the Control UI banner stays off.
+    setUpdateAvailableCache({
+      next: null,
+      onUpdateAvailableChange: params.onUpdateAvailableChange,
+    });
     return;
   }
 

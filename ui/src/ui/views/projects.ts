@@ -2,6 +2,9 @@ import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { EadFmNodeRun, TestCaseRun } from "../../../../src/projects/types.js";
 import type { AppViewState } from "../app-view-state.js";
+import { switchChatSession } from "../chat/ead-chat-sync.js";
+import { writePersistedProjectChatId } from "../chat/ead-project-chat-persist.js";
+import { stripEadProjectSuffix } from "../chat/ead-project-session-key.js";
 import { icons } from "../icons.js";
 import { toSanitizedMarkdownHtml } from "../markdown.js";
 import { renderChat, type ChatProps } from "./chat.js";
@@ -682,15 +685,35 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
                Execution ID: ${execution.id} $\middot Started: ${dateInfo} (${durationSec}s elapsed)
              </p>
            </div>
-           ${
-             execution.status === "running"
-               ? html`
-             <button class="project-create-modal__btn project-create-modal__btn--danger" style="padding: 8px 16px;" @click=${() => void state.handleExecutionCancel(execution.id)}>
-               Cancel Execution
+           <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+             ${
+               execution.status === "running"
+                 ? html`
+               <button class="project-create-modal__btn project-create-modal__btn--danger" style="padding: 8px 16px;" @click=${() => void state.handleExecutionCancel(execution.id)}>
+                 Cancel Execution
+               </button>
+             `
+                 : nothing
+             }
+             <button
+               type="button"
+               class="project-create-modal__btn"
+               style="padding: 8px 16px; white-space: nowrap;"
+               @click=${() => {
+                 state.chatActiveTemplateId = execution.id;
+                 state.chatSelectedTemplateId = execution.id;
+                 state.chatProjectTab = "executions";
+                 state.projectLeftPanelDismissed = false;
+                 writePersistedProjectChatId(execution.id);
+                 state.setTab("chatProject");
+                 if (state.connected) {
+                   switchChatSession(state, stripEadProjectSuffix(state.sessionKey));
+                 }
+               }}
+             >
+               Open in Project Chat
              </button>
-           `
-               : nothing
-           }
+           </div>
         </div>
 
         <div class="project-detail__section">

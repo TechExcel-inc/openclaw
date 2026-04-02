@@ -54,6 +54,7 @@ import {
 } from "./app-tool-stream.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
+import { switchChatSession } from "./chat/ead-chat-sync.ts";
 import { exportChatMarkdown } from "./chat/export.ts";
 import {
   loadToolsEffective as loadToolsEffectiveInternal,
@@ -103,6 +104,21 @@ declare global {
 
 const bootAssistantIdentity = normalizeAssistantIdentity({});
 
+function resolveMainSessionKeyForNav(host: AppViewState): string {
+  const snapshot = host.hello?.snapshot as
+    | { sessionDefaults?: { mainSessionKey?: string; mainKey?: string } }
+    | undefined;
+  const mainSessionKey = snapshot?.sessionDefaults?.mainSessionKey?.trim();
+  if (mainSessionKey) {
+    return mainSessionKey;
+  }
+  const mainKey = snapshot?.sessionDefaults?.mainKey?.trim();
+  if (mainKey) {
+    return mainKey;
+  }
+  return "main";
+}
+
 function resolveOnboardingMode(): boolean {
   if (!window.location.search) {
     return false;
@@ -131,7 +147,7 @@ export class OpenClawApp extends LitElement {
   @state() password = "";
   @state() loginShowGatewayToken = false;
   @state() loginShowGatewayPassword = false;
-  @state() tab: Tab = "chat";
+  @state() tab: Tab = "chatGeneral";
   @state() onboarding = resolveOnboardingMode();
   @state() connected = false;
   @state() theme: ThemeName = this.settings.theme ?? "claw";
@@ -421,6 +437,9 @@ export class OpenClawApp extends LitElement {
   @state() chatSelectedTemplateId: string | null = null;
   @state() chatProjectTab: "templates" | "executions" = "templates";
   @state() showChatProjectModal = false;
+  @state() chatShowNoneProjectChat = false;
+  @state() projectLeftPanelDismissed = false;
+  @state() projectLeftSplitRatio = 0.26;
 
   // Executions state
   @state() executionsLoading = false;
@@ -621,6 +640,16 @@ export class OpenClawApp extends LitElement {
       // Reset page-local view state only — each page manages its own state
       this.templateDetail = null;
       this.activeExecutionId = null;
+    }
+    if (next === "chatGeneral") {
+      this.chatActiveTemplateId = null;
+      this.chatShowNoneProjectChat = false;
+      if (this.connected) {
+        switchChatSession(
+          this as unknown as AppViewState,
+          resolveMainSessionKeyForNav(this as unknown as AppViewState),
+        );
+      }
     }
     setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], next);
     this.navDrawerOpen = false;

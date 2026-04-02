@@ -107,6 +107,13 @@ export type ChatProps = {
   onOpenSidebar?: (content: string) => void;
   onCloseSidebar?: () => void;
   onSplitRatioChange?: (ratio: number) => void;
+  /** Project summary panel (left): markdown + resizer; compose stays in the chat column only. */
+  leftSidebarOpen?: boolean;
+  leftSidebarMarkdown?: string | null;
+  leftSidebarTitle?: string;
+  leftSplitRatio?: number;
+  onLeftSplitRatioChange?: (ratio: number) => void;
+  onCloseLeftSidebar?: () => void;
   onChatScroll?: (event: Event) => void;
   basePath?: string;
 };
@@ -619,7 +626,7 @@ function renderWelcomeState(props: ChatProps): TemplateResult {
       ${
         avatar
           ? html`<img src=${avatar} alt=${name} style="width:56px; height:56px; border-radius:50%; object-fit:cover;" />`
-          : html`<div class="agent-chat__avatar agent-chat__avatar--logo"><img src=${logoUrl} alt="OpenClaw" /></div>`
+          : html`<div class="agent-chat__avatar agent-chat__avatar--logo"><img src=${logoUrl} alt="EAD-Exp" /></div>`
       }
       <h2>${name}</h2>
       <div class="agent-chat__badges">
@@ -876,6 +883,11 @@ export function renderChat(props: ChatProps) {
 
   const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
+  const leftSplitRatio = props.leftSplitRatio ?? 0.26;
+  const leftPanelOpen = Boolean(
+    props.leftSidebarMarkdown?.trim() && props.onCloseLeftSidebar && props.leftSidebarOpen,
+  );
+  const anySidePanel = sidebarOpen || leftPanelOpen;
 
   const handleCodeBlockCopy = (e: Event) => {
     const btn = (e.target as HTMLElement).closest(".code-block-copy");
@@ -1113,67 +1125,7 @@ export function renderChat(props: ChatProps) {
     props.onDraftChange(target.value);
   };
 
-  return html`
-    <section
-      class="card chat"
-      @drop=${(e: DragEvent) => handleDrop(e, props)}
-      @dragover=${(e: DragEvent) => e.preventDefault()}
-    >
-      ${props.disabledReason ? html`<div class="callout">${props.disabledReason}</div>` : nothing}
-      ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
-
-      ${
-        props.focusMode
-          ? html`
-            <button
-              class="chat-focus-exit"
-              type="button"
-              @click=${props.onToggleFocusMode}
-              aria-label="Exit focus mode"
-              title="Exit focus mode"
-            >
-              ${icons.x}
-            </button>
-          `
-          : nothing
-      }
-
-      ${renderSearchBar(requestUpdate)}
-      ${renderPinnedSection(props, pinned, requestUpdate)}
-
-      <div class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}">
-        <div
-          class="chat-main"
-          style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
-        >
-          ${thread}
-        </div>
-
-        ${
-          sidebarOpen
-            ? html`
-              <resizable-divider
-                .splitRatio=${splitRatio}
-                @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
-              ></resizable-divider>
-              <div class="chat-sidebar">
-                ${renderMarkdownSidebar({
-                  content: props.sidebarContent ?? null,
-                  error: props.sidebarError ?? null,
-                  onClose: props.onCloseSidebar!,
-                  onViewRawText: () => {
-                    if (!props.sidebarContent || !props.onOpenSidebar) {
-                      return;
-                    }
-                    props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
-                  },
-                })}
-              </div>
-            `
-            : nothing
-        }
-      </div>
-
+  const chatFooterBlock = html`
       ${
         props.queue?.length
           ? html`
@@ -1224,8 +1176,7 @@ export function renderChat(props: ChatProps) {
           : nothing
       }
 
-      <!-- Input bar -->
-      <div class="agent-chat__input">
+      <div class="agent-chat__input ${leftPanelOpen ? "agent-chat__input--in-project-chat" : ""}">
         ${renderSlashMenu(requestUpdate, props)}
         ${renderAttachmentPreview(props)}
 
@@ -1369,6 +1320,109 @@ export function renderChat(props: ChatProps) {
           </div>
         </div>
       </div>
+  `;
+
+  return html`
+    <section
+      class="card chat"
+      @drop=${(e: DragEvent) => handleDrop(e, props)}
+      @dragover=${(e: DragEvent) => e.preventDefault()}
+    >
+      ${props.disabledReason ? html`<div class="callout">${props.disabledReason}</div>` : nothing}
+      ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
+
+      ${
+        props.focusMode
+          ? html`
+            <button
+              class="chat-focus-exit"
+              type="button"
+              @click=${props.onToggleFocusMode}
+              aria-label="Exit focus mode"
+              title="Exit focus mode"
+            >
+              ${icons.x}
+            </button>
+          `
+          : nothing
+      }
+
+      ${renderSearchBar(requestUpdate)}
+      ${renderPinnedSection(props, pinned, requestUpdate)}
+
+      <div class="chat-split-container ${anySidePanel ? "chat-split-container--open" : ""}">
+        ${
+          leftPanelOpen
+            ? html`
+                <div
+                  class="chat-main-with-left"
+                  style="flex: ${
+                    sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"
+                  }; min-width: 0; display: flex; flex-direction: row;"
+                >
+                  <div class="chat-sidebar chat-sidebar--left" style="flex: 0 0 ${leftSplitRatio * 100}%">
+                    ${renderMarkdownSidebar({
+                      content: props.leftSidebarMarkdown ?? null,
+                      error: null,
+                      onClose: props.onCloseLeftSidebar!,
+                      title: props.leftSidebarTitle ?? "Project",
+                      onViewRawText: () => {
+                        const c = props.leftSidebarMarkdown;
+                        if (!c || !props.onOpenSidebar) {
+                          return;
+                        }
+                        props.onOpenSidebar(`\`\`\`\n${c}\n\`\`\``);
+                      },
+                    })}
+                  </div>
+                  <resizable-divider
+                    .splitRatio=${leftSplitRatio}
+                    .minRatio=${0.15}
+                    .maxRatio=${0.45}
+                    @resize=${(e: CustomEvent) => props.onLeftSplitRatioChange?.(e.detail.splitRatio)}
+                  ></resizable-divider>
+                  <div class="chat-main chat-main--with-left-chat" style="flex: 1 1 auto; min-width: 0">
+                    ${thread}
+                    ${chatFooterBlock}
+                  </div>
+                </div>
+              `
+            : html`
+                <div
+                  class="chat-main"
+                  style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
+                >
+                  ${thread}
+                </div>
+              `
+        }
+
+        ${
+          sidebarOpen
+            ? html`
+              <resizable-divider
+                .splitRatio=${splitRatio}
+                @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
+              ></resizable-divider>
+              <div class="chat-sidebar">
+                ${renderMarkdownSidebar({
+                  content: props.sidebarContent ?? null,
+                  error: props.sidebarError ?? null,
+                  onClose: props.onCloseSidebar!,
+                  onViewRawText: () => {
+                    if (!props.sidebarContent || !props.onOpenSidebar) {
+                      return;
+                    }
+                    props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
+                  },
+                })}
+              </div>
+            `
+            : nothing
+        }
+      </div>
+
+      ${!leftPanelOpen ? chatFooterBlock : nothing}
     </section>
   `;
 }

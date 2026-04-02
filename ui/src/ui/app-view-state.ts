@@ -398,6 +398,12 @@ export type AppViewState = {
     chatSelectedTemplateId: string | null;
     chatProjectTab: "templates" | "executions";
     showChatProjectModal: boolean;
+    /** When true, chat uses the none-project session even if a project is selected. */
+    chatShowNoneProjectChat: boolean;
+    /** User closed the project summary panel; reset when picking a new project. */
+    projectLeftPanelDismissed: boolean;
+    /** Left project panel width as a fraction of the left+main row (0.15–0.45). */
+    projectLeftSplitRatio: number;
 
     // Executions
     executionsLoading: boolean;

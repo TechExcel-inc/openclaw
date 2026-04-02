@@ -1717,7 +1717,7 @@ function renderRun(
 ) {
   const chatUrl =
     typeof entry.sessionKey === "string" && entry.sessionKey.trim().length > 0
-      ? `${pathForTab("chat", basePath)}?session=${encodeURIComponent(entry.sessionKey)}`
+      ? `${pathForTab("chatGeneral", basePath)}?session=${encodeURIComponent(entry.sessionKey)}`
       : null;
   const status = runStatusLabel(entry.status ?? "unknown");
   const delivery = runDeliveryLabel(entry.deliveryStatus ?? "not-requested");

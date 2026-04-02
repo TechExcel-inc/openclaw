@@ -8,13 +8,16 @@ export type MarkdownSidebarProps = {
   error: string | null;
   onClose: () => void;
   onViewRawText: () => void;
+  /** Defaults to "Tool Output". */
+  title?: string;
 };
 
 export function renderMarkdownSidebar(props: MarkdownSidebarProps) {
+  const title = props.title?.trim() || "Tool Output";
   return html`
     <div class="sidebar-panel">
       <div class="sidebar-header">
-        <div class="sidebar-title">Tool Output</div>
+        <div class="sidebar-title">${title}</div>
         <button @click=${props.onClose} class="btn" title="Close sidebar">
           ${icons.x}
         </button>

@@ -581,3 +581,339 @@
   border-color: var(--accent, var(--accent-default, #388bfd));
   box-shadow: 0 0 0 2px var(--accent-ring, rgba(56, 139, 253, 0.2));
 }
+
+/* Chat project picker modal (light theme, self-contained) */
+.chat-project-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 41, 59, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.chat-project-modal__dialog {
+  width: min(980px, 96vw);
+  max-height: min(88vh, 920px);
+  display: flex;
+  flex-direction: column;
+  margin: 16px;
+  border-radius: 12px;
+  border: 1px solid #c9d4e3;
+  background: linear-gradient(180deg, #fafbfc 0%, #f4f7fb 100%);
+  box-shadow:
+    0 20px 50px rgba(15, 23, 42, 0.16),
+    0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+  overflow: hidden;
+}
+
+.chat-project-modal__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #c9d4e3;
+  background: linear-gradient(180deg, #e2e8f0 0%, #d8dee9 100%);
+  border-radius: 12px 12px 0 0;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.chat-project-modal__toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-project-modal__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.chat-project-modal__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.65);
+  color: #475569;
+  cursor: pointer;
+}
+
+.chat-project-modal__help:hover {
+  background: #fff;
+  border-color: #94a3b8;
+  color: #1e293b;
+}
+
+.chat-project-modal__help svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentcolor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-project-modal__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.chat-project-modal__btn {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  font-family: inherit;
+}
+
+.chat-project-modal__btn:hover {
+  background: #f1f5f9;
+}
+
+.chat-project-modal__btn--primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  font-weight: 600;
+}
+
+.chat-project-modal__btn--primary:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.chat-project-modal__btn--primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #94a3b8;
+  border-color: #94a3b8;
+}
+
+.chat-project-modal__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0 14px 14px;
+  background: #eef2f6;
+}
+
+/* Tabs sit at the top-left of the list area (inside the panel), not a side rail */
+.chat-project-modal__panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0 0;
+  overflow: hidden;
+}
+
+.chat-project-modal__tabs {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: nowrap;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 10px;
+}
+
+.chat-project-modal__tabs-main {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  align-self: center;
+  gap: 0;
+  padding: 0;
+  margin: 0 0 0 2px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.chat-project-modal__tab {
+  text-align: center;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.25;
+}
+
+.chat-project-modal__tab:first-of-type {
+  border-radius: 8px 0 0 8px;
+}
+
+.chat-project-modal__tab:last-of-type {
+  border-radius: 0 8px 8px 0;
+}
+
+.chat-project-modal__tab + .chat-project-modal__tab {
+  border-left: 1px solid #e2e8f0;
+}
+
+.chat-project-modal__tab:hover {
+  color: #334155;
+  background: #f8fafc;
+}
+
+.chat-project-modal__tab--active {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.chat-project-modal__tab--active:hover {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+@media (max-width: 720px) {
+  .chat-project-modal__tabs {
+    flex-wrap: wrap;
+  }
+}
+
+.chat-project-modal__tablewrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.chat-project-modal__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.chat-project-modal__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  padding: 9px 10px;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.chat-project-modal__table tbody td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
+  vertical-align: top;
+}
+
+.chat-project-modal__table tbody tr {
+  cursor: pointer;
+}
+
+.chat-project-modal__table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.chat-project-modal__row--selected {
+  background: #eff6ff !important;
+}
+
+.chat-project-modal__name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.chat-project-modal__muted {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.chat-project-modal__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chat-project-modal__pill--running {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.chat-project-modal__pill--finished {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.chat-project-modal__pill--failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.chat-project-modal__pill--active {
+  background: #ecfdf5;
+  color: #15803d;
+}
+
+.chat-project-modal__pill--inactive {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.chat-project-modal__pill--inprogress {
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+.chat-project-modal__empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+}

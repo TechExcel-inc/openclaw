@@ -14,7 +14,9 @@ const WINDOWS_UNSAFE_SHELL_ARG_PATTERN = /[\r\n"&|<>^%!]/;
 
 function usage() {
   // keep this tiny; it's invoked from npm scripts too
-  process.stderr.write("Usage: node scripts/ui.js <install|dev|build|test> [...args]\n");
+  process.stderr.write(
+    "Usage: node scripts/ui.js <install|dev|build|build:watch|test> [...args]\n",
+  );
 }
 
 function which(cmd) {
@@ -152,6 +154,9 @@ function resolveScriptAction(action) {
   }
   if (action === "build") {
     return "build";
+  }
+  if (action === "watch") {
+    return "build:watch";
   }
   if (action === "test") {
     return "test";

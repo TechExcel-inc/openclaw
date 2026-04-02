@@ -5,7 +5,7 @@ registerAppMountHooks();
 
 describe("chat focus mode", () => {
   it("collapses header + sidebar on chat tab only", async () => {
-    const app = mountApp("/chat");
+    const app = mountApp("/chat/general");
     await app.updateComplete;
 
     const shell = app.querySelector(".shell");
@@ -27,13 +27,13 @@ describe("chat focus mode", () => {
     expect(app.tab).toBe("channels");
     expect(shell?.classList.contains("shell--chat-focus")).toBe(false);
 
-    const chatLink = app.querySelector<HTMLAnchorElement>('a.nav-item[href="/chat"]');
+    const chatLink = app.querySelector<HTMLAnchorElement>('a.nav-item[href="/chat/general"]');
     chatLink?.dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
     );
 
     await app.updateComplete;
-    expect(app.tab).toBe("chat");
+    expect(app.tab).toBe("chatGeneral");
     expect(shell?.classList.contains("shell--chat-focus")).toBe(true);
   });
 });

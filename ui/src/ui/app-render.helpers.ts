@@ -1,9 +1,18 @@
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
+import type {
+  ExecutionStatus,
+  ProjectExecute,
+  ProjectTemplate,
+} from "../../../src/projects/types.js";
 import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
+import { applyEadChatSessionToState, switchChatSession } from "./chat/ead-chat-sync.ts";
+import { writePersistedProjectChatId } from "./chat/ead-project-chat-persist.ts";
+import { stripEadProjectSuffix } from "./chat/ead-project-session-key.ts";
+
+export { applyEadChatSessionToState, switchChatSession };
 import { t } from "../i18n/index.ts";
 import { refreshChat } from "./app-chat.ts";
-import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { OpenClawApp } from "./app.ts";
 import { createChatModelOverride } from "./chat-model-ref.ts";
@@ -12,10 +21,9 @@ import {
   resolveChatModelSelectState,
 } from "./chat-model-select-state.ts";
 import { refreshVisibleToolsEffectiveForCurrentSession } from "./controllers/agents.ts";
-import { ChatState, loadChatHistory } from "./controllers/chat.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import { icons } from "./icons.ts";
-import { iconForTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
+import { iconForTab, isChatTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
 import type { ThemeMode, ThemeName } from "./theme.ts";
 import type { SessionsListResult } from "./types.ts";
@@ -40,21 +48,6 @@ function resolveSidebarChatSessionKey(state: AppViewState): string {
   return "main";
 }
 
-function resetChatStateForSessionSwitch(state: AppViewState, sessionKey: string) {
-  state.sessionKey = sessionKey;
-  state.chatMessage = "";
-  state.chatStream = null;
-  (state as unknown as OpenClawApp).chatStreamStartedAt = null;
-  state.chatRunId = null;
-  (state as unknown as OpenClawApp).resetToolStream();
-  (state as unknown as OpenClawApp).resetChatScroll();
-  state.applySettings({
-    ...state.settings,
-    sessionKey,
-    lastActiveSessionKey: sessionKey,
-  });
-}
-
 export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: boolean }) {
   const href = pathForTab(tab, state.basePath);
   const isActive = state.tab === tab;
@@ -75,10 +68,11 @@ export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: bo
           return;
         }
         event.preventDefault();
-        if (tab === "chat") {
+        if (isChatTab(tab)) {
           const mainSessionKey = resolveSidebarChatSessionKey(state);
-          if (state.sessionKey !== mainSessionKey) {
-            resetChatStateForSessionSwitch(state, mainSessionKey);
+          const base = stripEadProjectSuffix(state.sessionKey);
+          if (base !== mainSessionKey) {
+            switchChatSession(state, mainSessionKey);
             void state.loadAssistantIdentity();
           }
         }
@@ -133,45 +127,166 @@ function renderCronFilterIcon(hiddenCount: number) {
 }
 
 export function renderChatSessionSelect(state: AppViewState) {
-  let projectName = "Generate Chat";
+  let projectKindLabel = "";
+  let projectDisplayName = t("chat.selectProjectContinue");
   if (state.chatActiveTemplateId) {
     const activeTemplate = state.templatesList.find((t) => t.id === state.chatActiveTemplateId);
     if (activeTemplate) {
-      projectName = `Test Template = ${activeTemplate.name}`;
+      projectKindLabel = "Test Plan";
+      projectDisplayName = activeTemplate.name;
     } else {
       const activeExecution = state.globalExecutionsList?.find(
         (e) => e.id === state.chatActiveTemplateId,
       );
       if (activeExecution) {
-        projectName = `Test Run = ${activeExecution.name || activeExecution.id.slice(0, 8)}`;
+        projectKindLabel = "Test Run";
+        projectDisplayName = activeExecution.name || activeExecution.id.slice(0, 8);
       }
     }
   }
+  const hasProjectContext = Boolean(projectKindLabel);
+  const projectTitle = hasProjectContext
+    ? `${projectKindLabel}: ${projectDisplayName}`
+    : t("chat.selectProjectContinue");
 
   return html`
-    <div style="display: flex; gap: 8px; align-items: center;">
-      <span style="font-size: 13px; font-weight: 500; color: var(--muted);">Select a project</span>
-      <input
-        type="text"
-        class="input"
-        style="flex: 1; min-width: 250px; max-width: 350px; padding: 6px 10px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text); font-size: 13px; outline: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05) inset;"
-        readonly
-        .value=${projectName}
-        title="Active Project Context"
-      />
-      <button
-        class="btn btn--secondary"
-        style="padding: 6px 12px; font-size: 13px; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: var(--bg-surface-2); border: 1px solid var(--border-color);"
-        @click=${() => {
-          state.chatSelectedTemplateId = state.chatActiveTemplateId;
-          state.showChatProjectModal = true;
-        }}
-        title="Select Project Context"
-      >
-        ...
-      </button>
+    <div class="chat-project-toolbar chat-project-toolbar--stacked">
+      <div class="chat-project-toolbar__label-row">
+        <span class="chat-project-toolbar__label">Select a project</span>
+      </div>
+      <div class="chat-project-toolbar__row2">
+        <div class="chat-project-toolbar__left">
+          <div
+            class="chat-project-toolbar__project ${hasProjectContext ? "is-active" : ""}"
+            title=${projectTitle}
+            role="status"
+            aria-live="polite"
+          >
+            ${
+              projectKindLabel
+                ? html`<span class="chat-project-toolbar__kind">${projectKindLabel}</span>`
+                : nothing
+            }
+            <span class="chat-project-toolbar__name">${projectDisplayName}</span>
+          </div>
+          <button
+            type="button"
+            class="btn btn--sm btn--icon chat-project-toolbar__picker"
+            @click=${() => {
+              state.chatSelectedTemplateId = state.chatActiveTemplateId;
+              state.showChatProjectModal = true;
+            }}
+            title="Select project"
+            aria-label="Open project picker"
+          >
+            ${icons.moreHorizontal}
+          </button>
+        </div>
+        <div class="chat-project-toolbar__controls">${renderChatControls(state)}</div>
+      </div>
     </div>
   `;
+}
+
+export function renderProjectChatGate(state: AppViewState) {
+  return html`
+    <section class="project-chat-gate">
+      <div class="project-chat-gate__card">
+        <h2 class="project-chat-gate__title">${t("chat.projectGateTitle")}</h2>
+        <p class="project-chat-gate__body">${t("chat.projectGateBody")}</p>
+        <button
+          type="button"
+          class="btn btn--primary"
+          @click=${() => {
+            state.chatSelectedTemplateId = state.chatActiveTemplateId;
+            state.showChatProjectModal = true;
+          }}
+        >
+          ${t("chat.projectGateButton")}
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function formatChatModalDateTime(ts: number | null | undefined): string {
+  if (ts == null || !Number.isFinite(ts)) {
+    return "—";
+  }
+  return new Date(ts).toLocaleString();
+}
+
+function formatChatModalDuration(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms)) {
+    return "—";
+  }
+  if (ms < 1000) {
+    return `${Math.round(ms)} ms`;
+  }
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) {
+    return `${h}h ${m % 60}m`;
+  }
+  if (m > 0) {
+    return `${m}m ${s % 60}s`;
+  }
+  return `${s}s`;
+}
+
+function mapTestRunStatusLabel(status: ExecutionStatus): "Running" | "Failed" | "Finished" {
+  switch (status) {
+    case "running":
+    case "pending":
+      return "Running";
+    case "completed":
+      return "Finished";
+    case "error":
+    case "cancelled":
+      return "Failed";
+    default:
+      return "Failed";
+  }
+}
+
+function testRunStatusPillClass(status: ExecutionStatus): string {
+  const label = mapTestRunStatusLabel(status);
+  if (label === "Running") {
+    return "chat-project-modal__pill chat-project-modal__pill--running";
+  }
+  if (label === "Finished") {
+    return "chat-project-modal__pill chat-project-modal__pill--finished";
+  }
+  return "chat-project-modal__pill chat-project-modal__pill--failed";
+}
+
+function resolveExecutionFinishTimeMs(execution: ProjectExecute): number | null {
+  const { startTime, durationMs, status } = execution;
+  if (startTime == null || durationMs == null) {
+    return null;
+  }
+  if (status === "running" || status === "pending") {
+    return null;
+  }
+  return startTime + durationMs;
+}
+
+/** Placeholder until the gateway exposes Test Plan lifecycle. */
+function templatePlanStatusLabel(
+  _template: ProjectTemplate,
+): "Active" | "Inactive" | "In Progress" {
+  return "Active";
+}
+
+function templatePlanStatusPillClass(label: "Active" | "Inactive" | "In Progress"): string {
+  if (label === "Active") {
+    return "chat-project-modal__pill chat-project-modal__pill--active";
+  }
+  if (label === "Inactive") {
+    return "chat-project-modal__pill chat-project-modal__pill--inactive";
+  }
+  return "chat-project-modal__pill chat-project-modal__pill--inprogress";
 }
 
 export function renderChatProjectModal(state: AppViewState) {
@@ -179,171 +294,208 @@ export function renderChatProjectModal(state: AppViewState) {
     return nothing;
   }
 
+  const executions = state.globalExecutionsList ?? [];
+  const showExecEmpty = state.chatProjectTab === "executions" && executions.length === 0;
+  const modalOkDisabled = state.chatSelectedTemplateId == null;
+
   return html`
     <div
-      class="project-create-modal"
+      class="chat-project-modal"
       @click=${(e: Event) => {
         if (e.target === e.currentTarget) {
           state.showChatProjectModal = false;
         }
       }}
     >
-      <div
-        class="project-create-modal__dialog"
-        style="max-width: 860px; width: 90vw; max-height: 80vh; display: flex; flex-direction: column; padding: 0;"
-      >
-        <div class="project-create-modal__header" style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-color);">
-          <h2 class="project-create-modal__title" style="margin: 0; font-size: 16px;">Select Project Context</h2>
-          <button
-            type="button"
-            class="modal-close"
-            style="background: transparent; border: none; color: var(--muted); cursor: pointer;"
-            @click=${() => {
-              state.showChatProjectModal = false;
-            }}
-          >
-            ${icons.x}
-          </button>
-        </div>
-
-        <div class="modal-body content--scroll" style="flex: 1; padding: 0; overflow-y: auto;">
-          <!-- Tab bar -->
-          <div style="padding: 12px 20px 0 20px; background: var(--bg-surface-1);">
-            <div style="display: flex; gap: 4px; background: var(--bg-surface-2); border-radius: 8px; padding: 4px; border: 1px solid var(--border-color);">
-              <button
-                class="btn btn--clear"
-                style="flex: 1; font-size: 13px; padding: 8px 16px; font-weight: 600; border-radius: 6px; color: ${state.chatProjectTab === "templates" ? "#fff" : "var(--muted)"}; background: ${state.chatProjectTab === "templates" ? "var(--accent-color)" : "transparent"}; transition: all 0.15s ease;"
-                @click=${() => {
-                  state.chatProjectTab = "templates";
-                }}
-              >Test Plan</button>
-              <button
-                class="btn btn--clear"
-                style="flex: 1; font-size: 13px; padding: 8px 16px; font-weight: 600; border-radius: 6px; color: ${state.chatProjectTab === "executions" ? "#fff" : "var(--muted)"}; background: ${state.chatProjectTab === "executions" ? "var(--accent-color)" : "transparent"}; transition: all 0.15s ease;"
-                @click=${() => {
-                  state.chatProjectTab = "executions";
-                  if (!state.globalExecutionsList?.length) {
-                    void import("./controllers/projects.js").then((m) =>
-                      m.loadGlobalExecutions(
-                        state as unknown as Parameters<typeof m.loadGlobalExecutions>[0],
-                      ),
-                    );
-                  }
-                }}
-              >Test Run</button>
-            </div>
+      <div class="chat-project-modal__dialog">
+        <header class="chat-project-modal__toolbar">
+          <div class="chat-project-modal__toolbar-left">
+            <h2 class="chat-project-modal__title">Select a Project</h2>
           </div>
-
-          <div style="padding: 20px; background: var(--bg-surface-1);">
-            <div
-              style="padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: ${state.chatSelectedTemplateId === null ? "var(--bg-surface-2)" : "transparent"}; transition: background 0.15s ease;"
-              class="hover-bg-surface-2"
+          <div class="chat-project-modal__toolbar-actions">
+            <button
+              type="button"
+              class="chat-project-modal__btn chat-project-modal__btn--primary"
+              ?disabled=${modalOkDisabled}
               @click=${() => {
-                state.chatSelectedTemplateId = null;
+                if (modalOkDisabled) {
+                  return;
+                }
+                state.chatActiveTemplateId = state.chatSelectedTemplateId;
+                if (state.chatActiveTemplateId) {
+                  writePersistedProjectChatId(state.chatActiveTemplateId);
+                }
+                state.showChatProjectModal = false;
+                state.projectLeftPanelDismissed = false;
+                switchChatSession(state, state.sessionKey);
               }}
             >
-              <div style="display: flex; flex-direction: column; gap: 4px;">
-                <span style="font-weight: 600; font-size: 14px; color: var(--text);">No Project (Clear Context)</span>
-                <span style="font-size: 12px; color: var(--muted);">Generates a standard chat session without specific project instructions.</span>
-              </div>
-              ${state.chatSelectedTemplateId === null ? html`<span style="color: var(--accent-color);">${icons.check}</span>` : nothing}
-            </div>
+              OK
+            </button>
+            <button
+              type="button"
+              class="chat-project-modal__btn"
+              @click=${() => {
+                state.showChatProjectModal = false;
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="chat-project-modal__help"
+              title="Help (coming soon)"
+              aria-label="Help"
+              @click=${(e: Event) => {
+                e.preventDefault();
+              }}
+            >
+              ${icons.helpCircle}
+            </button>
+          </div>
+        </header>
 
+        <div class="chat-project-modal__body">
+          <div class="chat-project-modal__panel">
+            <nav class="chat-project-modal__tabs" aria-label="Project type">
+              <div class="chat-project-modal__tabs-main">
+                <button
+                  type="button"
+                  class="chat-project-modal__tab ${
+                    state.chatProjectTab === "templates" ? "chat-project-modal__tab--active" : ""
+                  }"
+                  @click=${() => {
+                    state.chatProjectTab = "templates";
+                  }}
+                >
+                  Test Plan
+                </button>
+                <button
+                  type="button"
+                  class="chat-project-modal__tab ${
+                    state.chatProjectTab === "executions" ? "chat-project-modal__tab--active" : ""
+                  }"
+                  @click=${() => {
+                    state.chatProjectTab = "executions";
+                    if (!state.globalExecutionsList?.length) {
+                      void import("./controllers/projects.js").then((m) =>
+                        m.loadGlobalExecutions(
+                          state as unknown as Parameters<typeof m.loadGlobalExecutions>[0],
+                        ),
+                      );
+                    }
+                  }}
+                >
+                  Test Run
+                </button>
+              </div>
+            </nav>
             ${
-              state.chatProjectTab === "templates"
-                ? state.templatesList.map(
-                    (template) => html`
-                  <div
-                    style="padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: ${state.chatSelectedTemplateId === template.id ? "var(--bg-surface-2)" : "transparent"}; transition: background 0.15s ease;"
-                    class="hover-bg-surface-2"
-                    @click=${() => {
-                      state.chatSelectedTemplateId = template.id;
-                    }}
-                  >
-                    <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; padding-right: 16px;">
-                      <span style="font-weight: 600; font-size: 14px; color: var(--text);">${template.name}</span>
-                      <span style="font-size: 13px; color: var(--muted); line-height: 1.4;">${template.description || "No description available."}</span>
-                    </div>
-                    ${state.chatSelectedTemplateId === template.id ? html`<span style="color: var(--accent-color); flex-shrink: 0;">${icons.check}</span>` : nothing}
-                  </div>
-                `,
-                  )
-                : (state.globalExecutionsList || []).length === 0
+              showExecEmpty
+                ? html`
+                    <div class="chat-project-modal__empty">No Test Runs available.</div>
+                  `
+                : state.chatProjectTab === "templates"
                   ? html`
-                      <div style="padding: 32px 0; text-align: center; color: var(--muted); font-size: 13px">
-                        No Test Runs available.
+                      <div class="chat-project-modal__tablewrap">
+                        <table class="chat-project-modal__table">
+                          <thead>
+                            <tr>
+                              <th>Project name</th>
+                              <th>Time created</th>
+                              <th>Created by</th>
+                              <th>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${state.templatesList.map((template) => {
+                              const planStatus = templatePlanStatusLabel(template);
+                              return html`
+                                <tr
+                                  class=${
+                                    state.chatSelectedTemplateId === template.id
+                                      ? "chat-project-modal__row--selected"
+                                      : ""
+                                  }
+                                  @click=${() => {
+                                    state.chatSelectedTemplateId = template.id;
+                                  }}
+                                >
+                                  <td>
+                                    <div class="chat-project-modal__name">${template.name}</div>
+                                    <div class="chat-project-modal__muted">
+                                      ${template.description || "—"}
+                                    </div>
+                                  </td>
+                                  <td>${formatChatModalDateTime(template.createdAt)}</td>
+                                  <td>${template.createdBy?.trim() || "—"}</td>
+                                  <td>
+                                    <span
+                                      class=${templatePlanStatusPillClass(planStatus)}
+                                      title="Full lifecycle rules coming soon"
+                                      >${planStatus}</span
+                                    >
+                                  </td>
+                                </tr>
+                              `;
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     `
-                  : (state.globalExecutionsList || []).map(
-                      (execution) => html`
-                  <div
-                    style="padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: ${state.chatSelectedTemplateId === execution.id ? "var(--bg-surface-2)" : "transparent"}; transition: background 0.15s ease;"
-                    class="hover-bg-surface-2"
-                    @click=${() => {
-                      state.chatSelectedTemplateId = execution.id;
-                    }}
-                  >
-                    <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; padding-right: 16px;">
-                      <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-weight: 600; font-size: 14px; color: var(--text);">${execution.name || execution.id}</span>
-                        ${
-                          execution.status === "running"
-                            ? html`
-                                <span
-                                  style="
-                                    font-size: 11px;
-                                    padding: 2px 8px;
-                                    border-radius: 10px;
-                                    background: rgba(56, 139, 253, 0.15);
-                                    color: #58a6ff;
-                                    font-weight: 500;
-                                    display: inline-flex;
-                                    align-items: center;
-                                    gap: 4px;
-                                  "
+                  : html`
+                      <div class="chat-project-modal__tablewrap">
+                        <table class="chat-project-modal__table">
+                          <thead>
+                            <tr>
+                              <th>Project name</th>
+                              <th>Time created</th>
+                              <th>Created by</th>
+                              <th>Status</th>
+                              <th>Finish time</th>
+                              <th>Duration</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${executions.map((execution) => {
+                              const finishMs = resolveExecutionFinishTimeMs(execution);
+                              return html`
+                                <tr
+                                  class=${
+                                    state.chatSelectedTemplateId === execution.id
+                                      ? "chat-project-modal__row--selected"
+                                      : ""
+                                  }
+                                  @click=${() => {
+                                    state.chatSelectedTemplateId = execution.id;
+                                  }}
                                 >
-                                  <span
-                                    style="width: 6px; height: 6px; border-radius: 50%; background: #58a6ff; display: inline-block"
-                                  ></span>
-                                  In Progress
-                                </span>
-                              `
-                            : html`<span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); color: var(--muted);">${execution.status}</span>`
-                        }
+                                  <td>
+                                    <div class="chat-project-modal__name">
+                                      ${execution.name || execution.id}
+                                    </div>
+                                    <div class="chat-project-modal__muted">
+                                      ${execution.targetUrl?.trim() || execution.description?.trim() || "—"}
+                                    </div>
+                                  </td>
+                                  <td>${formatChatModalDateTime(execution.startTime)}</td>
+                                  <td class="chat-project-modal__muted">—</td>
+                                  <td>
+                                    <span class=${testRunStatusPillClass(execution.status)}
+                                      >${mapTestRunStatusLabel(execution.status)}</span
+                                    >
+                                  </td>
+                                  <td>${formatChatModalDateTime(finishMs)}</td>
+                                  <td>${formatChatModalDuration(execution.durationMs)}</td>
+                                </tr>
+                              `;
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                      <span style="font-size: 13px; color: var(--muted); line-height: 1.4;">
-                        ${execution.logTokens ? execution.logTokens + " tokens used" : "Executing..."}
-                        ${execution.targetUrl ? " · " + execution.targetUrl : ""}
-                      </span>
-                    </div>
-                    ${state.chatSelectedTemplateId === execution.id ? html`<span style="color: var(--accent-color); flex-shrink: 0;">${icons.check}</span>` : nothing}
-                  </div>
-                `,
-                    )
+                    `
             }
           </div>
-        </div>
-
-        <div class="project-create-modal__footer" style="padding: 16px 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 12px; background: var(--bg-surface-1);">
-          <button
-            class="btn btn--secondary"
-            style="padding: 8px 16px; border-radius: 6px;"
-            @click=${() => {
-              state.showChatProjectModal = false;
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            class="btn btn--primary"
-            style="padding: 8px 16px; border-radius: 6px;"
-            @click=${() => {
-              state.chatActiveTemplateId = state.chatSelectedTemplateId;
-              state.showChatProjectModal = false;
-            }}
-          >
-            OK
-          </button>
         </div>
       </div>
     </div>
@@ -741,40 +893,6 @@ export function renderChatMobileToggle(state: AppViewState) {
   `;
 }
 
-export function switchChatSession(state: AppViewState, nextSessionKey: string) {
-  state.sessionKey = nextSessionKey;
-  state.chatMessage = "";
-  state.chatStream = null;
-  // P1: Clear queued chat items from the previous session
-  (state as unknown as { chatQueue: unknown[] }).chatQueue = [];
-  (state as unknown as OpenClawApp).chatStreamStartedAt = null;
-  state.chatRunId = null;
-  (state as unknown as OpenClawApp).resetToolStream();
-  (state as unknown as OpenClawApp).resetChatScroll();
-  state.applySettings({
-    ...state.settings,
-    sessionKey: nextSessionKey,
-    lastActiveSessionKey: nextSessionKey,
-  });
-  void state.loadAssistantIdentity();
-  syncUrlWithSessionKey(
-    state as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
-    nextSessionKey,
-    true,
-  );
-  void loadChatHistory(state as unknown as ChatState);
-  void refreshSessionOptions(state);
-}
-
-async function refreshSessionOptions(state: AppViewState) {
-  await loadSessions(state as unknown as Parameters<typeof loadSessions>[0], {
-    activeMinutes: 0,
-    limit: 0,
-    includeGlobal: true,
-    includeUnknown: true,
-  });
-}
-
 function renderChatModelSelect(state: AppViewState) {
   const { currentOverride, defaultLabel, options } = resolveChatModelSelectState(state);
   const busy =
@@ -804,6 +922,15 @@ function renderChatModelSelect(state: AppViewState) {
       </select>
     </label>
   `;
+}
+
+async function refreshSessionOptions(state: AppViewState) {
+  await loadSessions(state as unknown as Parameters<typeof loadSessions>[0], {
+    activeMinutes: 0,
+    limit: 0,
+    includeGlobal: true,
+    includeUnknown: true,
+  });
 }
 
 async function switchChatModel(state: AppViewState, nextModel: string) {

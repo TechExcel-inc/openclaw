@@ -26,7 +26,8 @@ describe("iconForTab", () => {
   });
 
   it("returns stable icons for known tabs", () => {
-    expect(iconForTab("chat")).toBe("messageSquare");
+    expect(iconForTab("chatGeneral")).toBe("messageSquare");
+    expect(iconForTab("chatProject")).toBe("messageSquare");
     expect(iconForTab("overview")).toBe("barChart");
     expect(iconForTab("channels")).toBe("link");
     expect(iconForTab("instances")).toBe("radio");
@@ -56,7 +57,8 @@ describe("titleForTab", () => {
   });
 
   it("returns expected titles", () => {
-    expect(titleForTab("chat")).toBe("Chat");
+    expect(titleForTab("chatGeneral")).toBe("General Chat");
+    expect(titleForTab("chatProject")).toBe("Project Chat");
     expect(titleForTab("overview")).toBe("Overview");
     expect(titleForTab("cron")).toBe("Cron Jobs");
   });
@@ -71,7 +73,8 @@ describe("subtitleForTab", () => {
   });
 
   it("returns descriptive subtitles", () => {
-    expect(subtitleForTab("chat")).toContain("quick interventions");
+    expect(subtitleForTab("chatGeneral")).toContain("none project");
+    expect(subtitleForTab("chatProject")).toContain("Test Plan");
     expect(subtitleForTab("config")).toContain("openclaw.json");
   });
 });
@@ -115,29 +118,32 @@ describe("normalizePath", () => {
 
 describe("pathForTab", () => {
   it("returns correct path without base", () => {
-    expect(pathForTab("chat")).toBe("/chat");
+    expect(pathForTab("chatGeneral")).toBe("/chat/general");
+    expect(pathForTab("chatProject")).toBe("/chat/project");
     expect(pathForTab("overview")).toBe("/overview");
   });
 
   it("prepends base path", () => {
-    expect(pathForTab("chat", "/ui")).toBe("/ui/chat");
+    expect(pathForTab("chatGeneral", "/ui")).toBe("/ui/chat/general");
     expect(pathForTab("sessions", "/apps/openclaw")).toBe("/apps/openclaw/sessions");
   });
 });
 
 describe("tabFromPath", () => {
   it("returns tab for valid path", () => {
-    expect(tabFromPath("/chat")).toBe("chat");
+    expect(tabFromPath("/chat/general")).toBe("chatGeneral");
+    expect(tabFromPath("/chat/project")).toBe("chatProject");
+    expect(tabFromPath("/chat")).toBe("chatGeneral");
     expect(tabFromPath("/overview")).toBe("overview");
     expect(tabFromPath("/sessions")).toBe("sessions");
   });
 
-  it("returns chat for root path", () => {
-    expect(tabFromPath("/")).toBe("chat");
+  it("returns chatGeneral for root path", () => {
+    expect(tabFromPath("/")).toBe("chatGeneral");
   });
 
   it("handles base paths", () => {
-    expect(tabFromPath("/ui/chat", "/ui")).toBe("chat");
+    expect(tabFromPath("/ui/chat/general", "/ui")).toBe("chatGeneral");
     expect(tabFromPath("/apps/openclaw/sessions", "/apps/openclaw")).toBe("sessions");
   });
 
@@ -146,7 +152,7 @@ describe("tabFromPath", () => {
   });
 
   it("is case-insensitive", () => {
-    expect(tabFromPath("/CHAT")).toBe("chat");
+    expect(tabFromPath("/CHAT")).toBe("chatGeneral");
     expect(tabFromPath("/Overview")).toBe("overview");
   });
 });
@@ -162,7 +168,7 @@ describe("inferBasePathFromPathname", () => {
   });
 
   it("infers base path from nested paths", () => {
-    expect(inferBasePathFromPathname("/ui/chat")).toBe("/ui");
+    expect(inferBasePathFromPathname("/ui/chat/general")).toBe("/ui");
     expect(inferBasePathFromPathname("/apps/openclaw/sessions")).toBe("/apps/openclaw");
   });
 
