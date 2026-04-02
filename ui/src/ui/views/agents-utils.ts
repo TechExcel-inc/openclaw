@@ -219,7 +219,8 @@ export function resolveAgentAvatarUrl(
 
 export function agentLogoUrl(basePath: string): string {
   const base = basePath?.trim() ? basePath.replace(/\/$/, "") : "";
-  return base ? `${base}/logo.png` : "logo.png";
+  // Root-relative so SPA routes like /chat/general do not resolve to /chat/logo.png.
+  return base ? `${base}/logo.png` : "/logo.png";
 }
 
 function isLikelyEmoji(value: string) {

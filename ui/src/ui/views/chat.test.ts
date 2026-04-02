@@ -401,7 +401,7 @@ describe("chat view", () => {
     );
     expect(welcomeImage).toBeNull();
     expect(logoImage).not.toBeNull();
-    expect(logoImage?.getAttribute("src")).toBe("logo.png");
+    expect(logoImage?.getAttribute("src")).toBe("/logo.png");
   });
 
   it("keeps the welcome logo fallback under the mounted base path", () => {

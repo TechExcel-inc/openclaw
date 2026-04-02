@@ -108,7 +108,7 @@ describe("agentLogoUrl", () => {
   });
 
   it("uses a route-relative fallback before basePath bootstrap finishes", () => {
-    expect(agentLogoUrl("")).toBe("logo.png");
+    expect(agentLogoUrl("")).toBe("/logo.png");
   });
 });
 
