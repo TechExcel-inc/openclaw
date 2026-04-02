@@ -13,7 +13,11 @@ import {
   renderChatMobileToggle,
   renderChatProjectModal,
   renderChatSessionSelect,
+  formatProjectRunSimpleMarkdown,
   renderProjectChatGate,
+  renderProjectRunGate,
+  renderProjectRunNavItems,
+  projectRunOrdinalLabel,
   renderTab,
   renderSidebarConnectionStatus,
   renderTopbarThemeModeToggle,
@@ -294,6 +298,9 @@ type InfrastructureSectionKey = (typeof INFRASTRUCTURE_SECTION_KEYS)[number];
 type AiAgentsSectionKey = (typeof AI_AGENTS_SECTION_KEYS)[number];
 
 function resolveChatProjectLeftMarkdown(state: AppViewState): string | null {
+  if (state.tab === "chatProjectRun") {
+    return formatProjectRunSimpleMarkdown(state);
+  }
   if (state.tab !== "chatProject") {
     return null;
   }
@@ -457,6 +464,10 @@ export function renderApp(state: AppViewState) {
       projectChatTitle = "Project Chat";
     }
   }
+  let projectChatAssistantName = state.assistantName;
+  if (state.tab === "chatProjectRun" && state.chatProjectRunExecutionId) {
+    projectChatAssistantName = `${projectRunOrdinalLabel(state, state.chatProjectRunExecutionId)} — ${state.assistantName}`;
+  }
   const projectChatProps: ChatProps = {
     sessionKey: state.sessionKey,
     onSessionKeyChange: (next) => {
@@ -546,7 +557,7 @@ export function renderApp(state: AppViewState) {
     onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
     leftSidebarOpen: chatLeftPanelOpen,
     leftSidebarMarkdown: chatProjectLeftMarkdown,
-    leftSidebarTitle: "Project",
+    leftSidebarTitle: state.tab === "chatProjectRun" ? "Project Run" : "Project",
     leftSplitRatio: state.projectLeftSplitRatio,
     onLeftSplitRatioChange: (ratio: number) => {
       state.projectLeftSplitRatio = ratio;
@@ -554,7 +565,7 @@ export function renderApp(state: AppViewState) {
     onCloseLeftSidebar: () => {
       state.projectLeftPanelDismissed = true;
     },
-    assistantName: projectChatTitle ?? state.assistantName,
+    assistantName: projectChatTitle ?? projectChatAssistantName,
     assistantAvatar: state.assistantAvatar,
     basePath: state.basePath ?? "",
   };
@@ -680,6 +691,11 @@ export function renderApp(state: AppViewState) {
                       }
                       <div class="nav-section__items" style=${!navCollapsed ? "padding-left: 12px;" : ""}>
                         ${group.tabs.map((tab) => renderTab(state, tab, { collapsed: navCollapsed }))}
+                        ${
+                          group.label === "chat"
+                            ? renderProjectRunNavItems(state, { collapsed: navCollapsed })
+                            : nothing
+                        }
                       </div>
                     </section>
                   `;
@@ -1622,7 +1638,9 @@ export function renderApp(state: AppViewState) {
         }
 
         ${
-          state.tab === "chatGeneral" || (state.tab === "chatProject" && state.chatActiveTemplateId)
+          state.tab === "chatGeneral" ||
+          (state.tab === "chatProject" && state.chatActiveTemplateId) ||
+          (state.tab === "chatProjectRun" && state.chatProjectRunExecutionId)
             ? renderChat({
                 sessionKey: state.sessionKey,
                 onSessionKeyChange: (next) => {
@@ -1731,6 +1749,12 @@ export function renderApp(state: AppViewState) {
         ${
           state.tab === "chatProject" && !state.chatActiveTemplateId
             ? renderProjectChatGate(state)
+            : nothing
+        }
+
+        ${
+          state.tab === "chatProjectRun" && !state.chatProjectRunExecutionId
+            ? renderProjectRunGate(state)
             : nothing
         }
 

@@ -55,6 +55,8 @@ import {
 import type { AppViewState } from "./app-view-state.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
 import { switchChatSession } from "./chat/ead-chat-sync.ts";
+import { writePersistedProjectChatId } from "./chat/ead-project-chat-persist.ts";
+import { stripEadProjectSuffix } from "./chat/ead-project-session-key.ts";
 import { exportChatMarkdown } from "./chat/export.ts";
 import {
   loadToolsEffective as loadToolsEffectiveInternal,
@@ -434,6 +436,8 @@ export class OpenClawApp extends LitElement {
   @state() createFormTargetUrl = "";
   @state() createFormAiPrompt = "";
   @state() chatActiveTemplateId: string | null = null;
+  /** When tab is chatProjectRun, mirrors URL; also used with chatActiveTemplateId for run-scoped session. */
+  @state() chatProjectRunExecutionId: string | null = null;
   @state() chatSelectedTemplateId: string | null = null;
   @state() chatProjectTab: "templates" | "executions" = "templates";
   @state() showChatProjectModal = false;
@@ -631,7 +635,7 @@ export class OpenClawApp extends LitElement {
   }
 
   setTab(next: Tab) {
-    if (next === "autoTestRun") {
+    if (next === "autoTestRun" || next === "chatProjectRun") {
       void import("./controllers/projects.js").then((m) =>
         m.loadGlobalExecutions(this as unknown as Parameters<typeof m.loadGlobalExecutions>[0]),
       );
@@ -643,6 +647,7 @@ export class OpenClawApp extends LitElement {
     }
     if (next === "chatGeneral") {
       this.chatActiveTemplateId = null;
+      this.chatProjectRunExecutionId = null;
       this.chatShowNoneProjectChat = false;
       if (this.connected) {
         switchChatSession(
@@ -652,6 +657,27 @@ export class OpenClawApp extends LitElement {
       }
     }
     setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], next);
+    this.navDrawerOpen = false;
+  }
+
+  setProjectRunTab(executionId: string) {
+    const id = executionId.trim();
+    if (!id) {
+      return;
+    }
+    this.chatProjectRunExecutionId = id;
+    this.chatActiveTemplateId = id;
+    this.chatShowNoneProjectChat = false;
+    writePersistedProjectChatId(id);
+    if (this.connected) {
+      switchChatSession(this as unknown as AppViewState, stripEadProjectSuffix(this.sessionKey));
+    }
+    void import("./controllers/projects.js").then((m) => {
+      void m.loadGlobalExecutions(this as unknown as Parameters<typeof m.loadGlobalExecutions>[0]);
+      void m.loadExecutionDetail(this as unknown as Parameters<typeof m.loadExecutionDetail>[0], id);
+      m.attachExecutionWatch(this as unknown as Parameters<typeof m.attachExecutionWatch>[0], id);
+    });
+    setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], "chatProjectRun");
     this.navDrawerOpen = false;
   }
 
@@ -866,8 +892,13 @@ export class OpenClawApp extends LitElement {
   }
 
   async handleExecutionRun(templateId: string) {
-    const { runExecution } = await import("./controllers/projects.js");
-    return await runExecution(this as never, templateId);
+    const { runExecution, loadGlobalExecutions } = await import("./controllers/projects.js");
+    const res = await runExecution(this as never, templateId);
+    if (res) {
+      await loadGlobalExecutions(this as never);
+      this.setProjectRunTab(res.id);
+    }
+    return res;
   }
 
   async handleExecutionCancel(executionId: string) {

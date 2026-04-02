@@ -43,6 +43,7 @@ export const en: TranslationMap = {
     nodes: "Nodes",
     chatGeneral: "General Chat",
     chatProject: "Project Chat",
+    chatProjectRun: "Project Run",
     config: "Config",
     communications: "Communications",
     appearance: "Appearance",
@@ -66,6 +67,7 @@ export const en: TranslationMap = {
     nodes: "Paired devices and commands.",
     chatGeneral: "Chat without a test project — same session as “none project” context.",
     chatProject: "Chat scoped to a Test Plan or Test Run — select a project to begin.",
+    chatProjectRun: "One execution of your Test Plan: simple status and chat (steps come later).",
     config: "Edit openclaw.json.",
     communications: "Channels, messages, and audio settings.",
     appearance: "Theme, UI, and setup wizard settings.",
@@ -394,6 +396,10 @@ export const en: TranslationMap = {
     projectGateBody:
       "Choose a Test Plan or Test Run from the picker to open Project Chat and sync session history.",
     projectGateButton: "Choose project",
+    projectRunGateTitle: "Project Run",
+    projectRunGateBody:
+      "No run is selected. Use Project Run 1, Project Run 2, … in the sidebar (after Project Chat), or open Test Run Project.",
+    projectRunGateButton: "Go to Project Chat",
     disconnected: "Disconnected from gateway.",
     refreshTitle: "Refresh chat data",
     thinkingToggle: "Toggle assistant thinking/working output",

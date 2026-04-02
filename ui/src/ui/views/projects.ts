@@ -2,9 +2,6 @@ import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { EadFmNodeRun, TestCaseRun } from "../../../../src/projects/types.js";
 import type { AppViewState } from "../app-view-state.js";
-import { switchChatSession } from "../chat/ead-chat-sync.js";
-import { writePersistedProjectChatId } from "../chat/ead-project-chat-persist.js";
-import { stripEadProjectSuffix } from "../chat/ead-project-session-key.js";
 import { icons } from "../icons.js";
 import { toSanitizedMarkdownHtml } from "../markdown.js";
 import { renderChat, type ChatProps } from "./chat.js";
@@ -700,18 +697,12 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
                class="project-create-modal__btn"
                style="padding: 8px 16px; white-space: nowrap;"
                @click=${() => {
-                 state.chatActiveTemplateId = execution.id;
-                 state.chatSelectedTemplateId = execution.id;
                  state.chatProjectTab = "executions";
                  state.projectLeftPanelDismissed = false;
-                 writePersistedProjectChatId(execution.id);
-                 state.setTab("chatProject");
-                 if (state.connected) {
-                   switchChatSession(state, stripEadProjectSuffix(state.sessionKey));
-                 }
+                 state.setProjectRunTab(execution.id);
                }}
              >
-               Open in Project Chat
+               Open Project Run
              </button>
            </div>
         </div>
@@ -871,7 +862,7 @@ export function renderAutoTestRunView(state: AppViewState, chatProps?: ChatProps
                 return html`
                   <tr 
                     style="border-bottom: 1px solid var(--border-color); transition: background-color 0.2s; cursor: pointer;"
-                    @click=${() => state.handleExecutionSetActive(execution.id)}
+                    @click=${() => state.setProjectRunTab(execution.id)}
                   >
                     <td style="padding: 16px 0; font-family: monospace; font-size: 13px;">
                       ${execution.id.split("-")[0]}...

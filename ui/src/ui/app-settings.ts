@@ -28,7 +28,9 @@ import {
   isChatTab,
   normalizeBasePath,
   normalizePath,
+  pathForProjectRunTab,
   pathForTab,
+  projectRunExecutionIdFromPath,
   tabFromPath,
   type Tab,
 } from "./navigation.ts";
@@ -274,6 +276,14 @@ export async function refreshActiveTab(host: SettingsHost) {
         applyPersistedProjectChatSelection(host as never);
         (host as unknown as OpenClawApp).requestUpdate?.();
       }
+      if (host.tab === "chatProjectRun") {
+        const app = host as unknown as OpenClawApp;
+        const id = app.chatProjectRunExecutionId?.trim();
+        if (id) {
+          void m.loadExecutionDetail(host as never, id);
+        }
+        app.requestUpdate?.();
+      }
     });
     await refreshChat(host as unknown as Parameters<typeof refreshChat>[0]);
     scheduleChatScroll(
@@ -399,6 +409,7 @@ export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
     return;
   }
   const resolved = tabFromPath(window.location.pathname, host.basePath) ?? "chatGeneral";
+  applyProjectRunRouteState(host, resolved);
   setTabFromRoute(host, resolved);
   syncUrlWithTab(host, resolved, replace);
 }
@@ -423,7 +434,25 @@ export function onPopState(host: SettingsHost) {
     });
   }
 
+  applyProjectRunRouteState(host, resolved);
   setTabFromRoute(host, resolved);
+}
+
+function applyProjectRunRouteState(host: SettingsHost, tab: Tab) {
+  const app = host as unknown as OpenClawApp;
+  if (typeof app.chatProjectRunExecutionId === "undefined") {
+    return;
+  }
+  const execId = projectRunExecutionIdFromPath(window.location.pathname, host.basePath);
+  if (tab === "chatProjectRun" && execId) {
+    app.chatProjectRunExecutionId = execId;
+    app.chatActiveTemplateId = execId;
+    app.chatShowNoneProjectChat = false;
+    return;
+  }
+  if (tab !== "chatProjectRun") {
+    app.chatProjectRunExecutionId = null;
+  }
 }
 
 export function setTabFromRoute(host: SettingsHost, next: Tab) {
@@ -436,6 +465,17 @@ function applyTabSelection(
   options: { refreshPolicy: "always" | "connected"; syncUrl?: boolean },
 ) {
   const prev = host.tab;
+  if (prev === "chatProjectRun" && next === "chatProject") {
+    const app = host as unknown as OpenClawApp;
+    const runId = app.chatProjectRunExecutionId;
+    if (runId) {
+      const ex = app.globalExecutionsList?.find((e) => e.id === runId);
+      if (ex?.linkedTemplateId) {
+        app.chatActiveTemplateId = ex.linkedTemplateId;
+      }
+    }
+    app.chatProjectRunExecutionId = null;
+  }
   if (host.tab !== next) {
     host.tab = next;
   }
@@ -472,7 +512,16 @@ export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
   if (typeof window === "undefined") {
     return;
   }
-  const targetPath = normalizePath(pathForTab(tab, host.basePath));
+  let targetPath: string;
+  if (tab === "chatProjectRun") {
+    const execId = (host as unknown as OpenClawApp).chatProjectRunExecutionId?.trim();
+    if (!execId) {
+      return;
+    }
+    targetPath = normalizePath(pathForProjectRunTab(execId, host.basePath));
+  } else {
+    targetPath = normalizePath(pathForTab(tab, host.basePath));
+  }
   const currentPath = normalizePath(window.location.pathname);
   const url = new URL(window.location.href);
 

@@ -39,6 +39,7 @@ export type Tab =
   | "nodes"
   | "chatGeneral"
   | "chatProject"
+  | "chatProjectRun"
   | "config"
   | "communications"
   | "appearance"
@@ -62,6 +63,7 @@ const TAB_PATHS: Record<Tab, string> = {
   nodes: "/nodes",
   chatGeneral: "/chat/general",
   chatProject: "/chat/project",
+  chatProjectRun: "/chat/project/run",
   config: "/config",
   communications: "/communications",
   appearance: "/appearance",
@@ -72,7 +74,45 @@ const TAB_PATHS: Record<Tab, string> = {
   logs: "/logs",
 };
 
-const PATH_TO_TAB = new Map(Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab as Tab]));
+const PATH_TO_TAB = new Map(
+  (Object.entries(TAB_PATHS) as [Tab, string][])
+    .filter(([tab]) => tab !== "chatProjectRun")
+    .map(([tab, path]) => [path, tab]),
+);
+
+const PROJECT_RUN_MARKER = "/chat/project/run/";
+const UUID_TAIL_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Returns execution id when pathname is `/chat/project/run/<uuid>` (optional base path prefix). */
+export function projectRunExecutionIdFromPath(pathname: string, basePath = ""): string | null {
+  const base = normalizeBasePath(basePath);
+  let path = pathname || "/";
+  if (base) {
+    if (path === base) {
+      path = "/";
+    } else if (path.startsWith(`${base}/`)) {
+      path = path.slice(base.length);
+    }
+  }
+  const normalized = normalizePath(path).toLowerCase();
+  const idx = normalized.indexOf(PROJECT_RUN_MARKER);
+  if (idx === -1) {
+    return null;
+  }
+  const tail = normalized.slice(idx + PROJECT_RUN_MARKER.length);
+  if (!UUID_TAIL_RE.test(tail)) {
+    return null;
+  }
+  return tail;
+}
+
+/** Full URL path for a Project Run tab (one execution). */
+export function pathForProjectRunTab(executionId: string, basePath = ""): string {
+  const id = executionId.trim();
+  const base = normalizeBasePath(basePath);
+  const suffix = `${PROJECT_RUN_MARKER}${id}`;
+  return base ? `${base}${suffix}` : suffix;
+}
 
 export function normalizeBasePath(basePath: string): string {
   if (!basePath) {
@@ -106,6 +146,11 @@ export function normalizePath(path: string): string {
 }
 
 export function pathForTab(tab: Tab, basePath = ""): string {
+  if (tab === "chatProjectRun") {
+    throw new Error(
+      "pathForTab: use pathForProjectRunTab(executionId, basePath) for chatProjectRun",
+    );
+  }
   const base = normalizeBasePath(basePath);
   const path = TAB_PATHS[tab];
   return base ? `${base}${path}` : path;
@@ -132,12 +177,15 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
   if (normalized === "/chat") {
     return "chatGeneral";
   }
+  if (projectRunExecutionIdFromPath(pathname, basePath)) {
+    return "chatProjectRun";
+  }
   return PATH_TO_TAB.get(normalized) ?? null;
 }
 
 /** True for both Chat sidebar entries (full chat shell + session UX). */
 export function isChatTab(tab: Tab): boolean {
-  return tab === "chatGeneral" || tab === "chatProject";
+  return tab === "chatGeneral" || tab === "chatProject" || tab === "chatProjectRun";
 }
 
 export function inferBasePathFromPathname(pathname: string): string {
@@ -151,6 +199,13 @@ export function inferBasePathFromPathname(pathname: string): string {
   // Legacy `/chat` (no subpath) resolves like root for base-path inference.
   if (normalized === "/chat") {
     return "";
+  }
+  const prIdx = normalized.toLowerCase().indexOf(PROJECT_RUN_MARKER);
+  if (prIdx !== -1) {
+    const tail = normalized.slice(prIdx + PROJECT_RUN_MARKER.length);
+    if (UUID_TAIL_RE.test(tail)) {
+      return prIdx === 0 ? "" : normalizePath(normalized.slice(0, prIdx));
+    }
   }
   const segments = normalized.split("/").filter(Boolean);
   if (segments.length === 0) {
@@ -176,6 +231,7 @@ export function iconForTab(tab: Tab): IconName {
       return "folder";
     case "chatGeneral":
     case "chatProject":
+    case "chatProjectRun":
       return "messageSquare";
     case "overview":
       return "barChart";

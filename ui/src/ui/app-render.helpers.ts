@@ -23,7 +23,14 @@ import {
 import { refreshVisibleToolsEffectiveForCurrentSession } from "./controllers/agents.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import { icons } from "./icons.ts";
-import { iconForTab, isChatTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
+import {
+  iconForTab,
+  isChatTab,
+  pathForProjectRunTab,
+  pathForTab,
+  titleForTab,
+  type Tab,
+} from "./navigation.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
 import type { ThemeMode, ThemeName } from "./theme.ts";
 import type { SessionsListResult } from "./types.ts";
@@ -46,6 +53,121 @@ function resolveSidebarChatSessionKey(state: AppViewState): string {
     return mainKey;
   }
   return "main";
+}
+
+export function resolveActiveTemplateIdForProjectNav(state: AppViewState): string | null {
+  const tid = state.chatActiveTemplateId;
+  if (!tid) {
+    return null;
+  }
+  if (state.templatesList.some((t) => t.id === tid)) {
+    return tid;
+  }
+  const ex = state.globalExecutionsList?.find((e) => e.id === tid);
+  return ex?.linkedTemplateId ?? null;
+}
+
+export function templateExecutionsOrdered(
+  state: AppViewState,
+  templateId: string,
+): ProjectExecute[] {
+  return (state.globalExecutionsList ?? [])
+    .filter((e) => e.linkedTemplateId === templateId)
+    .toSorted((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0));
+}
+
+export function projectRunOrdinalLabel(state: AppViewState, executionId: string): string {
+  const templateId = resolveActiveTemplateIdForProjectNav(state);
+  if (!templateId) {
+    return "Project Run";
+  }
+  const list = templateExecutionsOrdered(state, templateId);
+  const idx = list.findIndex((e) => e.id === executionId);
+  const n = idx === -1 ? list.length + 1 : idx + 1;
+  return `Project Run ${n}`;
+}
+
+export function formatProjectRunSimpleMarkdown(state: AppViewState): string {
+  const id = state.chatProjectRunExecutionId;
+  if (!id) {
+    return "## Project Run\n\nNo execution selected.";
+  }
+  const ex =
+    state.executionDetail?.id === id
+      ? state.executionDetail
+      : state.globalExecutionsList?.find((e) => e.id === id);
+  if (!ex) {
+    return ["## Project Run & Chat", "", "Loading execution…", "", `\`id\`: \`${id}\``].join("\n");
+  }
+  const statusLabel = ex.status.toUpperCase();
+  const prog = ex.progressPercentage ?? 0;
+  const started = new Date(ex.startTime ?? Date.now()).toLocaleString();
+  const duration =
+    ex.durationMs != null
+      ? `${Math.round(ex.durationMs / 1000)}s`
+      : ex.status === "running" || ex.status === "pending"
+        ? "…"
+        : "—";
+  const title = projectRunOrdinalLabel(state, id);
+  return [
+    `## ${title}`,
+    "",
+    `**Status:** ${statusLabel}`,
+    `**Progress:** ${prog}%`,
+    `**Started:** ${started}`,
+    `**Duration:** ${duration}`,
+    "",
+    `**Execution id:** \`${ex.id}\``,
+    "",
+    "_Step-by-step timeline and thumbnails are a follow-up milestone._",
+  ].join("\n");
+}
+
+export function renderProjectRunNavItems(state: AppViewState, opts?: { collapsed?: boolean }) {
+  const templateId = resolveActiveTemplateIdForProjectNav(state);
+  if (!templateId || state.templatesLoading) {
+    return nothing;
+  }
+  const runs = templateExecutionsOrdered(state, templateId);
+  if (runs.length === 0) {
+    return nothing;
+  }
+  const collapsed = opts?.collapsed ?? state.settings.navCollapsed;
+  return html`
+    ${repeat(
+      runs,
+      (e) => e.id,
+      (e, i) => {
+        const href = pathForProjectRunTab(e.id, state.basePath ?? "");
+        const label = `Project Run ${i + 1}`;
+        const isActive = state.tab === "chatProjectRun" && state.chatProjectRunExecutionId === e.id;
+        return html`
+          <a
+            href=${href}
+            class="nav-item ${isActive ? "nav-item--active" : ""}"
+            @click=${(event: MouseEvent) => {
+              if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              ) {
+                return;
+              }
+              event.preventDefault();
+              state.setProjectRunTab(e.id);
+            }}
+            title=${label}
+          >
+            <span class="nav-item__icon" aria-hidden="true">${icons.messageSquare}</span>
+            ${!collapsed ? html`<span class="nav-item__text">${label}</span>` : nothing}
+          </a>
+        `;
+      },
+    )}
+  `;
 }
 
 export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: boolean }) {
@@ -203,6 +325,26 @@ export function renderProjectChatGate(state: AppViewState) {
           }}
         >
           ${t("chat.projectGateButton")}
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+export function renderProjectRunGate(state: AppViewState) {
+  return html`
+    <section class="project-chat-gate">
+      <div class="project-chat-gate__card">
+        <h2 class="project-chat-gate__title">${t("chat.projectRunGateTitle")}</h2>
+        <p class="project-chat-gate__body">${t("chat.projectRunGateBody")}</p>
+        <button
+          type="button"
+          class="btn btn--primary"
+          @click=${() => {
+            state.setTab("chatProject");
+          }}
+        >
+          ${t("chat.projectRunGateButton")}
         </button>
       </div>
     </section>

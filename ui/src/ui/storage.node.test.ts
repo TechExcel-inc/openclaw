@@ -92,7 +92,7 @@ describe("loadSettings default gateway URL derivation", () => {
     setTestLocation({
       protocol: "http:",
       host: "gateway.example:18789",
-      pathname: "/apps/openclaw/chat",
+      pathname: "/apps/openclaw/chat/general",
     });
 
     const { loadSettings } = await import("./storage.ts");

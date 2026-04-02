@@ -274,6 +274,8 @@ export async function loadExecutionDetail(state: ProjectsState, id: string) {
   }
 }
 
+const activeExecutionPollers = new Set<string>();
+
 export async function runExecution(state: ProjectsState, templateId: string) {
   if (!state.client || !state.connected) {
     return;
@@ -282,13 +284,21 @@ export async function runExecution(state: ProjectsState, templateId: string) {
     const res = await state.client.request<ProjectExecute>("executions.run", { templateId });
     if (res) {
       state.executionsList.push(res);
-      // Wait a moment and continuously reload execution details
+      const global = state.globalExecutionsList ?? [];
+      if (!global.some((e) => e.id === res.id)) {
+        state.globalExecutionsList = [...global, res];
+      }
       void runExecutionPoller(state, res.id);
       return res;
     }
   } catch (err) {
     state.executionsError = String(err);
   }
+}
+
+/** Poll gateway until execution finishes; safe to call multiple times (deduped per id). */
+export function attachExecutionWatch(state: ProjectsState, executionId: string) {
+  void runExecutionPoller(state, executionId);
 }
 
 export async function cancelExecution(state: ProjectsState, id: string) {
@@ -305,35 +315,62 @@ export async function cancelExecution(state: ProjectsState, id: string) {
       if (state.executionDetail?.id === id) {
         state.executionDetail = res;
       }
+      const gIdx = (state.globalExecutionsList ?? []).findIndex((e) => e.id === id);
+      if (gIdx !== -1) {
+        const next = [...(state.globalExecutionsList ?? [])];
+        next[gIdx] = res;
+        state.globalExecutionsList = next;
+      }
     }
   } catch (err) {
     state.executionsError = String(err);
   }
 }
 
+function mergeGlobalExecution(state: ProjectsState, res: ProjectExecute) {
+  const list = state.globalExecutionsList ?? [];
+  const gIdx = list.findIndex((e) => e.id === res.id);
+  if (gIdx !== -1) {
+    const next = [...list];
+    next[gIdx] = res;
+    state.globalExecutionsList = next;
+  } else {
+    state.globalExecutionsList = [...list, res];
+  }
+}
+
 async function runExecutionPoller(state: ProjectsState, executionId: string) {
-  for (let i = 0; i < 60; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    if (!state.client) {
-      break;
-    }
-    try {
-      const res = await state.client.request<ProjectExecute>("executions.get", { id: executionId });
-      if (res) {
-        const idx = state.executionsList.findIndex((e) => e.id === executionId);
-        if (idx !== -1) {
-          state.executionsList[idx] = res;
-        }
-        if (state.executionDetail?.id === executionId) {
-          state.executionDetail = res;
-        }
-        if (res.status === "completed" || res.status === "error" || res.status === "cancelled") {
-          return;
-        }
+  if (activeExecutionPollers.has(executionId)) {
+    return;
+  }
+  activeExecutionPollers.add(executionId);
+  try {
+    for (let i = 0; i < 60; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (!state.client) {
+        break;
       }
-    } catch {
-      break;
+      try {
+        const res = await state.client.request<ProjectExecute>("executions.get", { id: executionId });
+        if (res) {
+          const idx = state.executionsList.findIndex((e) => e.id === executionId);
+          if (idx !== -1) {
+            state.executionsList[idx] = res;
+          }
+          if (state.executionDetail?.id === executionId) {
+            state.executionDetail = res;
+          }
+          mergeGlobalExecution(state, res);
+          if (res.status === "completed" || res.status === "error" || res.status === "cancelled") {
+            return;
+          }
+        }
+      } catch {
+        break;
+      }
     }
+  } finally {
+    activeExecutionPollers.delete(executionId);
   }
 }
 

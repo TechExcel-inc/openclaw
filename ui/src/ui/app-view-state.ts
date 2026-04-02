@@ -317,6 +317,7 @@ export type AppViewState = {
     refreshSessionsAfterChat: Set<string>;
     connect: () => void;
     setTab: (tab: Tab) => void;
+    setProjectRunTab: (executionId: string) => void;
     setTheme: (theme: ThemeName, context?: ThemeTransitionContext) => void;
     setThemeMode: (mode: ThemeMode, context?: ThemeTransitionContext) => void;
     setBorderRadius: (value: number) => void;
@@ -395,6 +396,7 @@ export type AppViewState = {
     createFormAiPrompt: string;
     // Chat Project Integration
     chatActiveTemplateId: string | null;
+    chatProjectRunExecutionId: string | null;
     chatSelectedTemplateId: string | null;
     chatProjectTab: "templates" | "executions";
     showChatProjectModal: boolean;
