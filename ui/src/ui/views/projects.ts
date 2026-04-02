@@ -221,6 +221,7 @@ function renderTemplateList(state: AppViewState) {
             state.templateModalMode = "create";
             state.createFormName = "";
             state.createFormDescription = "";
+            state.createFormTargetUrl = "";
             state.createFormAiPrompt = DEFAULT_AI_PROMPT;
             state.templateModalPreviewMarkdown = false;
             state.showCreateModal = true;
@@ -240,6 +241,7 @@ function renderTemplateList(state: AppViewState) {
               state.templateModalMode = "create";
               state.createFormName = "";
               state.createFormDescription = "";
+              state.createFormTargetUrl = "";
               state.createFormAiPrompt = DEFAULT_AI_PROMPT;
               state.templateModalPreviewMarkdown = false;
               state.showCreateModal = true;
@@ -329,6 +331,7 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                       state.templateModalMode = "edit";
                       state.createFormName = template.name;
                       state.createFormDescription = template.description || "";
+                      state.createFormTargetUrl = template.targetUrl || "";
                       state.createFormAiPrompt = template.aiPrompt || "";
                       state.templateModalPreviewMarkdown = false;
                       state.showCreateModal = true;
@@ -344,12 +347,13 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                       state.templateModalMode = "run";
                       state.createFormName = template.name;
                       state.createFormDescription = template.description || "";
+                      state.createFormTargetUrl = template.targetUrl || "";
                       state.createFormAiPrompt = template.aiPrompt || "";
                       state.templateModalPreviewMarkdown = true;
                       state.showCreateModal = true;
                     }}
                   >
-                    ${icons.spark} Run Execution
+                    ${icons.spark} Run Learning
                   </button>
                 </div>
               </div>
@@ -409,7 +413,7 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                     <div style="padding: 40px 24px; text-align: center; border: 1px dashed var(--border-color); border-radius: 12px; background: var(--bg-surface-2);">
                       <div style="color: var(--muted); margin-bottom: 12px;">${icons.spark}</div>
                       <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600;">No runs yet</h3>
-                      <p style="margin: 0; color: var(--muted); font-size: 14px;">Click "Run Execution" above to test this plan.</p>
+                      <p style="margin: 0; color: var(--muted); font-size: 14px;">Click "Run Learning" above to test this plan.</p>
                     </div>
                   `
                 : html`
@@ -472,7 +476,7 @@ function renderCreateModal(state: AppViewState) {
       ? "Starting..."
       : "Saving..."
     : isRun
-      ? "Run Execution"
+      ? "Run Learning"
       : isEdit
         ? "Save Changes"
         : "Create Template";
@@ -526,6 +530,18 @@ function renderCreateModal(state: AppViewState) {
                     .value=${state.createFormDescription}
                     @input=${(e: Event) => {
                       state.createFormDescription = (e.target as HTMLInputElement).value;
+                    }}
+                  />
+                </div>
+                <div class="project-create-modal__field">
+                  <label class="project-create-modal__label">Target URL</label>
+                  <input
+                    class="project-create-modal__input"
+                    type="text"
+                    placeholder="https://example.com"
+                    .value=${state.createFormTargetUrl}
+                    @input=${(e: Event) => {
+                      state.createFormTargetUrl = (e.target as HTMLInputElement).value;
                     }}
                   />
                 </div>
@@ -606,6 +622,7 @@ function renderCreateModal(state: AppViewState) {
                 await state.handleTemplateUpdate(state.templateDetail.id, {
                   name: state.createFormName.trim(),
                   description: state.createFormDescription.trim(),
+                  targetUrl: state.createFormTargetUrl.trim(),
                   aiPrompt: state.createFormAiPrompt.trim(),
                 });
                 state.showCreateModal = false;
@@ -613,6 +630,7 @@ function renderCreateModal(state: AppViewState) {
                 void state.handleTemplateCreate(
                   state.createFormName.trim(),
                   state.createFormDescription.trim(),
+                  state.createFormTargetUrl.trim(),
                   state.createFormAiPrompt.trim(),
                 );
               }

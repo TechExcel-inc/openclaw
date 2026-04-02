@@ -29,6 +29,7 @@ export type ProjectsState = {
   showCreateModal: boolean;
   createFormName: string;
   createFormDescription: string;
+  createFormTargetUrl: string;
   createFormAiPrompt: string;
 
   // Executions
@@ -97,6 +98,7 @@ export async function createTemplate(
   state: ProjectsState,
   name: string,
   description?: string,
+  targetUrl?: string,
   aiPrompt?: string,
 ) {
   if (!state.client || !state.connected) {
@@ -108,6 +110,7 @@ export async function createTemplate(
     const res = await state.client.request<ProjectTemplate>("templates.create", {
       name,
       description: description ?? "",
+      targetUrl: targetUrl ?? "",
       aiPrompt: aiPrompt ?? "",
     });
     if (res) {
@@ -119,6 +122,7 @@ export async function createTemplate(
       state.showCreateModal = false;
       state.createFormName = "";
       state.createFormDescription = "";
+      state.createFormTargetUrl = "";
       state.createFormAiPrompt = "";
       void loadExecutions(state, res.id);
     }
@@ -132,7 +136,7 @@ export async function createTemplate(
 export async function updateTemplate(
   state: ProjectsState,
   id: string,
-  updates: { name?: string; description?: string; aiPrompt?: string },
+  updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
 ) {
   if (!state.client || !state.connected) {
     return;

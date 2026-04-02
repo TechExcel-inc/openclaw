@@ -391,6 +391,7 @@ export type AppViewState = {
     templateAutoFormatting: boolean;
     createFormName: string;
     createFormDescription: string;
+    createFormTargetUrl: string;
     createFormAiPrompt: string;
     // Chat Project Integration
     chatActiveTemplateId: string | null;

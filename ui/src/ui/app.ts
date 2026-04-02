@@ -415,6 +415,7 @@ export class OpenClawApp extends LitElement {
   @state() templateAutoFormatting = false;
   @state() createFormName = "";
   @state() createFormDescription = "";
+  @state() createFormTargetUrl = "";
   @state() createFormAiPrompt = "";
   @state() chatActiveTemplateId: string | null = null;
   @state() chatSelectedTemplateId: string | null = null;
@@ -801,9 +802,14 @@ export class OpenClawApp extends LitElement {
   }
 
   // Templates & Executions Handlers
-  async handleTemplateCreate(name: string, description?: string, aiPrompt?: string) {
+  async handleTemplateCreate(
+    name: string,
+    description?: string,
+    targetUrl?: string,
+    aiPrompt?: string,
+  ) {
     const { createTemplate } = await import("./controllers/projects.js");
-    await createTemplate(this as never, name, description, aiPrompt);
+    await createTemplate(this as never, name, description, targetUrl, aiPrompt);
   }
 
   async handleTemplateDelete(id: string) {
@@ -819,7 +825,7 @@ export class OpenClawApp extends LitElement {
 
   async handleTemplateUpdate(
     id: string,
-    updates: { name?: string; description?: string; aiPrompt?: string },
+    updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
   ) {
     const { updateTemplate } = await import("./controllers/projects.js");
     await updateTemplate(this as never, id, updates);
