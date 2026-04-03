@@ -35,6 +35,7 @@ type LifecycleHost = {
   chatMessages: unknown[];
   chatToolMessages: unknown[];
   chatStream: string | null;
+  executionDetail: { progressLog?: unknown[] } | null;
   logsAutoFollow: boolean;
   logsAtBottom: boolean;
   logsEntries: unknown[];
@@ -119,6 +120,13 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
         host as unknown as Parameters<typeof scheduleLogsScroll>[0],
         changed.has("tab") || changed.has("logsAutoFollow"),
       );
+    }
+  }
+  // Auto-scroll the project run progress log when new entries arrive
+  if (host.tab === "chatProjectRun" && changed.has("executionDetail")) {
+    const logLen = host.executionDetail?.progressLog?.length ?? 0;
+    if (logLen > 0) {
+      scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
     }
   }
 }

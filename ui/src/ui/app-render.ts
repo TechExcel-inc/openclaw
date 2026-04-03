@@ -16,6 +16,7 @@ import {
   formatProjectRunSimpleMarkdown,
   hasProjectRunCaptures,
   renderProjectRunCaptureGallery,
+  renderProjectRunProgressLog,
   renderProjectChatGate,
   renderProjectRunGate,
   renderProjectRunNavItems,
@@ -376,11 +377,14 @@ export function renderApp(state: AppViewState) {
   const chatProjectLeftMarkdown = resolveChatProjectLeftMarkdown(state);
   const isProjectRunChat = state.tab === "chatProjectRun";
   const projectRunLeftExtra =
-    isProjectRunChat && state.chatProjectRunExecutionId && hasProjectRunCaptures(state)
-      ? renderProjectRunCaptureGallery(state)
+    isProjectRunChat && state.chatProjectRunExecutionId
+      ? html`
+        ${hasProjectRunCaptures(state) ? renderProjectRunCaptureGallery(state) : nothing}
+        ${renderProjectRunProgressLog(state) ?? nothing}
+      `
       : undefined;
   const chatLeftPanelOpen = isProjectRunChat
-    ? Boolean(chatProjectLeftMarkdown?.trim() || hasProjectRunCaptures(state))
+    ? Boolean(chatProjectLeftMarkdown?.trim() || projectRunLeftExtra)
     : Boolean(chatProjectLeftMarkdown) && !state.projectLeftPanelDismissed;
   const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
   const navDrawerOpen = Boolean(state.navDrawerOpen && !chatFocus && !state.onboarding);

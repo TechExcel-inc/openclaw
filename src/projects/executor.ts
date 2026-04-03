@@ -3,8 +3,9 @@ import {
   loadSessionEntry,
   readSessionMessages,
 } from "../gateway/session-utils.js";
+import { extractToolCallNames } from "../utils/transcript-tools.js";
 import { loadProjectsStore, resolveProjectsStorePath, saveProjectsStore } from "./store.js";
-import type { EadFmNodeRun, TestCaseRun, TestCaseStepRun } from "./types.js";
+import type { EadFmNodeRun, ProgressLogEntry, TestCaseRun, TestCaseStepRun } from "./types.js";
 
 const executionControllers = new Map<string, AbortController>();
 
@@ -218,6 +219,166 @@ function extractTranscriptText(content: unknown): string {
   return "";
 }
 
+const PROGRESS_LOG_MAX = 200;
+const PROGRESS_TEXT_MAX = 160;
+
+function extractToolDetail(block: Record<string, unknown>): string {
+  const input = block.input;
+  if (!input || typeof input !== "object") {
+    return "";
+  }
+  const inp = input as Record<string, unknown>;
+  // browser_navigate → url
+  if (typeof inp.url === "string" && inp.url.trim()) {
+    return ` to ${inp.url.trim()}`;
+  }
+  // browser_click / browser_type → selector or description
+  if (typeof inp.description === "string" && inp.description.trim()) {
+    return ` on "${inp.description.trim()}"`;
+  }
+  if (typeof inp.selector === "string" && inp.selector.trim()) {
+    return ` on ${inp.selector.trim()}`;
+  }
+  if (typeof inp.element === "string" && inp.element.trim()) {
+    return ` on ${inp.element.trim()}`;
+  }
+  if (typeof inp.query === "string" && inp.query.trim()) {
+    return `: "${inp.query.trim()}"`;
+  }
+  if (typeof inp.action === "string" && inp.action.trim()) {
+    return ` (${inp.action.trim()})`;
+  }
+  return "";
+}
+
+/**
+ * Extracts new progress log entries from the session transcript that are not already
+ * present in the existing log. Deduplicates against existing entries by text content.
+ */
+function extractProgressLogFromTranscript(
+  sessionKey: string,
+  existingLog: ProgressLogEntry[],
+): ProgressLogEntry[] {
+  const loaded = loadSessionEntry(sessionKey);
+  if (!loaded.entry?.sessionId) {
+    return [];
+  }
+  const transcript = readSessionMessages(
+    loaded.entry.sessionId,
+    loaded.storePath,
+    loaded.entry.sessionFile,
+  );
+  if (transcript.length === 0) {
+    return [];
+  }
+
+  const existingTexts = new Set(existingLog.map((e) => e.text));
+  const entries: ProgressLogEntry[] = [];
+
+  for (let i = 0; i < transcript.length; i++) {
+    const row = transcript[i];
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const msg = row as Record<string, unknown>;
+    const role = typeof msg.role === "string" ? msg.role : "";
+    const ts =
+      typeof msg.timestamp === "number"
+        ? msg.timestamp
+        : typeof msg.__openclaw === "object"
+          ? (((msg.__openclaw as Record<string, unknown>)?.ts as number) ?? Date.now())
+          : Date.now();
+
+    if (role === "assistant") {
+      const toolNames = extractToolCallNames(msg);
+      if (toolNames.length > 0) {
+        // Extract tool_use details from content blocks
+        const content = msg.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (!block || typeof block !== "object") {
+              continue;
+            }
+            const b = block as Record<string, unknown>;
+            const type = typeof b.type === "string" ? b.type.trim().toLowerCase() : "";
+            if (type !== "tool_use" && type !== "toolcall" && type !== "tool_call") {
+              continue;
+            }
+            const name = typeof b.name === "string" ? b.name.trim() : "";
+            if (!name) {
+              continue;
+            }
+            const detail = extractToolDetail(b);
+            const text = `Using ${name}${detail}`;
+            if (!existingTexts.has(text)) {
+              entries.push({ ts, kind: "tool_use", text });
+              existingTexts.add(text);
+            }
+          }
+        } else {
+          // Fallback: toolName field without content array
+          for (const name of toolNames) {
+            const text = `Using ${name}`;
+            if (!existingTexts.has(text)) {
+              entries.push({ ts, kind: "tool_use", text });
+              existingTexts.add(text);
+            }
+          }
+        }
+      } else {
+        // Assistant text (no tool calls) — narrative summary
+        const textContent = extractTranscriptText(msg.content);
+        if (textContent) {
+          const summary =
+            textContent.length > PROGRESS_TEXT_MAX
+              ? `${textContent.slice(0, PROGRESS_TEXT_MAX).trimEnd()}...`
+              : textContent;
+          if (!existingTexts.has(summary)) {
+            entries.push({ ts, kind: "assistant", text: summary });
+            existingTexts.add(summary);
+          }
+        }
+      }
+    } else if (role === "tool") {
+      const toolName =
+        typeof msg.toolName === "string"
+          ? msg.toolName.trim()
+          : typeof msg.tool_name === "string"
+            ? msg.tool_name.trim()
+            : "";
+      const isError = msg.is_error === true || msg.isError === true;
+      if (toolName) {
+        const text = isError ? `Error in ${toolName}` : `Completed: ${toolName}`;
+        if (!existingTexts.has(text)) {
+          entries.push({ ts, kind: isError ? "system" : "tool_result", text });
+          existingTexts.add(text);
+        }
+      }
+    }
+  }
+
+  // Cap total entries
+  if (entries.length > PROGRESS_LOG_MAX) {
+    return entries.slice(entries.length - PROGRESS_LOG_MAX);
+  }
+  return entries;
+}
+
+/** Append new progress log entries to the execution entry inside an updateExecutionSnapshot callback. */
+function appendProgressLog(
+  entry: { progressLog?: ProgressLogEntry[] },
+  newEntries: ProgressLogEntry[],
+) {
+  if (newEntries.length === 0) {
+    return;
+  }
+  const existing = entry.progressLog ?? [];
+  entry.progressLog = [...existing, ...newEntries];
+  if (entry.progressLog.length > PROGRESS_LOG_MAX) {
+    entry.progressLog = entry.progressLog.slice(entry.progressLog.length - PROGRESS_LOG_MAX);
+  }
+}
+
 function readProjectRunTranscriptSnapshot(sessionKey: string): {
   messageCount: number;
   latestAssistantText?: string;
@@ -397,6 +558,10 @@ export async function runProjectExecution(executionId: string): Promise<void> {
 
       const row = loadGatewaySessionRow(activeSessionKey);
       const transcript = readProjectRunTranscriptSnapshot(activeSessionKey);
+      const newProgressEntries = extractProgressLogFromTranscript(
+        activeSessionKey,
+        current.progressLog ?? [],
+      );
       const currentTokens =
         typeof row?.totalTokensFresh === "number"
           ? row.totalTokensFresh
@@ -415,6 +580,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
               transcript.latestAssistantText ??
               "OpenClaw never reported a live session state for this Project Run.";
             entry.executorHint = resolveTerminalHint("error");
+            appendProgressLog(entry, newProgressEntries);
             entry.results = [
               buildTranscriptEvidenceRun({
                 executionId,
@@ -430,6 +596,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
           entry.paused = Boolean(entry.paused);
           entry.progressPercentage = Math.max(entry.progressPercentage, entry.paused ? 8 : 15);
           entry.executorHint = resolveRunningHint(entry.targetUrl, entry.paused, entry.authMode);
+          appendProgressLog(entry, newProgressEntries);
           if (typeof currentTokens === "number") {
             entry.logTokens = currentTokens;
           }
@@ -458,6 +625,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
             entry.paused ? 8 : resolveActiveRunProgress(transcript.messageCount),
           );
           entry.executorHint = resolveRunningHint(entry.targetUrl, entry.paused, entry.authMode);
+          appendProgressLog(entry, newProgressEntries);
           if (typeof currentTokens === "number") {
             entry.logTokens = currentTokens;
           }
@@ -488,6 +656,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
               ? Math.max(0, Date.now() - entry.startTime)
               : null;
         entry.executorHint = resolveTerminalHint(terminalStatus);
+        appendProgressLog(entry, newProgressEntries);
         if (typeof currentTokens === "number") {
           entry.logTokens = currentTokens;
         }

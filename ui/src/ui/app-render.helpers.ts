@@ -2,6 +2,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type {
   ExecutionStatus,
+  ProgressLogEntry,
   ProjectExecute,
   ProjectTemplate,
 } from "../../../src/projects/types.js";
@@ -317,6 +318,59 @@ export function renderProjectRunCaptureGallery(state: AppViewState): TemplateRes
             />
           </div>
         `,
+      )}
+    </div>
+  `;
+}
+
+function resolveExecutionForRun(state: AppViewState, id: string): ProjectExecute | undefined {
+  return state.executionDetail?.id === id
+    ? state.executionDetail
+    : state.globalExecutionsList?.find((e) => e.id === id);
+}
+
+/**
+ * Renders a scrolling progress log in the Project Run left sidebar.
+ * Each entry shows a colored indicator, timestamp, and description of what
+ * the agent is currently doing (tool calls, results, assistant text).
+ */
+export function renderProjectRunProgressLog(state: AppViewState): TemplateResult | undefined {
+  const id = state.chatProjectRunExecutionId?.trim();
+  if (!id) {
+    return undefined;
+  }
+  const ex = resolveExecutionForRun(state, id);
+  if (!ex?.progressLog?.length) {
+    return undefined;
+  }
+  return html`
+    <div
+      class="progress-log log-stream"
+      style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); max-height: min(50vh, 480px); overflow-y: auto; font-size: 12px; line-height: 1.5;"
+    >
+      <div
+        style="font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px;"
+      >
+        ${t("chat.projectRunProgressLogTitle")}
+      </div>
+      ${repeat(
+        ex.progressLog,
+        (e: ProgressLogEntry, i: number) => `${i}`,
+        (entry: ProgressLogEntry) => {
+          const time = new Date(entry.ts).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          });
+          const dotClass = `progress-log-entry__dot--${entry.kind}`;
+          return html`
+            <div class="progress-log-entry">
+              <span class="progress-log-entry__dot ${dotClass}"></span>
+              <span class="progress-log-entry__time">${time}</span>
+              <span class="progress-log-entry__text">${entry.text}</span>
+            </div>
+          `;
+        },
       )}
     </div>
   `;

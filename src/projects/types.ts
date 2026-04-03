@@ -77,6 +77,12 @@ export type EadFmNodeRun = {
 
 export type ExecutionStatus = "pending" | "running" | "completed" | "cancelled" | "error";
 
+export type ProgressLogEntry = {
+  ts: number;
+  kind: "tool_use" | "tool_result" | "assistant" | "system";
+  text: string;
+};
+
 export type ProjectExecute = {
   id: string;
   linkedTemplateId: string;
@@ -107,6 +113,8 @@ export type ProjectExecute = {
   /** Optional note from the operator when stopping the run. */
   cancelReason?: string;
   results: EadFmNodeRun[];
+  /** Accumulated progress log entries extracted from the run transcript. */
+  progressLog?: ProgressLogEntry[];
 };
 
 export type ProjectsStoreFile = {
