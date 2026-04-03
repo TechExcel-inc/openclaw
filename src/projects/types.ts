@@ -77,6 +77,37 @@ export type EadFmNodeRun = {
 
 export type ExecutionStatus = "pending" | "running" | "completed" | "cancelled" | "error";
 
+export type StepStatus =
+  | "pending" // Step not yet started
+  | "running" // Step currently executing
+  | "completed" // Step finished successfully
+  | "failed" // Step failed (assertion error, exception)
+  | "skipped"; // Step skipped (conditional logic)
+
+export type StepArtifact = {
+  type: "screenshot" | "console_log" | "network_log" | "dom_snapshot";
+  path: string; // Local path or URL to artifact
+  thumbnailPath?: string; // 200x150 thumbnail for UI
+  capturedAt: string; // ISO timestamp
+  description?: string; // AI-generated description
+};
+
+export type StepResult = {
+  stepId: string; // "step-1", "step-2", etc.
+  title: string; // Human-readable step title
+  status: StepStatus;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  artifacts: StepArtifact[];
+  summary?: string; // AI-generated summary of what happened
+  error?: {
+    message: string;
+    type: string;
+    stack?: string;
+  };
+};
+
 export type ProgressLogEntry = {
   ts: number;
   kind: "tool_use" | "tool_result" | "assistant" | "system";
@@ -97,8 +128,14 @@ export type ProjectExecute = {
   /** Run-scoped OpenClaw session key that owns the chat/browser work for this execution. */
   runSessionKey?: string;
   /** Gateway chat run id for the primary OpenClaw turn that powers this execution. */
+  /** Gateway chat run id for the primary OpenClaw turn that powers this execution. */
   agentRunId?: string;
   status: ExecutionStatus;
+
+  // NEW: Step-level tracking
+  steps: StepResult[]; // Ordered list of all steps
+  currentStepId?: string; // Currently active step
+
   /** When true, the executor should wait between steps until resumed (operator-controlled). */
   paused?: boolean;
   progressPercentage: number;
@@ -120,7 +157,7 @@ export type ProjectExecute = {
 };
 
 export type ProjectsStoreFile = {
-  version: 2;
+  version: 3;
   templates: ProjectTemplate[];
   executions: ProjectExecute[];
   activeTemplateId: string | null;

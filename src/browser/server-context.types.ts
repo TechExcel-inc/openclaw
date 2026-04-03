@@ -27,9 +27,16 @@ export type BrowserServerState = {
   profiles: Map<string, ProfileRuntimeState>;
 };
 
+export type BrowserLaunchOverrides = {
+  headless?: boolean;
+};
+
 type BrowserProfileActions = {
-  ensureBrowserAvailable: () => Promise<void>;
-  ensureTabAvailable: (targetId?: string) => Promise<BrowserTab>;
+  ensureBrowserAvailable: (overrides?: BrowserLaunchOverrides) => Promise<void>;
+  ensureTabAvailable: (
+    targetId?: string,
+    overrides?: BrowserLaunchOverrides,
+  ) => Promise<BrowserTab>;
   isHttpReachable: (timeoutMs?: number) => Promise<boolean>;
   isReachable: (timeoutMs?: number) => Promise<boolean>;
   listTabs: () => Promise<BrowserTab[]>;

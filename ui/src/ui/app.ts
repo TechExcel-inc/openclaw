@@ -467,6 +467,9 @@ export class OpenClawApp extends LitElement {
   @state() executionDetail: import("../../../src/projects/types.js").ProjectExecute | null = null;
   @state() executionDetailLoading = false;
   @state() activeExecutionId: string | null = null;
+  @state() showExecutionChat = false;
+  @state() testPlanPage = 0;
+  @state() testRunPage = 0;
 
   @state() globalExecutionsLoading = false;
   @state() globalExecutionsList: import("../../../src/projects/types.js").ProjectExecute[] = [];
@@ -754,6 +757,7 @@ export class OpenClawApp extends LitElement {
     });
     setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], "chatProjectRun");
     this.navDrawerOpen = false;
+    this.showExecutionChat = false;
   }
 
   setTheme(next: ThemeName, context?: Parameters<typeof setThemeInternal>[2]) {
@@ -847,6 +851,18 @@ export class OpenClawApp extends LitElement {
 
   async handleNostrProfileSave() {
     await handleNostrProfileSaveInternal(this);
+  }
+
+  setTestPlanPage(page: number) {
+    this.testPlanPage = page;
+  }
+
+  setTestRunPage(page: number) {
+    this.testRunPage = page;
+  }
+
+  setShowExecutionChat(show: boolean) {
+    this.showExecutionChat = show;
   }
 
   async handleNostrProfileImport() {

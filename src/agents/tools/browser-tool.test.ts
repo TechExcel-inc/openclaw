@@ -119,7 +119,7 @@ vi.mock("../../config/config.js", () => configMocks);
 const projectsStoreMocks = vi.hoisted(() => ({
   loadProjectsStore: vi.fn(
     async (): Promise<ProjectsStoreFile> => ({
-      version: 2,
+      version: 3,
       templates: [],
       executions: [],
       activeTemplateId: null,
@@ -526,7 +526,7 @@ describe("browser tool url alias support", () => {
       "qa-admin-session": { driver: "existing-session" },
     });
     projectsStoreMocks.loadProjectsStore.mockResolvedValueOnce({
-      version: 2,
+      version: 3,
       templates: [],
       executions: [
         {
@@ -540,6 +540,7 @@ describe("browser tool url alias support", () => {
           authSessionProfile: "qa-admin-session",
           runSessionKey: "agent:main:main:eadproj:run:run-1",
           status: "running",
+          steps: [],
           progressPercentage: 15,
           startTime: 1,
           durationMs: null,
@@ -555,7 +556,42 @@ describe("browser tool url alias support", () => {
     expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
       undefined,
       "https://example.com",
-      expect.objectContaining({ profile: "qa-admin-session" }),
+      expect.objectContaining({ profile: "qa-admin-session", headless: true }),
+    );
+  });
+
+  it("forces headless launches for auto-start Project Runs", async () => {
+    projectsStoreMocks.loadProjectsStore.mockResolvedValueOnce({
+      version: 3,
+      templates: [],
+      executions: [
+        {
+          id: "run-2",
+          linkedTemplateId: "template-1",
+          name: "Run 2",
+          description: "",
+          targetUrl: "https://example.com",
+          aiPrompt: "Explore",
+          authMode: "none",
+          runSessionKey: "agent:main:main:eadproj:run:run-2",
+          status: "running",
+          steps: [],
+          progressPercentage: 15,
+          startTime: 1,
+          durationMs: null,
+          results: [],
+        },
+      ],
+      activeTemplateId: null,
+    });
+    const tool = createBrowserTool({ agentSessionKey: "agent:main:main:eadproj:run:run-2" });
+
+    await tool.execute?.("call-1", { action: "open", url: "https://example.com" });
+
+    expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
+      undefined,
+      "https://example.com",
+      expect.objectContaining({ profile: undefined, headless: true }),
     );
   });
 

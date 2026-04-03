@@ -373,25 +373,30 @@ function shouldPreferHostForProfile(profileName: string | undefined) {
   return capabilities.usesChromeMcp;
 }
 
-async function resolveProjectRunBrowserProfile(
+async function resolveProjectRunBrowserContext(
   agentSessionKey: string | undefined,
-): Promise<string | undefined> {
+): Promise<{ profile?: string; headless?: boolean }> {
   const sessionKey = agentSessionKey?.trim();
   if (!sessionKey) {
-    return undefined;
+    return {};
   }
   try {
     const store = await browserToolDeps.loadProjectsStore(
       browserToolDeps.resolveProjectsStorePath(),
     );
     const execution = store.executions.find((entry) => entry.runSessionKey?.trim() === sessionKey);
-    if (!execution || execution.authMode !== "reuse-session") {
-      return undefined;
+    if (!execution) {
+      return {};
     }
-    const profile = execution.authSessionProfile?.trim();
-    return profile || undefined;
+    return {
+      profile:
+        execution.authMode === "reuse-session"
+          ? (execution.authSessionProfile?.trim() ?? undefined)
+          : undefined,
+      headless: execution.authMode !== "manual-bootstrap" ? true : undefined,
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -421,9 +426,10 @@ export function createBrowserTool(opts?: {
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const action = readStringParam(params, "action", { required: true });
-      const profile =
-        readStringParam(params, "profile") ??
-        (await resolveProjectRunBrowserProfile(opts?.agentSessionKey));
+      const projectRunBrowser = await resolveProjectRunBrowserContext(opts?.agentSessionKey);
+      const profile = readStringParam(params, "profile") ?? projectRunBrowser.profile;
+      const headless =
+        typeof params.headless === "boolean" ? params.headless : projectRunBrowser.headless;
       const requestedNode = readStringParam(params, "node");
       let target = readStringParam(params, "target") as "sandbox" | "host" | "node" | undefined;
 
@@ -469,12 +475,16 @@ export function createBrowserTool(opts?: {
             body?: unknown;
             timeoutMs?: number;
             profile?: string;
+            headless?: boolean;
           }) => {
             const proxy = await callBrowserProxy({
               nodeId: nodeTarget.nodeId,
               method: opts.method,
               path: opts.path,
-              query: opts.query,
+              query: {
+                ...opts.query,
+                ...(typeof opts.headless === "boolean" ? { headless: opts.headless } : {}),
+              },
               body: opts.body,
               timeoutMs: opts.timeoutMs,
               profile: opts.profile,
@@ -493,44 +503,49 @@ export function createBrowserTool(opts?: {
                 method: "GET",
                 path: "/",
                 profile,
+                headless,
               }),
             );
           }
-          return jsonResult(await browserToolDeps.browserStatus(baseUrl, { profile }));
+          return jsonResult(await browserToolDeps.browserStatus(baseUrl, { profile, headless }));
         case "start":
           if (proxyRequest) {
             await proxyRequest({
               method: "POST",
               path: "/start",
               profile,
+              headless,
             });
             return jsonResult(
               await proxyRequest({
                 method: "GET",
                 path: "/",
                 profile,
+                headless,
               }),
             );
           }
-          await browserToolDeps.browserStart(baseUrl, { profile });
-          return jsonResult(await browserToolDeps.browserStatus(baseUrl, { profile }));
+          await browserToolDeps.browserStart(baseUrl, { profile, headless });
+          return jsonResult(await browserToolDeps.browserStatus(baseUrl, { profile, headless }));
         case "stop":
           if (proxyRequest) {
             await proxyRequest({
               method: "POST",
               path: "/stop",
               profile,
+              headless,
             });
             return jsonResult(
               await proxyRequest({
                 method: "GET",
                 path: "/",
                 profile,
+                headless,
               }),
             );
           }
-          await browserToolDeps.browserStop(baseUrl, { profile });
-          return jsonResult(await browserToolDeps.browserStatus(baseUrl, { profile }));
+          await browserToolDeps.browserStop(baseUrl, { profile, headless });
+          return jsonResult(await browserToolDeps.browserStatus(baseUrl, { profile, headless }));
         case "profiles":
           if (proxyRequest) {
             const result = await proxyRequest({
@@ -541,7 +556,7 @@ export function createBrowserTool(opts?: {
           }
           return jsonResult({ profiles: await browserToolDeps.browserProfiles(baseUrl) });
         case "tabs":
-          return await executeTabsAction({ baseUrl, profile, proxyRequest });
+          return await executeTabsAction({ baseUrl, profile, headless, proxyRequest });
         case "open": {
           const targetUrl = readTargetUrlParam(params);
           if (proxyRequest) {
@@ -549,11 +564,15 @@ export function createBrowserTool(opts?: {
               method: "POST",
               path: "/tabs/open",
               profile,
+              headless,
               body: { url: targetUrl },
             });
             return jsonResult(result);
           }
-          const opened = await browserToolDeps.browserOpenTab(baseUrl, targetUrl, { profile });
+          const opened = await browserToolDeps.browserOpenTab(baseUrl, targetUrl, {
+            profile,
+            headless,
+          });
           browserToolDeps.trackSessionBrowserTab({
             sessionKey: opts?.agentSessionKey,
             targetId: opened.targetId,
@@ -571,11 +590,12 @@ export function createBrowserTool(opts?: {
               method: "POST",
               path: "/tabs/focus",
               profile,
+              headless,
               body: { targetId },
             });
             return jsonResult(result);
           }
-          await browserToolDeps.browserFocusTab(baseUrl, targetId, { profile });
+          await browserToolDeps.browserFocusTab(baseUrl, targetId, { profile, headless });
           return jsonResult({ ok: true });
         }
         case "close": {
@@ -586,17 +606,19 @@ export function createBrowserTool(opts?: {
                   method: "DELETE",
                   path: `/tabs/${encodeURIComponent(targetId)}`,
                   profile,
+                  headless,
                 })
               : await proxyRequest({
                   method: "POST",
                   path: "/act",
                   profile,
+                  headless,
                   body: { kind: "close" },
                 });
             return jsonResult(result);
           }
           if (targetId) {
-            await browserToolDeps.browserCloseTab(baseUrl, targetId, { profile });
+            await browserToolDeps.browserCloseTab(baseUrl, targetId, { profile, headless });
             browserToolDeps.untrackSessionBrowserTab({
               sessionKey: opts?.agentSessionKey,
               targetId,
@@ -604,7 +626,7 @@ export function createBrowserTool(opts?: {
               profile,
             });
           } else {
-            await browserToolDeps.browserAct(baseUrl, { kind: "close" }, { profile });
+            await browserToolDeps.browserAct(baseUrl, { kind: "close" }, { profile, headless });
           }
           return jsonResult({ ok: true });
         }
@@ -613,6 +635,7 @@ export function createBrowserTool(opts?: {
             input: params,
             baseUrl,
             profile,
+            headless,
             proxyRequest,
           });
         case "screenshot": {
@@ -626,6 +649,7 @@ export function createBrowserTool(opts?: {
                 method: "POST",
                 path: "/screenshot",
                 profile,
+                headless,
                 body: {
                   targetId,
                   fullPage,
@@ -641,6 +665,7 @@ export function createBrowserTool(opts?: {
                 element,
                 type,
                 profile,
+                headless,
               });
           return await browserToolDeps.imageResultFromFile({
             label: "browser:screenshot",
@@ -656,6 +681,7 @@ export function createBrowserTool(opts?: {
               method: "POST",
               path: "/navigate",
               profile,
+              headless,
               body: {
                 url: targetUrl,
                 targetId,
@@ -668,6 +694,7 @@ export function createBrowserTool(opts?: {
               url: targetUrl,
               targetId,
               profile,
+              headless,
             }),
           );
         }
@@ -676,6 +703,7 @@ export function createBrowserTool(opts?: {
             input: params,
             baseUrl,
             profile,
+            headless,
             proxyRequest,
           });
         case "pdf": {
@@ -685,9 +713,10 @@ export function createBrowserTool(opts?: {
                 method: "POST",
                 path: "/pdf",
                 profile,
+                headless,
                 body: { targetId },
               })) as Awaited<ReturnType<typeof browserPdfSave>>)
-            : await browserToolDeps.browserPdfSave(baseUrl, { targetId, profile });
+            : await browserToolDeps.browserPdfSave(baseUrl, { targetId, profile, headless });
           return {
             content: [{ type: "text" as const, text: `FILE:${result.path}` }],
             details: result,
@@ -716,6 +745,7 @@ export function createBrowserTool(opts?: {
               method: "POST",
               path: "/hooks/file-chooser",
               profile,
+              headless,
               body: {
                 paths: normalizedPaths,
                 ref,
@@ -736,6 +766,7 @@ export function createBrowserTool(opts?: {
               targetId,
               timeoutMs,
               profile,
+              headless,
             }),
           );
         }
@@ -748,6 +779,7 @@ export function createBrowserTool(opts?: {
               method: "POST",
               path: "/hooks/dialog",
               profile,
+              headless,
               body: {
                 accept,
                 promptText,
@@ -764,6 +796,7 @@ export function createBrowserTool(opts?: {
               targetId,
               timeoutMs,
               profile,
+              headless,
             }),
           );
         }
@@ -776,6 +809,7 @@ export function createBrowserTool(opts?: {
             request,
             baseUrl,
             profile,
+            headless,
             proxyRequest,
           });
         }

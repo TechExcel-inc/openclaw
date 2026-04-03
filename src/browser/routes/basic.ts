@@ -6,7 +6,12 @@ import { createBrowserProfilesService } from "../profiles-service.js";
 import type { BrowserRouteContext, ProfileContext } from "../server-context.js";
 import { resolveProfileContext } from "./agent.shared.js";
 import type { BrowserRequest, BrowserResponse, BrowserRouteRegistrar } from "./types.js";
-import { getProfileContext, jsonError, toStringOrEmpty } from "./utils.js";
+import {
+  getBrowserLaunchOverrides,
+  getProfileContext,
+  jsonError,
+  toStringOrEmpty,
+} from "./utils.js";
 
 function handleBrowserRouteError(res: BrowserResponse, err: unknown) {
   const mapped = toBrowserErrorResponse(err);
@@ -114,7 +119,7 @@ export function registerBrowserBasicRoutes(app: BrowserRouteRegistrar, ctx: Brow
         detectError,
         userDataDir: profileState?.running?.userDataDir ?? profileCtx.profile.userDataDir ?? null,
         color: profileCtx.profile.color,
-        headless: current.resolved.headless,
+        headless: profileState?.running?.headless ?? current.resolved.headless,
         noSandbox: current.resolved.noSandbox,
         executablePath: current.resolved.executablePath ?? null,
         attachOnly: profileCtx.profile.attachOnly,
@@ -135,7 +140,7 @@ export function registerBrowserBasicRoutes(app: BrowserRouteRegistrar, ctx: Brow
       res,
       ctx,
       run: async (profileCtx) => {
-        await profileCtx.ensureBrowserAvailable();
+        await profileCtx.ensureBrowserAvailable(getBrowserLaunchOverrides(req));
         res.json({ ok: true, profile: profileCtx.profile.name });
       },
     });

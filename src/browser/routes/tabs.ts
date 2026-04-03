@@ -5,7 +5,13 @@ import {
 } from "../navigation-guard.js";
 import type { BrowserRouteContext, ProfileContext } from "../server-context.js";
 import type { BrowserRequest, BrowserResponse, BrowserRouteRegistrar } from "./types.js";
-import { getProfileContext, jsonError, toNumber, toStringOrEmpty } from "./utils.js";
+import {
+  getBrowserLaunchOverrides,
+  getProfileContext,
+  jsonError,
+  toNumber,
+  toStringOrEmpty,
+} from "./utils.js";
 
 function resolveTabsProfileContext(
   req: BrowserRequest,
@@ -136,7 +142,7 @@ export function registerBrowserTabRoutes(app: BrowserRouteRegistrar, ctx: Browse
           url,
           ...withBrowserNavigationPolicy(ctx.state().resolved.ssrfPolicy),
         });
-        await profileCtx.ensureBrowserAvailable();
+        await profileCtx.ensureBrowserAvailable(getBrowserLaunchOverrides(req));
         const tab = await profileCtx.openTab(url);
         res.json(tab);
       },
@@ -195,7 +201,7 @@ export function registerBrowserTabRoutes(app: BrowserRouteRegistrar, ctx: Browse
         }
 
         if (action === "new") {
-          await profileCtx.ensureBrowserAvailable();
+          await profileCtx.ensureBrowserAvailable(getBrowserLaunchOverrides(req));
           const tab = await profileCtx.openTab("about:blank");
           return res.json({ ok: true, tab });
         }

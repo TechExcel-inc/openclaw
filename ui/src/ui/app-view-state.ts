@@ -420,10 +420,16 @@ export type AppViewState = {
     executionsError: string | null;
     executionsList: ProjectExecute[];
     activeExecutionId: string | null;
+    showExecutionChat: boolean;
     executionDetail: ProjectExecute | null;
     executionDetailLoading: boolean;
     globalExecutionsLoading: boolean;
     globalExecutionsList: ProjectExecute[];
+    testPlanPage: number;
+    testRunPage: number;
+    setTestPlanPage: (page: number) => void;
+    setTestRunPage: (page: number) => void;
+    setShowExecutionChat: (show: boolean) => void;
 
     handleTemplateCreate: (
       name: string,

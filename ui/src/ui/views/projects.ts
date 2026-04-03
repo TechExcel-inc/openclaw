@@ -237,7 +237,7 @@ function renderTemplateList(state: AppViewState) {
       state.templatesError
         ? html`
       <div style="margin: 0 24px 24px; color: #ffffff; background: rgba(248,81,73,0.4); padding: 12px 16px; border-radius: 6px; font-size: 14px; border: 1px solid rgba(248,81,73,0.6); display: flex; align-items: flex-start; gap: 8px;">
-        <span style="opacity: 0.8; margin-top: 2px;">${icons.zap}</span>
+        <div style="width: 16px; height: 16px; display: inline-flex; justify-content: center; align-items: center; opacity: 0.8; margin-top: 2px;">${icons.zap}</div>
         <div style="font-family: monospace; white-space: pre-wrap; word-break: break-all;">
           ${state.templatesError}
         </div>
@@ -277,27 +277,30 @@ function renderTemplateList(state: AppViewState) {
     `
         : html`
       <div style="padding: 24px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-          <h2 style="font-size: 16px; font-weight: 500; margin: 0;">Defined Templates</h2>
-          <button
-            class="project-create-modal__btn project-create-modal__btn--primary"
-            @click=${() => {
-              void state.handleProjectAuthProfilesLoad();
-              state.templateModalMode = "create";
-              state.createFormName = "";
-              state.createFormDescription = "";
-              state.createFormTargetUrl = "";
-              state.createFormAiPrompt = DEFAULT_AI_PROMPT;
-              state.createFormAuthMode = "none";
-              state.createFormAuthLoginUrl = "";
-              state.createFormAuthSessionProfile = "";
-              state.createFormAuthInstructions = "";
-              state.templateModalPreviewMarkdown = false;
-              state.showCreateModal = true;
-            }}
-          >
-            ${icons.plus} Create Template
-          </button>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.6); padding: 12px 20px; border-radius: 8px; margin-bottom: 24px;">
+          <h2 style="font-size: 18px; font-weight: 600; color: var(--fg-default); margin: 0;">Defined Templates</h2>
+          <div style="display: flex; gap: 8px;">
+            <button
+              class="btn btn--primary"
+              style="font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 6px; box-shadow: 0 4px 12px var(--shadow-color); display: inline-flex; align-items: center; gap: 6px;"
+              @click=${() => {
+                void state.handleProjectAuthProfilesLoad();
+                state.templateModalMode = "create";
+                state.createFormName = "";
+                state.createFormDescription = "";
+                state.createFormTargetUrl = "";
+                state.createFormAiPrompt = DEFAULT_AI_PROMPT;
+                state.createFormAuthMode = "none";
+                state.createFormAuthLoginUrl = "";
+                state.createFormAuthSessionProfile = "";
+                state.createFormAuthInstructions = "";
+                state.templateModalPreviewMarkdown = false;
+                state.showCreateModal = true;
+              }}
+            >
+              <div style="width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center;">${icons.plus}</div> Create Template
+            </button>
+          </div>
         </div>
         
         <table style="width: 100%; border-collapse: collapse; text-align: left;">
@@ -309,26 +312,70 @@ function renderTemplateList(state: AppViewState) {
             </tr>
           </thead>
           <tbody>
-            ${state.templatesList.map(
-              (template) => html`
-              <tr 
-                style="border-bottom: 1px solid var(--border-color); cursor: pointer;"
-                @click=${() => state.handleTemplateSetActive(template.id)}
-              >
-                <td style="padding: 16px 0; font-weight: 500;">
-                  ${template.name}
-                </td>
-                <td style="padding: 16px 0;">
-                  <span class="pill">0 runs</span>
-                </td>
-                <td style="padding: 16px 0;">
-                  <span class="pill">N/A</span>
-                </td>
-              </tr>
-            `,
-            )}
+            ${(() => {
+              const pageSize = 15;
+              const totalRows = state.templatesList.length;
+              const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+              const page = Math.max(0, Math.min(state.testPlanPage, totalPages - 1));
+              const paginated = state.templatesList.slice(page * pageSize, (page + 1) * pageSize);
+
+              return paginated.map(
+                (template, index) => html`
+                  <tr 
+                    style="border-bottom: 1px solid var(--border-color); cursor: pointer;"
+                    @click=${() => state.handleTemplateSetActive(template.id)}
+                  >
+                    <td style="padding: 16px 0; font-weight: 500;">
+                      <span style="color: var(--muted); padding-right: 12px; font-size: 13px;">${page * pageSize + index + 1}.</span>
+                      ${template.name}
+                    </td>
+                    <td style="padding: 16px 0;">
+                      <span class="pill">0 runs</span>
+                    </td>
+                    <td style="padding: 16px 0;">
+                      <span class="pill">N/A</span>
+                    </td>
+                  </tr>
+                `,
+              );
+            })()}
           </tbody>
         </table>
+
+        ${(() => {
+          const pageSize = 15;
+          const totalRows = state.templatesList.length;
+          const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+          const page = Math.max(0, Math.min(state.testPlanPage, totalPages - 1));
+          return totalRows > pageSize
+            ? html`
+                <div class="data-table-pagination" style="padding: 16px 0; display: flex; justify-content: space-between; align-items: center;">
+                  <div class="data-table-pagination__info" style="color: var(--muted); font-size: 13px;">
+                    ${page * pageSize + 1}-${Math.min((page + 1) * pageSize, totalRows)}
+                    of ${totalRows} plan${totalRows === 1 ? "" : "s"}
+                  </div>
+                  <div class="data-table-pagination__controls" style="display: flex; gap: 8px;">
+                    <button
+                      class="btn btn--flat"
+                      style="padding: 4px 12px; font-size: 13px;"
+                      ?disabled=${page <= 0}
+                      @click=${() => state.setTestPlanPage(page - 1)}
+                    >
+                      Previous
+                    </button>
+                    <button
+                      class="btn btn--flat"
+                      style="padding: 4px 12px; font-size: 13px;"
+                      ?disabled=${page >= totalPages - 1}
+                      @click=${() => state.setTestPlanPage(page + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              `
+            : nothing;
+        })()}
       </div>
     `
     }
@@ -346,38 +393,97 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
       <div class="content content--scroll" style="flex: 1; min-width: 0; overflow-y: auto;">
         
         <!-- Premium Centered Container -->
-        <div style="max-width: 900px; margin: 0 auto; padding: 40px 24px; min-height: 100%; display: flex; flex-direction: column; gap: 40px;">
+        <div style="max-width: 900px; margin: 0 auto; padding: 40px 24px; min-height: 100%; display: flex; flex-direction: column; gap: 32px;">
           
-          <!-- Header Section -->
-          <div style="display: flex; flex-direction: column; gap: 20px;">
-            <div>
+          <!-- Back Button -->
+          <div style="margin-bottom: -16px;">
+            <button 
+              class="btn btn--ghost" 
+              @click=${() => state.handleTemplateSetActive(null)} 
+              style="color: var(--muted); font-size: 14px; display: inline-flex; align-items: center; gap: 6px; padding: 0;"
+            >
+              <div style="width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;">${icons.chevronLeft}</div> Back to Templates
+            </button>
+          </div>
+
+          <!-- Title Toolbar Container (Project Property) -->
+          <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.6); border-radius: 8px; padding: 16px 20px;">
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: var(--fg-default);">
+                Project Plan: ${template.name}
+              </h2>
+              <span style="color: var(--muted); font-size: 14px; max-width: 600px;">
+                ${template.description || "No description provided for this test plan."}
+              </span>
+            </div>
+
+            <div style="display: flex; gap: 12px; align-items: center;">
               <button 
                 class="btn btn--ghost" 
-                @click=${() => state.handleTemplateSetActive(null)} 
-                style="margin-bottom: 24px; color: var(--muted); font-size: 14px; display: inline-flex; align-items: center; gap: 6px; padding: 0;"
+                style="padding: 8px 16px; font-size: 13px; border: 1px solid var(--border-color); border-radius: 6px;"
+                @click=${() => {
+                  void state.handleProjectAuthProfilesLoad();
+                  state.templateModalMode = "edit";
+                  state.createFormName = template.name;
+                  state.createFormDescription = template.description || "";
+                  state.createFormTargetUrl = template.targetUrl || "";
+                  state.createFormAiPrompt = template.aiPrompt || "";
+                  state.createFormAuthMode = template.authMode || "none";
+                  state.createFormAuthLoginUrl = template.authLoginUrl || "";
+                  state.createFormAuthSessionProfile = template.authSessionProfile || "";
+                  state.createFormAuthInstructions = template.authInstructions || "";
+                  state.templateModalPreviewMarkdown = false;
+                  state.showCreateModal = true;
+                }}
               >
-                ${icons.chevronLeft} Back to Templates
+                <div style="width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; margin-right: 6px;">${icons.book}</div> Edit Details
               </button>
 
-              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 300px;">
-                  <div style="margin-bottom: 12px;">
-                    <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.02em; color: var(--fg-default);">
-                      ${template.name}
-                    </h1>
-                  </div>
-                  <p style="color: var(--muted); margin: 0; font-size: 16px; line-height: 1.6; max-width: 600px;">
-                     ${template.description || "No description provided for this test plan."}
-                  </p>
-                </div>
-
-                <div style="display: flex; gap: 12px; align-items: center;">
-                  <button 
-                    class="btn btn--ghost" 
-                    style="padding: 10px 16px; font-size: 14px; border: 1px solid var(--border-color); border-radius: 8px;"
-                    @click=${() => {
+              <div style="position: relative;">
+                <button
+                  type="button"
+                  class="btn btn--primary"
+                  style="font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 6px; box-shadow: 0 4px 12px var(--shadow-color); display: inline-flex; align-items: center; gap: 6px;"
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    const btn = e.currentTarget as HTMLElement;
+                    const menu = btn.nextElementSibling as HTMLElement;
+                    const isVisible = menu.style.display === "block";
+                    document.querySelectorAll(".custom-chat-dropdown-menu").forEach((el) => {
+                      (el as HTMLElement).style.display = "none";
+                    });
+                    if (!isVisible) {
+                      menu.style.display = "block";
+                      const close = (ce: MouseEvent) => {
+                        if (!menu.contains(ce.target as Node) && !btn.contains(ce.target as Node)) {
+                          menu.style.display = "none";
+                          document.removeEventListener("click", close);
+                        }
+                      };
+                      setTimeout(() => document.addEventListener("click", close), 0);
+                    }
+                  }}
+                >
+                  <div style="width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center;">${icons.spark}</div> Test Run <div style="width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center;">${icons.chevronDown}</div>
+                </button>
+                <div
+                  class="custom-chat-dropdown-menu ead-test-run-dropdown"
+                  style="display: none; position: absolute; top: 100%; right: 0; margin-top: 4px; z-index: 100; min-width: 260px; background: var(--bg-surface-2, #161b22); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 8px 0;"
+                >
+                  <button
+                    type="button"
+                    class="btn btn--ghost"
+                    style="width: 100%; justify-content: flex-start; border-radius: 0; padding: 10px 16px; font-size: 13px; border: none;"
+                    @click=${(e: Event) => {
+                      e.stopPropagation();
+                      const menu = (e.currentTarget as HTMLElement).closest(
+                        ".ead-test-run-dropdown",
+                      ) as HTMLElement;
+                      if (menu) {
+                        menu.style.display = "none";
+                      }
                       void state.handleProjectAuthProfilesLoad();
-                      state.templateModalMode = "edit";
+                      state.templateModalMode = "run";
                       state.createFormName = template.name;
                       state.createFormDescription = template.description || "";
                       state.createFormTargetUrl = template.targetUrl || "";
@@ -386,163 +492,101 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                       state.createFormAuthLoginUrl = template.authLoginUrl || "";
                       state.createFormAuthSessionProfile = template.authSessionProfile || "";
                       state.createFormAuthInstructions = template.authInstructions || "";
-                      state.templateModalPreviewMarkdown = false;
+                      state.templateModalPreviewMarkdown = true;
                       state.showCreateModal = true;
                     }}
                   >
-                    ${icons.book} Edit Details
+                    <div style="width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; margin-right: 6px;">${icons.spark}</div> Test Run for Learning
                   </button>
-
-                  <div style="position: relative;">
-                    <button
-                      type="button"
-                      class="btn btn--primary"
-                      style="font-size: 15px; font-weight: 600; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 12px var(--shadow-color); display: inline-flex; align-items: center; gap: 8px;"
-                      @click=${(e: Event) => {
-                        e.stopPropagation();
-                        const btn = e.currentTarget as HTMLElement;
-                        const menu = btn.nextElementSibling as HTMLElement;
-                        const isVisible = menu.style.display === "block";
-                        document.querySelectorAll(".custom-chat-dropdown-menu").forEach((el) => {
-                          (el as HTMLElement).style.display = "none";
-                        });
-                        if (!isVisible) {
-                          menu.style.display = "block";
-                          const close = (ce: MouseEvent) => {
-                            if (
-                              !menu.contains(ce.target as Node) &&
-                              !btn.contains(ce.target as Node)
-                            ) {
-                              menu.style.display = "none";
-                              document.removeEventListener("click", close);
-                            }
-                          };
-                          setTimeout(() => document.addEventListener("click", close), 0);
-                        }
-                      }}
-                    >
-                      ${icons.spark} Test Run ${icons.chevronDown}
-                    </button>
-                    <div
-                      class="custom-chat-dropdown-menu ead-test-run-dropdown"
-                      style="display: none; position: absolute; top: 100%; right: 0; margin-top: 4px; z-index: 100; min-width: 260px; background: var(--bg-surface-2, #161b22); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 8px 0;"
-                    >
-                      <button
-                        type="button"
-                        class="btn btn--ghost"
-                        style="width: 100%; justify-content: flex-start; border-radius: 0; padding: 10px 16px; font-size: 14px; border: none;"
-                        @click=${(e: Event) => {
-                          e.stopPropagation();
-                          const menu = (e.currentTarget as HTMLElement).closest(
-                            ".ead-test-run-dropdown",
-                          ) as HTMLElement;
-                          if (menu) {
-                            menu.style.display = "none";
-                          }
-                          void state.handleProjectAuthProfilesLoad();
-                          state.templateModalMode = "run";
-                          state.createFormName = template.name;
-                          state.createFormDescription = template.description || "";
-                          state.createFormTargetUrl = template.targetUrl || "";
-                          state.createFormAiPrompt = template.aiPrompt || "";
-                          state.createFormAuthMode = template.authMode || "none";
-                          state.createFormAuthLoginUrl = template.authLoginUrl || "";
-                          state.createFormAuthSessionProfile = template.authSessionProfile || "";
-                          state.createFormAuthInstructions = template.authInstructions || "";
-                          state.templateModalPreviewMarkdown = true;
-                          state.showCreateModal = true;
-                        }}
-                      >
-                        ${icons.spark} Test Run for Learning
-                      </button>
-                      <button
-                        type="button"
-                        disabled
-                        title="Coming soon"
-                        style="width: 100%; text-align: left; padding: 10px 16px; font-size: 14px; border: none; background: transparent; color: var(--muted); cursor: not-allowed; opacity: 0.7;"
-                      >
-                        Test Run for Testing
-                      </button>
-                    </div>
-                  </div>
+                  <button
+                    type="button"
+                    disabled
+                    title="Coming soon"
+                    style="width: 100%; text-align: left; padding: 10px 16px; font-size: 13px; border: none; background: transparent; color: var(--muted); cursor: not-allowed; opacity: 0.7;"
+                  >
+                    Test Run for Testing
+                  </button>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Instructions Card -->
-          <div style="background: var(--bg-surface-1); border: 1px solid var(--border-color); border-radius: 16px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
-            <div style="padding: 20px 24px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface-2);">
-              <h2 style="margin: 0; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                ${icons.zap} AI Testing Instructions
-              </h2>
-            </div>
-            
-            <div 
-              class="sidebar-markdown" 
-              style="min-height: 150px; padding: 24px; background: var(--bg-surface-1); overflow-y: auto; font-size: 15px; line-height: 1.7;"
-            >
-              ${unsafeHTML(toSanitizedMarkdownHtml(template.aiPrompt || "_No instructions provided._"))}
-            </div>
-          </div>
+          <!-- Main Content Container with Top-to-Bottom Flow -->
+          <div style="display: flex; flex-direction: column; gap: 32px;">
 
-          <!-- Executions History Section -->
-          <div>
-            <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-              ${icons.book} Execution History
-            </h2>
-            
-            ${
-              state.executionsList.length === 0
-                ? html`
-                    <div style="padding: 40px 24px; text-align: center; border: 1px dashed var(--border-color); border-radius: 12px; background: var(--bg-surface-2);">
-                      <div style="color: var(--muted); margin-bottom: 12px;">${icons.spark}</div>
-                      <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600;">No runs yet</h3>
-                      <p style="margin: 0; color: var(--muted); font-size: 14px;">
-                        Use <strong>Test Run</strong> → <strong>Test Run for Learning</strong> above to start a run.
-                      </p>
-                    </div>
-                  `
-                : html`
-                    <div style="border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: var(--bg-surface-1);">
-                      <table style="width: 100%; border-collapse: collapse;">
-                        <thead style="background: var(--bg-surface-2);">
-                          <tr style="border-bottom: 1px solid var(--border-color); text-align: left; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
-                            <th style="padding: 16px 24px; font-weight: 600;">Run Name</th>
-                            <th style="padding: 16px 24px; font-weight: 600;">Status</th>
-                            <th style="padding: 16px 24px; font-weight: 600; text-align: right;">Time</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${state.executionsList.map(
-                            (run) => html`
-                                <tr 
-                                  style="border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background 0.15s ease;"
-                                  onmouseover="this.style.background='var(--bg-surface-2)'"
-                                  onmouseout="this.style.background='transparent'"
-                                  @click=${() => state.handleExecutionSetActive(run.id)}
-                                >
-                                  <td style="padding: 16px 24px; font-weight: 500; color: var(--fg-default);">
-                                    ${run.name}
-                                  </td>
-                                  <td style="padding: 16px 24px;">
-                                    <span class="pill ${run.status === "completed" ? "success" : run.status === "running" ? "primary" : "danger"}" style="font-size: 12px; font-weight: 500;">
-                                      ${run.status}
-                                    </span>
-                                  </td>
-                                  <td style="padding: 16px 24px; color: var(--muted); font-size: 13px; text-align: right;">
-                                    ${new Date(run.startTime ?? Date.now()).toLocaleString()}
-                                  </td>
-                                </tr>
-                              `,
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  `
-            }
-          </div>
+            <!-- Learning Summary (formerly AI Testing Instructions) -->
+            <div>
+              <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 500; color: var(--fg-default); display: flex; align-items: center; gap: 8px;">
+                <div style="width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center;">${icons.zap}</div> Learning Summary
+              </h3>
+              <div 
+                class="sidebar-markdown" 
+                style="background: rgba(30, 31, 34, 0.5); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 24px; min-height: 150px; overflow-y: auto; font-size: 14px; line-height: 1.7; color: var(--fg-default);"
+              >
+                ${unsafeHTML(toSanitizedMarkdownHtml(template.aiPrompt || "_No instructions provided._"))}
+              </div>
+            </div>
 
+            <!-- Testing Summary (Execution History) -->
+            <div>
+              <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 500; color: var(--fg-default); display: flex; align-items: center; gap: 8px;">
+                <div style="width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center;">${icons.book}</div> Testing Summary
+              </h3>
+              
+              ${
+                state.executionsList.length === 0
+                  ? html`
+                      <div style="padding: 40px 24px; text-align: center; border: 1px dashed rgba(255, 255, 255, 0.1); border-radius: 8px; background: rgba(30, 31, 34, 0.5);">
+                        <div style="color: var(--muted); margin-bottom: 12px; display: flex; justify-content: center;">
+                          <div style="width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;">${icons.spark}</div>
+                        </div>
+                        <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 500; color: var(--fg-default);">No runs yet</h3>
+                        <p style="margin: 0; color: var(--muted); font-size: 13px;">
+                          Use <strong style="color: var(--fg-default);">Test Run</strong> → <strong style="color: var(--fg-default);">Test Run for Learning</strong> above to start a run.
+                        </p>
+                      </div>
+                    `
+                  : html`
+                      <div style="border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; overflow: hidden; background: rgba(30, 31, 34, 0.5);">
+                        <table style="width: 100%; border-collapse: collapse;">
+                          <thead style="background: rgba(255, 255, 255, 0.05);">
+                            <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); text-align: left; color: var(--muted); font-size: 12px; text-transform: uppercase;">
+                              <th style="padding: 16px 24px; font-weight: 600;">Run Name</th>
+                              <th style="padding: 16px 24px; font-weight: 600;">Status</th>
+                              <th style="padding: 16px 24px; font-weight: 600; text-align: right;">Time</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${state.executionsList.map(
+                              (run) => html`
+                                  <tr 
+                                    style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); cursor: pointer; transition: background-color 0.2s;"
+                                    @mouseover=${(e: Event) => ((e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.03)")}
+                                    @mouseout=${(e: Event) => ((e.currentTarget as HTMLElement).style.backgroundColor = "transparent")}
+                                    @click=${() => state.handleExecutionSetActive(run.id)}
+                                  >
+                                    <td style="padding: 16px 24px; font-weight: 500; color: var(--fg-default); font-size: 14px;">
+                                      ${run.name}
+                                    </td>
+                                    <td style="padding: 16px 24px;">
+                                      <span class="pill ${run.status === "completed" ? "success" : run.status === "running" ? "primary" : "danger"}" style="font-size: 12px;">
+                                        ${run.status.toUpperCase()}
+                                      </span>
+                                    </td>
+                                    <td style="padding: 16px 24px; color: var(--muted); font-size: 13px; text-align: right;">
+                                      ${new Date(run.startTime ?? Date.now()).toLocaleString()}
+                                    </td>
+                                  </tr>
+                                `,
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    `
+              }
+            </div>
+
+          </div>
         </div>
       </div>
     </div>
@@ -1236,100 +1280,363 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
   `;
 }
 
+function renderExecutionSummary(state: AppViewState, chatProps?: ChatProps) {
+  const execution = state.activeExecutionId
+    ? state.globalExecutionsList.find((e) => e.id === state.activeExecutionId)
+    : undefined;
+  if (!execution) {
+    return nothing;
+  }
+
+  // Render the chat widget if showing
+  const canShowChat = state.showExecutionChat && chatProps && execution.status !== "running";
+
+  const headerHtml = html`
+    <!-- Back Button -->
+    <div style="margin-bottom: 24px;">
+      <button 
+        class="btn btn--ghost" 
+        @click=${() => state.handleExecutionSetActive(null)} 
+        style="color: var(--muted); font-size: 14px; display: inline-flex; align-items: center; gap: 6px; padding: 0;"
+      >
+        <div style="width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;">${icons.chevronLeft}</div> Back to run list
+      </button>
+    </div>
+
+    <!-- Title Toolbar Container -->
+    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.6); border-radius: 8px; padding: 16px 20px; margin-bottom: 24px;">
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: var(--fg-default);">
+          Execution: ${execution.name || execution.targetUrl}
+        </h2>
+        <span class="pill ${execution.status === "completed" ? "success" : execution.status === "running" ? "primary" : "danger"}">
+          ${execution.status.toUpperCase()}
+        </span>
+      </div>
+
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px;">
+          <span>${new Date(execution.startTime ?? Date.now()).toLocaleString()}</span>
+        </div>
+        
+        <!-- Interactive Checkbox AI Chat Toggle -> Button -->
+        <button 
+          class="btn btn--primary" 
+          @click=${() => {
+            if (execution.status === "running") {
+              state.setProjectRunTab(execution.id);
+            } else {
+              state.setShowExecutionChat(!state.showExecutionChat);
+            }
+          }}
+          style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 13px; border-radius: 6px;"
+        >
+          <div style="width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">${icons.messageSquare}</div>
+          AI Chat
+        </button>
+      </div>
+    </div>
+  `;
+
+  const contentHtml = html`
+    <!-- Main Content Container with Top-to-Bottom Flow -->
+    <div style="display: flex; flex-direction: column; gap: 32px;">
+
+      <!-- Execution Steps -->
+      <div>
+        <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 500; color: var(--fg-default); display: flex; align-items: center; gap: 8px;">
+          <div style="width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">${icons.circle}</div> Execution Steps
+        </h3>
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          ${
+            execution.results && execution.results.length > 0
+              ? execution.results.map(
+                  (node) => html`
+                <details class="test-case-accordion" style="background: var(--bg-surface-2, #21262d); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden;" open>
+                  <summary style="padding: 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-weight: 500; outline: none; user-select: none;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                      <span style="font-size: 16px;">▾ 🧩 ${node.title}</span>
+                    </div>
+                    <span style="opacity: 0.5;"><div style="width: 16px; height: 16px; display: inline-flex; justify-content: center; align-items: center;">${icons.chevronDown}</div></span>
+                  </summary>
+
+                  <div style="border-top: 1px solid var(--border-color); padding: 16px;">
+                    <h4 style="margin: 0 0 12px; font-size: 13px; color: var(--muted); text-transform: uppercase;">Generated Test Cases</h4>
+                    ${(node.testCaseRuns || []).map(
+                      (tc) => html`
+                      <div style="margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 6px; border: 1px solid var(--border-color);">
+                        <div style="display: flex; align-items: center; gap: 8px; font-weight: 500; margin-bottom: 8px;">
+                          <span class="pill ${tc.status === "Success" ? "success" : tc.status === "Failed" ? "danger" : ""}">${tc.status}</span>
+                          ${tc.title}
+                        </div>
+                        ${
+                          tc.testCaseStepRuns && tc.testCaseStepRuns.length > 0
+                            ? html`
+                              <ul style="margin: 0; padding-left: 20px; color: var(--text-color); font-size: 13px; line-height: 1.6;">
+                                ${tc.testCaseStepRuns.map(
+                                  (step) => html`
+                                  <li>
+                                    <div>Found: <strong>${step.procedureText}</strong></div>
+                                    ${step.screenshotUrl ? html`<img src=${step.screenshotUrl} style="max-width: 100%; max-height: 200px; display: block; margin-top: 8px; border: 1px solid var(--border-color); border-radius: 4px;" alt="Evidence" />` : nothing}
+                                  </li>
+                                `,
+                                )}
+                              </ul>
+                            `
+                            : html`
+                                <div style="color: var(--muted); font-size: 13px">Scanning steps...</div>
+                              `
+                        }
+                      </div>
+                    `,
+                    )}
+                    ${
+                      !node.testCaseRuns || node.testCaseRuns.length === 0
+                        ? html`
+                            <div style="color: var(--muted); font-size: 13px">No test cases drafted yet...</div>
+                          `
+                        : nothing
+                    }
+                  </div>
+                </details>
+              `,
+                )
+              : html`
+                  <div
+                    style="
+                      background: rgba(30, 31, 34, 0.5);
+                      border: 1px solid rgba(255, 255, 255, 0.1);
+                      border-radius: 8px;
+                      padding: 40px;
+                      text-align: center;
+                      color: var(--muted);
+                    "
+                  >
+                    No execution steps recorded yet.
+                  </div>
+                `
+          }
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  return html`
+    <div style="display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; background: var(--bg-body);">
+      
+      <!-- Top Global Header spanning the full width -->
+      <div style="padding: 24px 24px 0 24px; flex-shrink: 0; width: 100%; max-width: 1400px; margin: 0 auto;">
+        ${headerHtml}
+      </div>
+      
+      <!-- Split View for the body and chat -->
+      <div style="display: flex; flex: 1; width: 100%; max-width: 1400px; margin: 0 auto; min-height: 0;">
+        <div 
+          class="content content--scroll" 
+          style="flex: 1; min-width: 0; overflow-y: auto; padding: 0 24px 24px 24px;"
+        >
+          ${contentHtml}
+        </div>
+        
+        ${
+          canShowChat
+            ? html`
+            <div style="width: 450px; flex-shrink: 0; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(30, 31, 34, 0.5); display: flex; flex-direction: column; overflow: hidden; position: relative; margin: 0 24px 24px 0;">
+              <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.2); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                <h3 style="margin: 0; font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
+                  <div style="width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">${icons.messageSquare}</div> Execution Analysis
+                </h3>
+                <button 
+                  class="btn btn--icon" 
+                  @click=${() => state.setShowExecutionChat(false)} 
+                  title="Close chat"
+                >
+                  <div style="width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">${icons.x}</div>
+                </button>
+              </div>
+              <div style="flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column;">
+                ${renderChat(chatProps)}
+              </div>
+            </div>
+          `
+            : nothing
+        }
+      </div>
+    </div>
+  `;
+}
+
 export function renderAutoTestRunView(state: AppViewState, chatProps?: ChatProps) {
   if (state.activeExecutionId) {
-    return renderExecutionDebugger(state, chatProps);
+    return renderExecutionSummary(state, chatProps);
   }
 
   return html`
-    <div class="content content--scroll">
-      <div class="content-header">
-        <h1 class="page-title">Test Run Project</h1>
-        <p class="page-subtitle">Watch live executions and review historical test results</p>
-      </div>
+    <div style="display: flex; flex: 1; width: 100%; overflow: hidden; background: var(--bg-body);">
+      <div class="content content--scroll" style="flex: 1; min-width: 0; overflow-y: auto;">
+        <div style="padding: 24px; max-width: 1200px; margin: 0 auto; width: 100%;">
+          
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.6); border-radius: 8px; padding: 16px 20px;">
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: var(--fg-default);">
+                Test Run Project List
+              </h2>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center; opacity: 0.5;" title="Monitor real-time or historical execution metrics.">
+              <div style="width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;">${icons.helpCircle}</div>
+            </div>
+          </div>
 
-      <div style="padding: 24px;">
-        ${
-          state.globalExecutionsLoading
-            ? html`
-                <div style="padding: 24px; text-align: center; color: var(--muted)">Loading executions...</div>
-              `
-            : state.globalExecutionsList.length === 0
-              ? html`
-                  <div
-                    style="
-                      padding: 24px;
-                      text-align: center;
-                      border: 1px dashed var(--border-color);
-                      border-radius: 6px;
-                    "
-                  >
-                    <p style="color: var(--muted)">No executions have been run yet across any template.</p>
-                  </div>
-                `
-              : html`
-          <table style="width: 100%; border-collapse: collapse; text-align: left;">
-            <thead>
-              <tr style="border-bottom: 1px solid var(--border-color); color: var(--muted, #838387); font-size: 13px;">
-                <th style="padding: 12px 0;">Execution ID</th>
-                <th style="padding: 12px 0;">Start Time</th>
-                <th style="padding: 12px 0;">Duration</th>
-                <th style="padding: 12px 0;">Progress</th>
-                <th style="padding: 12px 0;">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${state.globalExecutionsList.map((execution) => {
-                const dateInfo = new Date(execution.startTime ?? Date.now()).toLocaleString();
-                const durationSec = Math.round((execution.durationMs || 0) / 1000);
-
-                return html`
-                  <tr 
-                    style="border-bottom: 1px solid var(--border-color); transition: background-color 0.2s; cursor: pointer;"
-                    @click=${() => state.setProjectRunTab(execution.id)}
-                  >
-                    <td style="padding: 16px 0; font-family: monospace; font-size: 13px;">
-                      ${execution.id.split("-")[0]}...
-                    </td>
-                    <td style="padding: 16px 0; color: var(--muted); font-size: 14px;">
-                      ${dateInfo}
-                    </td>
-                    <td style="padding: 16px 0; font-size: 14px;">
-                      ${durationSec}s
-                    </td>
-                    <td style="padding: 16px 0; padding-right: 24px;">
-                      <div style="width: 100%; background: var(--bg-surface-2, #21262d); border-radius: 4px; overflow: hidden; height: 8px;">
-                        <div style="width: ${execution.progressPercentage || 0}%; background: var(--accent-color, #2f81f7); height: 100%;"></div>
+          <div style="border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; overflow: hidden; background: rgba(30, 31, 34, 0.5);">
+            ${
+              state.globalExecutionsLoading
+                ? html`
+                    <div style="padding: 24px; text-align: center; color: var(--muted)">Loading executions...</div>
+                  `
+                : state.globalExecutionsList.length === 0
+                  ? html`
+                      <div style="padding: 40px 24px; text-align: center">
+                        <p style="color: var(--muted); margin: 0">No executions have been run yet across any template.</p>
                       </div>
-                    </td>
-                    <td style="padding: 16px 0;">
-                      <span class="pill ${execution.status === "completed" ? "success" : execution.status === "running" ? "primary" : "danger"}">
-                        ${execution.status.toUpperCase()}
-                      </span>
-                      ${
-                        execution.status === "running"
-                          ? html`
-                        <button 
-                          class="project-create-modal__btn" 
-                          style="margin-left: 8px; padding: 2px 8px;"
-                          @click=${(e: Event) => {
-                            e.stopPropagation();
-                            void state.handleExecutionCancel(execution.id);
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      `
-                          : nothing
-                      }
-                    </td>
-                  </tr>
-                `;
-              })}
-            </tbody>
-          </table>
-        `
-        }
+                    `
+                  : html`
+                    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                      <thead>
+                        <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.15); color: var(--fg-default); font-size: 13px;">
+                          <th style="padding: 14px 24px; font-weight: 500;">No.</th>
+                          <th style="padding: 14px 24px; font-weight: 500;">Plan Project Name</th>
+                          <th style="padding: 14px 24px; font-weight: 500;">Start Time</th>
+                          <th style="padding: 14px 24px; font-weight: 500;">Duration</th>
+                          <th style="padding: 14px 24px; font-weight: 500; width: 150px;">Progress</th>
+                          <th style="padding: 14px 24px; font-weight: 500; text-align: right;">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${(() => {
+                          const pageSize = 15;
+                          const totalRows = state.globalExecutionsList.length;
+                          const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+                          const page = Math.max(0, Math.min(state.testRunPage, totalPages - 1));
+                          const paginated = state.globalExecutionsList.slice(
+                            page * pageSize,
+                            (page + 1) * pageSize,
+                          );
+
+                          return paginated.map((execution, index) => {
+                            const globalIndex = page * pageSize + index + 1;
+                            const dateInfo = new Date(
+                              execution.startTime ?? Date.now(),
+                            ).toLocaleString();
+                            const formatDuration = (ms: number) => {
+                              const totalSecs = Math.round(ms / 1000);
+                              const days = Math.floor(totalSecs / 86400);
+                              const hours = Math.floor((totalSecs % 86400) / 3600);
+                              const mins = Math.floor((totalSecs % 3600) / 60);
+
+                              if (days > 0) {
+                                return days + "d" + hours + "h" + mins + "m";
+                              }
+                              if (hours > 0) {
+                                return hours + "h" + mins + "m";
+                              }
+                              if (mins > 0) {
+                                return mins + "m";
+                              }
+                              return totalSecs + "s";
+                            };
+                            const durationStr = formatDuration(execution.durationMs || 0);
+
+                            return html`
+                            <tr 
+                              style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); transition: background-color 0.2s; cursor: pointer;"
+                              @mouseover=${(e: Event) => ((e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.03)")}
+                              @mouseout=${(e: Event) => ((e.currentTarget as HTMLElement).style.backgroundColor = "transparent")}
+                              @click=${() => state.handleExecutionSetActive(execution.id)}
+                            >
+                              <td style="padding: 16px 24px; font-family: monospace; font-size: 13px; color: var(--muted);">
+                                ${globalIndex}
+                              </td>
+                              <td style="padding: 16px 24px; font-weight: 500; font-size: 14px; max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${execution.name}">
+                                ${execution.name}
+                              </td>
+                              <td style="padding: 16px 24px; color: var(--muted); font-size: 14px; white-space: nowrap;">
+                                ${dateInfo}
+                              </td>
+                              <td style="padding: 16px 24px; font-size: 14px; color: var(--muted);">
+                                ${durationStr}
+                              </td>
+                              <td style="padding: 16px 24px;">
+                                <div style="width: 100%; max-width: 150px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; height: 6px;">
+                                  <div style="width: ${execution.progressPercentage || 0}%; background: var(--accent-color, #2f81f7); height: 100%;"></div>
+                                </div>
+                              </td>
+                              <td style="padding: 16px 24px; text-align: right;">
+                                <span class="pill ${execution.status === "completed" ? "success" : execution.status === "running" ? "primary" : "danger"}">
+                                  ${execution.status.toUpperCase()}
+                                </span>
+                                ${
+                                  execution.status === "running"
+                                    ? html`
+                                      <button 
+                                        class="btn btn--danger" 
+                                        style="margin-left: 12px; padding: 4px 10px; font-size: 12px; border-radius: 4px;"
+                                        @click=${(e: Event) => {
+                                          e.stopPropagation();
+                                          void state.handleExecutionCancel(execution.id);
+                                        }}
+                                      >
+                                        Cancel
+                                      </button>
+                                    `
+                                    : nothing
+                                }
+                              </td>
+                            </tr>
+                          `;
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+
+                    ${(() => {
+                      const pageSize = 15;
+                      const totalRows = state.globalExecutionsList.length;
+                      const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+                      const page = Math.max(0, Math.min(state.testRunPage, totalPages - 1));
+                      return totalRows > pageSize
+                        ? html`
+                            <div class="data-table-pagination" style="padding: 16px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
+                              <div class="data-table-pagination__info" style="color: var(--muted); font-size: 13px;">
+                                ${page * pageSize + 1}-${Math.min((page + 1) * pageSize, totalRows)}
+                                of ${totalRows} run${totalRows === 1 ? "" : "s"}
+                              </div>
+                              <div class="data-table-pagination__controls" style="display: flex; gap: 8px;">
+                                <button
+                                  class="btn btn--flat"
+                                  style="padding: 4px 12px; font-size: 13px; background: rgba(255,255,255,0.05);"
+                                  ?disabled=${page <= 0}
+                                  @click=${() => state.setTestRunPage(page - 1)}
+                                >
+                                  Previous
+                                </button>
+                                <button
+                                  class="btn btn--flat"
+                                  style="padding: 4px 12px; font-size: 13px; background: rgba(255,255,255,0.05);"
+                                  ?disabled=${page >= totalPages - 1}
+                                  @click=${() => state.setTestRunPage(page + 1)}
+                                >
+                                  Next
+                                </button>
+                              </div>
+                            </div>
+                          `
+                        : nothing;
+                    })()}
+                  `
+            }
+          </div>
+        </div>
       </div>
     </div>
   `;

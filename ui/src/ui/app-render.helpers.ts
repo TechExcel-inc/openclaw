@@ -139,12 +139,12 @@ export function pickAdjacentProjectRunIdForNav(
 export function projectRunOrdinalLabel(state: AppViewState, executionId: string): string {
   const templateId = resolveActiveTemplateIdForProjectNav(state);
   if (!templateId) {
-    return "Project Run";
+    return "Running Project";
   }
   const list = visibleTemplateExecutionsForNav(state, templateId);
   const idx = list.findIndex((e) => e.id === executionId);
   const n = idx === -1 ? list.length + 1 : idx + 1;
-  return `Project Run ${n}`;
+  return `Running Project ${n}`;
 }
 
 /** User-facing run status for toolbar and summary (maps `completed` → Finished, etc.). */
@@ -350,13 +350,17 @@ export function renderProjectRunNavItems(state: AppViewState, opts?: { collapsed
     return nothing;
   }
   const collapsed = opts?.collapsed ?? state.settings.navCollapsed;
+  const reversedRuns = runs.toReversed();
+
   return html`
     ${repeat(
-      runs,
+      reversedRuns,
       (e) => e.id,
-      (e, i) => {
+      (e) => {
+        // Find original chronological index from the start
+        const chronIdx = runs.findIndex((r) => r.id === e.id);
         const href = pathForProjectRunTab(e.id, state.basePath ?? "");
-        const label = `Project Run ${i + 1}`;
+        const label = `Running Project ${chronIdx + 1}`;
         const isActive = state.tab === "chatProjectRun" && state.chatProjectRunExecutionId === e.id;
         return html`
           <a

@@ -805,6 +805,7 @@ export const projectsHandlers: GatewayRequestHandlers = {
         aiPrompt,
         ...runAuth,
         status: "pending",
+        steps: [],
         paused: runAuth.authMode === "manual-bootstrap",
         progressPercentage: 0,
         startTime: now,

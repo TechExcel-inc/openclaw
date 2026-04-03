@@ -27,6 +27,7 @@ import {
   CDP_READY_AFTER_LAUNCH_WINDOW_MS,
 } from "./server-context.constants.js";
 import type {
+  BrowserLaunchOverrides,
   BrowserServerState,
   ContextOptions,
   ProfileRuntimeState,
@@ -43,7 +44,7 @@ type AvailabilityDeps = {
 type AvailabilityOps = {
   isHttpReachable: (timeoutMs?: number) => Promise<boolean>;
   isReachable: (timeoutMs?: number) => Promise<boolean>;
-  ensureBrowserAvailable: () => Promise<void>;
+  ensureBrowserAvailable: (overrides?: BrowserLaunchOverrides) => Promise<void>;
   stopRunningBrowser: () => Promise<{ stopped: boolean }>;
 };
 
@@ -172,7 +173,7 @@ export function createProfileAvailability({
     );
   };
 
-  const ensureBrowserAvailable = async (): Promise<void> => {
+  const ensureBrowserAvailable = async (overrides?: BrowserLaunchOverrides): Promise<void> => {
     await reconcileProfileRuntime();
     if (capabilities.usesChromeMcp) {
       if (profile.userDataDir && !fs.existsSync(profile.userDataDir)) {
@@ -188,6 +189,7 @@ export function createProfileAvailability({
     const remoteCdp = capabilities.isRemote;
     const attachOnly = profile.attachOnly;
     const profileState = getProfileState();
+    const desiredHeadless = overrides?.headless ?? current.resolved.headless;
     const httpReachable = await isHttpReachable();
 
     if (!httpReachable) {
@@ -215,7 +217,9 @@ export function createProfileAvailability({
             : `Browser attachOnly is enabled and profile "${profile.name}" is not running.`,
         );
       }
-      const launched = await launchOpenClawChrome(current.resolved, profile);
+      const launched = await launchOpenClawChrome(current.resolved, profile, {
+        headless: desiredHeadless,
+      });
       attachRunning(launched);
       try {
         await waitForCdpReadyAfterLaunch();
@@ -229,6 +233,24 @@ export function createProfileAvailability({
 
     // Port is reachable - check if we own it.
     if (await isReachable()) {
+      if (
+        profileState.running &&
+        !attachOnly &&
+        !remoteCdp &&
+        profileState.running.headless !== desiredHeadless
+      ) {
+        await stopOpenClawChrome(profileState.running);
+        setProfileRunning(null);
+        const relaunched = await launchOpenClawChrome(current.resolved, profile, {
+          headless: desiredHeadless,
+        });
+        attachRunning(relaunched);
+        if (!(await isReachable(PROFILE_POST_RESTART_WS_TIMEOUT_MS))) {
+          throw new Error(
+            `Chrome CDP websocket for profile "${profile.name}" is not reachable after restart.`,
+          );
+        }
+      }
       return;
     }
 
@@ -259,7 +281,9 @@ export function createProfileAvailability({
     await stopOpenClawChrome(profileState.running);
     setProfileRunning(null);
 
-    const relaunched = await launchOpenClawChrome(current.resolved, profile);
+    const relaunched = await launchOpenClawChrome(current.resolved, profile, {
+      headless: desiredHeadless,
+    });
     attachRunning(relaunched);
 
     if (!(await isReachable(PROFILE_POST_RESTART_WS_TIMEOUT_MS))) {

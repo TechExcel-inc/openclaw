@@ -3,7 +3,7 @@ import type { PwAiModule } from "../pw-ai-module.js";
 import { getPwAiModule as getPwAiModuleBase } from "../pw-ai-module.js";
 import type { BrowserRouteContext, ProfileContext } from "../server-context.js";
 import type { BrowserRequest, BrowserResponse } from "./types.js";
-import { getProfileContext, jsonError } from "./utils.js";
+import { getBrowserLaunchOverrides, getProfileContext, jsonError } from "./utils.js";
 
 export const SELECTOR_UNSUPPORTED_MESSAGE = [
   "Error: 'selector' is not supported. Use 'ref' from snapshot instead.",
@@ -108,7 +108,10 @@ export async function withRouteTabContext<T>(
     return undefined;
   }
   try {
-    const tab = await profileCtx.ensureTabAvailable(params.targetId);
+    const tab = await profileCtx.ensureTabAvailable(
+      params.targetId,
+      getBrowserLaunchOverrides(params.req),
+    );
     return await params.run({
       profileCtx,
       tab,

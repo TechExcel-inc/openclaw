@@ -24,12 +24,13 @@ function buildQuerySuffix(params: Array<[string, string | boolean | undefined]>)
 
 export async function browserConsoleMessages(
   baseUrl: string | undefined,
-  opts: { level?: string; targetId?: string; profile?: string } = {},
+  opts: { level?: string; targetId?: string; profile?: string; headless?: boolean } = {},
 ): Promise<{ ok: true; messages: BrowserConsoleMessage[]; targetId: string }> {
   const suffix = buildQuerySuffix([
     ["level", opts.level],
     ["targetId", opts.targetId],
     ["profile", opts.profile],
+    ["headless", typeof opts.headless === "boolean" ? opts.headless : undefined],
   ]);
   return await fetchBrowserJson<{
     ok: true;
@@ -40,9 +41,9 @@ export async function browserConsoleMessages(
 
 export async function browserPdfSave(
   baseUrl: string | undefined,
-  opts: { targetId?: string; profile?: string } = {},
+  opts: { targetId?: string; profile?: string; headless?: boolean } = {},
 ): Promise<BrowserActionPathResult> {
-  const q = buildProfileQuery(opts.profile);
+  const q = buildProfileQuery(opts.profile, opts.headless);
   return await fetchBrowserJson<BrowserActionPathResult>(withBaseUrl(baseUrl, `/pdf${q}`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },

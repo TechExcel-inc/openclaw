@@ -46,16 +46,16 @@ export async function loadProjectsStore(storePath: string): Promise<ProjectsStor
       typeof parsedRecord.activeTemplateId === "string" ? parsedRecord.activeTemplateId : null;
 
     let store: ProjectsStoreFile;
-    if (parsedRecord.version === 2) {
+    if (parsedRecord.version === 3) {
       store = {
-        version: 2,
+        version: 3,
         templates: templates.filter(Boolean) as unknown as ProjectsStoreFile["templates"],
         executions: executions.filter(Boolean) as unknown as ProjectsStoreFile["executions"],
         activeTemplateId,
       };
     } else {
-      // Migrate v1 to v2: map `projects` to `templates` if available
-      const oldProjects = Array.isArray(parsedRecord.projects) ? parsedRecord.projects : [];
+      // Migrate v1/v2 to v3
+      const oldProjects = Array.isArray(parsedRecord.projects) ? parsedRecord.projects : templates;
       let migratedTemplates = oldProjects.map((item: unknown) => {
         const p = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
         return {
@@ -64,16 +64,25 @@ export async function loadProjectsStore(storePath: string): Promise<ProjectsStor
           name: typeof p.name === "string" ? p.name : "Migrated Project",
           createdAt: typeof p.createdAt === "number" ? p.createdAt : Date.now(),
           updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : Date.now(),
-          // Map any old fields correctly
+        };
+      });
+
+      const migratedExecutions = executions.filter(Boolean).map((exec: unknown) => {
+        const e = (exec && typeof exec === "object" ? exec : {}) as Record<string, unknown>;
+        return {
+          ...e,
+          steps: Array.isArray(e.steps) ? e.steps : [],
         };
       });
 
       store = {
-        version: 2,
+        version: 3,
         templates: migratedTemplates as unknown as ProjectsStoreFile["templates"],
-        executions: executions.filter(Boolean) as unknown as ProjectsStoreFile["executions"],
+        executions: migratedExecutions as unknown as ProjectsStoreFile["executions"],
         activeTemplateId:
-          typeof parsedRecord.activeProjectId === "string" ? parsedRecord.activeProjectId : null,
+          typeof parsedRecord.activeProjectId === "string"
+            ? parsedRecord.activeProjectId
+            : activeTemplateId,
       };
     }
     serializedStoreCache.set(storePath, JSON.stringify(store, null, 2));
@@ -81,7 +90,7 @@ export async function loadProjectsStore(storePath: string): Promise<ProjectsStor
   } catch (err) {
     if ((err as { code?: unknown })?.code === "ENOENT") {
       serializedStoreCache.delete(storePath);
-      return { version: 2, templates: [], executions: [], activeTemplateId: null };
+      return { version: 3, templates: [], executions: [], activeTemplateId: null };
     }
     throw err;
   }

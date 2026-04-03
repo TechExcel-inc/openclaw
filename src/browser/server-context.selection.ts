@@ -6,19 +6,26 @@ import { BrowserTabNotFoundError, BrowserTargetAmbiguousError } from "./errors.j
 import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
 import type { PwAiModule } from "./pw-ai-module.js";
 import { getPwAiModule } from "./pw-ai-module.js";
-import type { BrowserTab, ProfileRuntimeState } from "./server-context.types.js";
+import type {
+  BrowserLaunchOverrides,
+  BrowserTab,
+  ProfileRuntimeState,
+} from "./server-context.types.js";
 import { resolveTargetIdFromTabs } from "./target-id.js";
 
 type SelectionDeps = {
   profile: ResolvedBrowserProfile;
   getProfileState: () => ProfileRuntimeState;
-  ensureBrowserAvailable: () => Promise<void>;
+  ensureBrowserAvailable: (overrides?: BrowserLaunchOverrides) => Promise<void>;
   listTabs: () => Promise<BrowserTab[]>;
   openTab: (url: string) => Promise<BrowserTab>;
 };
 
 type SelectionOps = {
-  ensureTabAvailable: (targetId?: string) => Promise<BrowserTab>;
+  ensureTabAvailable: (
+    targetId?: string,
+    overrides?: BrowserLaunchOverrides,
+  ) => Promise<BrowserTab>;
   focusTab: (targetId: string) => Promise<void>;
   closeTab: (targetId: string) => Promise<void>;
 };
@@ -33,8 +40,11 @@ export function createProfileSelectionOps({
   const cdpHttpBase = normalizeCdpHttpBaseForJsonEndpoints(profile.cdpUrl);
   const capabilities = getBrowserProfileCapabilities(profile);
 
-  const ensureTabAvailable = async (targetId?: string): Promise<BrowserTab> => {
-    await ensureBrowserAvailable();
+  const ensureTabAvailable = async (
+    targetId?: string,
+    overrides?: BrowserLaunchOverrides,
+  ): Promise<BrowserTab> => {
+    await ensureBrowserAvailable(overrides);
     const profileState = getProfileState();
     const tabs1 = await listTabs();
     if (tabs1.length === 0) {

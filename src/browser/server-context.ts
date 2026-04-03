@@ -24,6 +24,7 @@ import type {
 } from "./server-context.types.js";
 
 export type {
+  BrowserLaunchOverrides,
   BrowserRouteContext,
   BrowserServerState,
   BrowserTab,
@@ -243,8 +244,9 @@ export function createBrowserRouteContext(opts: ContextOptions): BrowserRouteCon
     forProfile,
     listProfiles,
     // Legacy methods delegate to default profile
-    ensureBrowserAvailable: () => getDefaultContext().ensureBrowserAvailable(),
-    ensureTabAvailable: (targetId) => getDefaultContext().ensureTabAvailable(targetId),
+    ensureBrowserAvailable: (overrides) => getDefaultContext().ensureBrowserAvailable(overrides),
+    ensureTabAvailable: (targetId, overrides) =>
+      getDefaultContext().ensureTabAvailable(targetId, overrides),
     isHttpReachable: (timeoutMs) => getDefaultContext().isHttpReachable(timeoutMs),
     isReachable: (timeoutMs) => getDefaultContext().isReachable(timeoutMs),
     listTabs: () => getDefaultContext().listTabs(),

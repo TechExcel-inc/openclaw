@@ -32,6 +32,20 @@ export function getProfileContext(
   }
 }
 
+export function getBrowserLaunchOverrides(req: BrowserRequest): { headless?: boolean } {
+  const queryHeadless = toBoolean(req.query.headless);
+  if (typeof queryHeadless === "boolean") {
+    return { headless: queryHeadless };
+  }
+  if (req.body && typeof req.body === "object") {
+    const bodyHeadless = toBoolean((req.body as Record<string, unknown>).headless);
+    if (typeof bodyHeadless === "boolean") {
+      return { headless: bodyHeadless };
+    }
+  }
+  return {};
+}
+
 export function jsonError(res: BrowserResponse, status: number, message: string) {
   res.status(status).json({ error: message });
 }

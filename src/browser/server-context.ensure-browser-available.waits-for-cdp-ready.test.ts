@@ -57,6 +57,7 @@ function mockLaunchedChrome(
     exe: { kind: "chromium", path: "/usr/bin/chromium" },
     userDataDir: "/tmp/openclaw-test",
     cdpPort: 18800,
+    headless: true,
     startedAt: Date.now(),
     proc,
   });
@@ -97,6 +98,22 @@ describe("browser server-context ensureBrowserAvailable", () => {
 
     expect(launchOpenClawChrome).toHaveBeenCalledTimes(1);
     expect(isChromeCdpReady).toHaveBeenCalled();
+    expect(stopOpenClawChrome).not.toHaveBeenCalled();
+  });
+
+  it("passes a headless override into Chrome launch", async () => {
+    const { launchOpenClawChrome, stopOpenClawChrome, isChromeCdpReady, profile } =
+      setupEnsureBrowserAvailableHarness();
+    isChromeCdpReady.mockResolvedValueOnce(false).mockResolvedValue(true);
+    mockLaunchedChrome(launchOpenClawChrome, 456);
+
+    const promise = profile.ensureBrowserAvailable({ headless: false });
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(promise).resolves.toBeUndefined();
+
+    expect(launchOpenClawChrome).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      headless: false,
+    });
     expect(stopOpenClawChrome).not.toHaveBeenCalled();
   });
 

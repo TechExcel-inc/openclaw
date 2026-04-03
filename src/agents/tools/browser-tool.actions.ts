@@ -46,6 +46,7 @@ type BrowserProxyRequest = (opts: {
   body?: unknown;
   timeoutMs?: number;
   profile?: string;
+  headless?: boolean;
 }) => Promise<unknown>;
 
 function wrapBrowserExternalJson(params: {
@@ -150,19 +151,21 @@ function canRetryChromeActWithoutTargetId(request: Parameters<typeof browserAct>
 export async function executeTabsAction(params: {
   baseUrl?: string;
   profile?: string;
+  headless?: boolean;
   proxyRequest: BrowserProxyRequest | null;
 }): Promise<AgentToolResult<unknown>> {
-  const { baseUrl, profile, proxyRequest } = params;
+  const { baseUrl, profile, headless, proxyRequest } = params;
   if (proxyRequest) {
     const result = await proxyRequest({
       method: "GET",
       path: "/tabs",
       profile,
+      headless,
     });
     const tabs = (result as { tabs?: unknown[] }).tabs ?? [];
     return formatTabsToolResult(tabs);
   }
-  const tabs = await browserToolActionDeps.browserTabs(baseUrl, { profile });
+  const tabs = await browserToolActionDeps.browserTabs(baseUrl, { profile, headless });
   return formatTabsToolResult(tabs);
 }
 
@@ -170,9 +173,10 @@ export async function executeSnapshotAction(params: {
   input: Record<string, unknown>;
   baseUrl?: string;
   profile?: string;
+  headless?: boolean;
   proxyRequest: BrowserProxyRequest | null;
 }): Promise<AgentToolResult<unknown>> {
-  const { input, baseUrl, profile, proxyRequest } = params;
+  const { input, baseUrl, profile, headless, proxyRequest } = params;
   const snapshotDefaults = browserToolActionDeps.loadConfig().browser?.snapshotDefaults;
   const format: "ai" | "aria" | undefined =
     input.snapshotFormat === "ai" || input.snapshotFormat === "aria"
@@ -230,11 +234,13 @@ export async function executeSnapshotAction(params: {
         method: "GET",
         path: "/snapshot",
         profile,
+        headless,
         query: snapshotQuery,
       })) as Awaited<ReturnType<typeof browserSnapshot>>)
     : await browserToolActionDeps.browserSnapshot(baseUrl, {
         ...snapshotQuery,
         profile,
+        headless,
       });
   if (snapshot.format === "ai") {
     const extractedText = snapshot.snapshot ?? "";
@@ -305,9 +311,10 @@ export async function executeConsoleAction(params: {
   input: Record<string, unknown>;
   baseUrl?: string;
   profile?: string;
+  headless?: boolean;
   proxyRequest: BrowserProxyRequest | null;
 }): Promise<AgentToolResult<unknown>> {
-  const { input, baseUrl, profile, proxyRequest } = params;
+  const { input, baseUrl, profile, headless, proxyRequest } = params;
   const level = typeof input.level === "string" ? input.level.trim() : undefined;
   const targetId = typeof input.targetId === "string" ? input.targetId.trim() : undefined;
   if (proxyRequest) {
@@ -315,6 +322,7 @@ export async function executeConsoleAction(params: {
       method: "GET",
       path: "/console",
       profile,
+      headless,
       query: {
         level,
         targetId,
@@ -326,6 +334,7 @@ export async function executeConsoleAction(params: {
     level,
     targetId,
     profile,
+    headless,
   });
   return formatConsoleToolResult(result);
 }
@@ -334,19 +343,22 @@ export async function executeActAction(params: {
   request: Parameters<typeof browserAct>[1];
   baseUrl?: string;
   profile?: string;
+  headless?: boolean;
   proxyRequest: BrowserProxyRequest | null;
 }): Promise<AgentToolResult<unknown>> {
-  const { request, baseUrl, profile, proxyRequest } = params;
+  const { request, baseUrl, profile, headless, proxyRequest } = params;
   try {
     const result = proxyRequest
       ? await proxyRequest({
           method: "POST",
           path: "/act",
           profile,
+          headless,
           body: request,
         })
       : await browserToolActionDeps.browserAct(baseUrl, request, {
           profile,
+          headless,
         });
     return jsonResult(result);
   } catch (err) {
@@ -358,9 +370,10 @@ export async function executeActAction(params: {
               method: "GET",
               path: "/tabs",
               profile,
+              headless,
             })) as { tabs?: unknown[] }
           ).tabs ?? [])
-        : await browserToolActionDeps.browserTabs(baseUrl, { profile }).catch(() => []);
+        : await browserToolActionDeps.browserTabs(baseUrl, { profile, headless }).catch(() => []);
       // Some user-browser targetIds can go stale between snapshots and actions.
       // Only retry safe read-only actions, and only when exactly one tab remains attached.
       if (retryRequest && canRetryChromeActWithoutTargetId(request) && tabs.length === 1) {
@@ -370,10 +383,12 @@ export async function executeActAction(params: {
                 method: "POST",
                 path: "/act",
                 profile,
+                headless,
                 body: retryRequest,
               })
             : await browserToolActionDeps.browserAct(baseUrl, retryRequest, {
                 profile,
+                headless,
               });
           return jsonResult(retryResult);
         } catch {

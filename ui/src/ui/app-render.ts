@@ -792,7 +792,7 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
         ${
-          state.tab === "config"
+          state.tab === "config" || state.tab === "projects" || state.tab === "autoTestRun"
             ? nothing
             : html`<section class="content-header ${isChat ? "content-header--chat" : ""}">
               ${

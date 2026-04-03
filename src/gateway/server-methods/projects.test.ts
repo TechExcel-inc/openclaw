@@ -127,6 +127,7 @@ function createExecution(
     targetUrl: "https://example.com",
     aiPrompt: "Explore the app",
     status,
+    steps: [],
     paused: status === "running",
     progressPercentage: status === "running" ? 50 : 0,
     startTime,

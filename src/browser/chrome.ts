@@ -69,6 +69,7 @@ export type RunningChrome = {
   exe: BrowserExecutable;
   userDataDir: string;
   cdpPort: number;
+  headless: boolean;
   startedAt: number;
   proc: ChildProcess;
 };
@@ -89,8 +90,10 @@ export function buildOpenClawChromeLaunchArgs(params: {
   resolved: ResolvedBrowserConfig;
   profile: ResolvedBrowserProfile;
   userDataDir: string;
+  headless?: boolean;
 }): string[] {
   const { resolved, profile, userDataDir } = params;
+  const headless = params.headless ?? resolved.headless;
   const args: string[] = [
     `--remote-debugging-port=${profile.cdpPort}`,
     `--user-data-dir=${userDataDir}`,
@@ -105,7 +108,7 @@ export function buildOpenClawChromeLaunchArgs(params: {
     "--password-store=basic",
   ];
 
-  if (resolved.headless) {
+  if (headless) {
     args.push("--headless=new");
     args.push("--disable-gpu");
   }
@@ -294,6 +297,7 @@ export async function isChromeCdpReady(
 export async function launchOpenClawChrome(
   resolved: ResolvedBrowserConfig,
   profile: ResolvedBrowserProfile,
+  opts?: { headless?: boolean },
 ): Promise<RunningChrome> {
   if (!profile.cdpIsLoopback) {
     throw new Error(`Profile "${profile.name}" is remote; cannot launch local Chrome.`);
@@ -322,6 +326,7 @@ export async function launchOpenClawChrome(
       resolved,
       profile,
       userDataDir,
+      headless: opts?.headless,
     });
     // stdio tuple: discard stdout to prevent buffer saturation in constrained
     // environments (e.g. Docker), while keeping stderr piped for diagnostics.
@@ -439,6 +444,7 @@ export async function launchOpenClawChrome(
     exe,
     userDataDir,
     cdpPort: profile.cdpPort,
+    headless: opts?.headless ?? resolved.headless,
     startedAt,
     proc,
   };

@@ -38,7 +38,7 @@ import {
   shouldUsePlaywrightForScreenshot,
 } from "./agent.snapshot.plan.js";
 import type { BrowserResponse, BrowserRouteRegistrar } from "./types.js";
-import { jsonError, toBoolean, toStringOrEmpty } from "./utils.js";
+import { getBrowserLaunchOverrides, jsonError, toBoolean, toStringOrEmpty } from "./utils.js";
 
 const CHROME_MCP_OVERLAY_ATTR = "data-openclaw-mcp-overlay";
 
@@ -398,7 +398,10 @@ export function registerBrowserAgentSnapshotRoutes(
     });
 
     try {
-      const tab = await profileCtx.ensureTabAvailable(targetId || undefined);
+      const tab = await profileCtx.ensureTabAvailable(
+        targetId || undefined,
+        getBrowserLaunchOverrides(req),
+      );
       if ((plan.labels || plan.mode === "efficient") && plan.format === "aria") {
         return jsonError(res, 400, "labels/mode=efficient require format=ai");
       }

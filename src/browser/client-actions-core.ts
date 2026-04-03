@@ -115,8 +115,9 @@ async function postDownloadRequest(
   route: "/wait/download" | "/download",
   body: Record<string, unknown>,
   profile?: string,
+  headless?: boolean,
 ): Promise<BrowserDownloadResult> {
-  const q = buildProfileQuery(profile);
+  const q = buildProfileQuery(profile, headless);
   return await fetchBrowserJson<BrowserDownloadResult>(withBaseUrl(baseUrl, `${route}${q}`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -131,9 +132,10 @@ export async function browserNavigate(
     url: string;
     targetId?: string;
     profile?: string;
+    headless?: boolean;
   },
 ): Promise<BrowserActionTabResult> {
-  const q = buildProfileQuery(opts.profile);
+  const q = buildProfileQuery(opts.profile, opts.headless);
   return await fetchBrowserJson<BrowserActionTabResult>(withBaseUrl(baseUrl, `/navigate${q}`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -150,9 +152,10 @@ export async function browserArmDialog(
     targetId?: string;
     timeoutMs?: number;
     profile?: string;
+    headless?: boolean;
   },
 ): Promise<BrowserActionOk> {
-  const q = buildProfileQuery(opts.profile);
+  const q = buildProfileQuery(opts.profile, opts.headless);
   return await fetchBrowserJson<BrowserActionOk>(withBaseUrl(baseUrl, `/hooks/dialog${q}`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -176,9 +179,10 @@ export async function browserArmFileChooser(
     targetId?: string;
     timeoutMs?: number;
     profile?: string;
+    headless?: boolean;
   },
 ): Promise<BrowserActionOk> {
-  const q = buildProfileQuery(opts.profile);
+  const q = buildProfileQuery(opts.profile, opts.headless);
   return await fetchBrowserJson<BrowserActionOk>(withBaseUrl(baseUrl, `/hooks/file-chooser${q}`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -201,6 +205,7 @@ export async function browserWaitForDownload(
     targetId?: string;
     timeoutMs?: number;
     profile?: string;
+    headless?: boolean;
   },
 ): Promise<BrowserDownloadResult> {
   return await postDownloadRequest(
@@ -212,6 +217,7 @@ export async function browserWaitForDownload(
       timeoutMs: opts.timeoutMs,
     },
     opts.profile,
+    opts.headless,
   );
 }
 
@@ -223,6 +229,7 @@ export async function browserDownload(
     targetId?: string;
     timeoutMs?: number;
     profile?: string;
+    headless?: boolean;
   },
 ): Promise<BrowserDownloadResult> {
   return await postDownloadRequest(
@@ -235,15 +242,16 @@ export async function browserDownload(
       timeoutMs: opts.timeoutMs,
     },
     opts.profile,
+    opts.headless,
   );
 }
 
 export async function browserAct(
   baseUrl: string | undefined,
   req: BrowserActRequest,
-  opts?: { profile?: string },
+  opts?: { profile?: string; headless?: boolean },
 ): Promise<BrowserActResponse> {
-  const q = buildProfileQuery(opts?.profile);
+  const q = buildProfileQuery(opts?.profile, opts?.headless);
   return await fetchBrowserJson<BrowserActResponse>(withBaseUrl(baseUrl, `/act${q}`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -261,9 +269,10 @@ export async function browserScreenshotAction(
     element?: string;
     type?: "png" | "jpeg";
     profile?: string;
+    headless?: boolean;
   },
 ): Promise<BrowserActionPathResult> {
-  const q = buildProfileQuery(opts.profile);
+  const q = buildProfileQuery(opts.profile, opts.headless);
   return await fetchBrowserJson<BrowserActionPathResult>(withBaseUrl(baseUrl, `/screenshot${q}`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
