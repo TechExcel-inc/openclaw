@@ -428,7 +428,6 @@ export const en: TranslationMap = {
     projectRunStopReasonPlaceholder:
       "e.g. Done testing login flow, or need credentials in chat first…",
     projectRunCaptureGalleryTitle: "Step captures",
-    projectRunProgressLogTitle: "Progress Log",
     disconnected: "Disconnected from gateway.",
     refreshTitle: "Refresh chat data",
     thinkingToggle: "Toggle assistant thinking/working output",

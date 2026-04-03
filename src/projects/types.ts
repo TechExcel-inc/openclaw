@@ -115,6 +115,8 @@ export type ProjectExecute = {
   results: EadFmNodeRun[];
   /** Accumulated progress log entries extracted from the run transcript. */
   progressLog?: ProgressLogEntry[];
+  /** Number of transcript messages already processed for the progress log. */
+  progressLogSeq?: number;
 };
 
 export type ProjectsStoreFile = {

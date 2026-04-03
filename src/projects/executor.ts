@@ -3,7 +3,6 @@ import {
   loadSessionEntry,
   readSessionMessages,
 } from "../gateway/session-utils.js";
-import { extractToolCallNames } from "../utils/transcript-tools.js";
 import { loadProjectsStore, resolveProjectsStorePath, saveProjectsStore } from "./store.js";
 import type { EadFmNodeRun, ProgressLogEntry, TestCaseRun, TestCaseStepRun } from "./types.js";
 
@@ -219,45 +218,171 @@ function extractTranscriptText(content: unknown): string {
   return "";
 }
 
-const PROGRESS_LOG_MAX = 200;
-const PROGRESS_TEXT_MAX = 160;
+const PROGRESS_LOG_MAX = 300;
+const PROGRESS_TEXT_MAX = 200;
 
-function extractToolDetail(block: Record<string, unknown>): string {
-  const input = block.input;
-  if (!input || typeof input !== "object") {
+/** Truncate string for display. */
+function truncateForLog(value: string | undefined, max: number): string {
+  if (!value) {
     return "";
   }
-  const inp = input as Record<string, unknown>;
-  // browser_navigate → url
-  if (typeof inp.url === "string" && inp.url.trim()) {
-    return ` to ${inp.url.trim()}`;
-  }
-  // browser_click / browser_type → selector or description
-  if (typeof inp.description === "string" && inp.description.trim()) {
-    return ` on "${inp.description.trim()}"`;
-  }
-  if (typeof inp.selector === "string" && inp.selector.trim()) {
-    return ` on ${inp.selector.trim()}`;
-  }
-  if (typeof inp.element === "string" && inp.element.trim()) {
-    return ` on ${inp.element.trim()}`;
-  }
-  if (typeof inp.query === "string" && inp.query.trim()) {
-    return `: "${inp.query.trim()}"`;
-  }
-  if (typeof inp.action === "string" && inp.action.trim()) {
-    return ` (${inp.action.trim()})`;
-  }
-  return "";
+  const t = value.trim();
+  return t.length > max ? `${t.slice(0, max).trimEnd()}...` : t;
 }
 
 /**
- * Extracts new progress log entries from the session transcript that are not already
- * present in the existing log. Deduplicates against existing entries by text content.
+ * Build a natural-language description for a tool_use block.
+ * Never returns undefined — always produces a description.
+ */
+function describeToolAction(name: string, block: Record<string, unknown>): string {
+  const input = block.input as Record<string, unknown> | undefined;
+  const inp = input && typeof input === "object" ? input : {};
+  // Also check top-level fields as fallback
+  const src = { ...inp, ...block };
+
+  // ── Browser / computer-use tools ──
+  if (name === "browser" || name === "computer") {
+    const action = truncateForLog(typeof src.action === "string" ? src.action : undefined, 40);
+    const url = truncateForLog(typeof src.url === "string" ? src.url : undefined, 120);
+    const desc = truncateForLog(
+      typeof src.description === "string" ? src.description : undefined,
+      60,
+    );
+    const elem = truncateForLog(typeof src.element === "string" ? src.element : undefined, 60);
+    const sel = truncateForLog(typeof src.selector === "string" ? src.selector : undefined, 60);
+    const text = truncateForLog(typeof src.text === "string" ? src.text : undefined, 50);
+    const key = truncateForLog(typeof src.key === "string" ? src.key : undefined, 30);
+    const coord =
+      typeof src.coordinate === "object" && src.coordinate ? JSON.stringify(src.coordinate) : "";
+    const label = desc || elem || sel;
+
+    if (url && (action === "goto_url" || action === "navigate" || !action)) {
+      return `Navigating to ${url}`;
+    }
+    if (action === "screenshot" || action === "screenshot_element") {
+      return label ? `Taking screenshot of "${label}"` : "Taking a screenshot...";
+    }
+    if (action === "click") {
+      return label ? `Clicking "${label}"` : coord ? `Clicking at ${coord}` : "Clicking...";
+    }
+    if (action === "type") {
+      return text ? `Typing "${text}"` : "Typing...";
+    }
+    if (action === "key") {
+      return key ? `Pressing ${key}` : "Pressing a key...";
+    }
+    if (action === "hover") {
+      return label ? `Hovering over "${label}"` : "Hovering...";
+    }
+    if (action === "scroll") {
+      return "Scrolling the page...";
+    }
+    if (action === "wait" || action === "wait_for") {
+      return "Waiting...";
+    }
+    if (action === "new_tab") {
+      return "Opening a new tab...";
+    }
+    if (action === "close_tab" || action === "close") {
+      return "Closing tab...";
+    }
+    if (action === "go_back") {
+      return "Going back...";
+    }
+    if (action === "select_option") {
+      return label ? `Selecting "${label}"` : "Selecting an option...";
+    }
+    // Fallback: show whatever we know
+    if (action && url) {
+      return `Browser: ${action} ${url}`;
+    }
+    if (action && label) {
+      return `Browser: ${action} "${label}"`;
+    }
+    if (action && text) {
+      return `Browser: ${action}`;
+    }
+    if (action) {
+      return `Performing ${action}...`;
+    }
+    if (url) {
+      return `Opening ${url}`;
+    }
+    return `Using ${name}...`;
+  }
+
+  // ── Shell / exec ──
+  if (name === "exec" || name === "shell") {
+    const cmd = truncateForLog(typeof src.command === "string" ? src.command : undefined, 80);
+    return cmd ? `Running: ${cmd}` : "Running command...";
+  }
+
+  // ── File read ──
+  if (name === "read" || name === "read_file") {
+    const path = truncateForLog(typeof src.file_path === "string" ? src.file_path : undefined, 100);
+    if (!path) {
+      return `Reading file...`;
+    }
+    const base = path.split("/").pop() ?? path;
+    return `Reading ${base}`;
+  }
+
+  // ── File write / edit ──
+  if (name === "write" || name === "write_file" || name === "edit") {
+    const path = truncateForLog(typeof src.file_path === "string" ? src.file_path : undefined, 100);
+    if (!path) {
+      return "Editing file...";
+    }
+    const base = path.split("/").pop() ?? path;
+    return `Editing ${base}`;
+  }
+
+  // ── Image / vision ──
+  if (name === "image" || name === "analyze_image") {
+    const prompt = truncateForLog(typeof src.prompt === "string" ? src.prompt : undefined, 60);
+    return prompt ? `Analyzing image: "${prompt}"` : "Analyzing image...";
+  }
+
+  // ── Search ──
+  if (name === "search" || name === "glob" || name === "grep" || name === "find") {
+    const pattern = truncateForLog(typeof src.pattern === "string" ? src.pattern : undefined, 60);
+    const query = truncateForLog(typeof src.query === "string" ? src.query : undefined, 60);
+    const term = pattern || query;
+    return term ? `Searching for "${term}"` : "Searching...";
+  }
+
+  // ── Generic fallback: extract useful fields from input ──
+  const url = truncateForLog(typeof src.url === "string" ? src.url : undefined, 120);
+  const query = truncateForLog(typeof src.query === "string" ? src.query : undefined, 60);
+  const desc = truncateForLog(
+    typeof src.description === "string" ? src.description : undefined,
+    80,
+  );
+  const path = truncateForLog(typeof src.file_path === "string" ? src.file_path : undefined, 80);
+  if (url) {
+    return `Opening ${url}`;
+  }
+  if (path) {
+    return `Working with ${path.split("/").pop() ?? path}`;
+  }
+  if (query) {
+    return `Query: "${query}"`;
+  }
+  if (desc) {
+    return desc;
+  }
+  // Last resort: just show the tool name
+  return `Using ${name}...`;
+}
+
+/**
+ * Extracts progress log entries from new transcript messages (index >= alreadyProcessed).
+ * No deduplication — every action gets logged. Capped at PROGRESS_LOG_MAX total entries.
  */
 function extractProgressLogFromTranscript(
   sessionKey: string,
   existingLog: ProgressLogEntry[],
+  alreadyProcessed: number,
 ): ProgressLogEntry[] {
   const loaded = loadSessionEntry(sessionKey);
   if (!loaded.entry?.sessionId) {
@@ -268,14 +393,13 @@ function extractProgressLogFromTranscript(
     loaded.storePath,
     loaded.entry.sessionFile,
   );
-  if (transcript.length === 0) {
+  if (transcript.length <= alreadyProcessed) {
     return [];
   }
 
-  const existingTexts = new Set(existingLog.map((e) => e.text));
   const entries: ProgressLogEntry[] = [];
 
-  for (let i = 0; i < transcript.length; i++) {
+  for (let i = alreadyProcessed; i < transcript.length; i++) {
     const row = transcript[i];
     if (!row || typeof row !== "object") {
       continue;
@@ -290,86 +414,97 @@ function extractProgressLogFromTranscript(
           : Date.now();
 
     if (role === "assistant") {
-      const toolNames = extractToolCallNames(msg);
-      if (toolNames.length > 0) {
-        // Extract tool_use details from content blocks
-        const content = msg.content;
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            if (!block || typeof block !== "object") {
-              continue;
-            }
-            const b = block as Record<string, unknown>;
-            const type = typeof b.type === "string" ? b.type.trim().toLowerCase() : "";
-            if (type !== "tool_use" && type !== "toolcall" && type !== "tool_call") {
-              continue;
-            }
-            const name = typeof b.name === "string" ? b.name.trim() : "";
-            if (!name) {
-              continue;
-            }
-            const detail = extractToolDetail(b);
-            const text = `Using ${name}${detail}`;
-            if (!existingTexts.has(text)) {
-              entries.push({ ts, kind: "tool_use", text });
-              existingTexts.add(text);
-            }
+      const content = Array.isArray(msg.content) ? msg.content : null;
+      let hasToolUse = false;
+
+      if (content) {
+        // Extract text blocks — natural language narration
+        for (const block of content) {
+          if (!block || typeof block !== "object") {
+            continue;
           }
-        } else {
-          // Fallback: toolName field without content array
-          for (const name of toolNames) {
-            const text = `Using ${name}`;
-            if (!existingTexts.has(text)) {
-              entries.push({ ts, kind: "tool_use", text });
-              existingTexts.add(text);
+          const b = block as Record<string, unknown>;
+          const btype = typeof b.type === "string" ? b.type.trim().toLowerCase() : "";
+          if (btype === "tool_use" || btype === "toolcall" || btype === "tool_call") {
+            hasToolUse = true;
+            const toolName = typeof b.name === "string" ? b.name.trim() : "";
+            if (!toolName) {
+              continue;
             }
+            entries.push({ ts, kind: "tool_use", text: describeToolAction(toolName, b) });
+          } else if (btype === "text" && typeof b.text === "string" && b.text.trim()) {
+            const raw = b.text.trim();
+            // Skip pure system/context boilerplate
+            if (raw.startsWith("[") && (raw.includes("System]") || raw.includes("Context]"))) {
+              continue;
+            }
+            entries.push({
+              ts,
+              kind: "assistant",
+              text: truncateForLog(raw, PROGRESS_TEXT_MAX),
+            });
           }
         }
-      } else {
-        // Assistant text (no tool calls) — narrative summary
-        const textContent = extractTranscriptText(msg.content);
-        if (textContent) {
-          const summary =
-            textContent.length > PROGRESS_TEXT_MAX
-              ? `${textContent.slice(0, PROGRESS_TEXT_MAX).trimEnd()}...`
-              : textContent;
-          if (!existingTexts.has(summary)) {
-            entries.push({ ts, kind: "assistant", text: summary });
-            existingTexts.add(summary);
+      }
+
+      // Fallback: toolName field without content array
+      if (!hasToolUse && !content) {
+        const rawName = msg.toolName ?? msg.tool_name;
+        if (typeof rawName === "string" && rawName.trim()) {
+          entries.push({
+            ts,
+            kind: "tool_use",
+            text: describeToolAction(rawName.trim(), msg),
+          });
+        } else {
+          // Pure text assistant message without content array
+          const textContent = extractTranscriptText(msg.content);
+          if (textContent) {
+            const raw = textContent.trim();
+            if (!(raw.startsWith("[") && (raw.includes("System]") || raw.includes("Context]")))) {
+              entries.push({
+                ts,
+                kind: "assistant",
+                text: truncateForLog(raw, PROGRESS_TEXT_MAX),
+              });
+            }
           }
         }
       }
     } else if (role === "tool") {
+      // Show tool result errors
+      const isError = msg.is_error === true || msg.isError === true;
       const toolName =
         typeof msg.toolName === "string"
           ? msg.toolName.trim()
           : typeof msg.tool_name === "string"
             ? msg.tool_name.trim()
             : "";
-      const isError = msg.is_error === true || msg.isError === true;
-      if (toolName) {
-        const text = isError ? `Error in ${toolName}` : `Completed: ${toolName}`;
-        if (!existingTexts.has(text)) {
-          entries.push({ ts, kind: isError ? "system" : "tool_result", text });
-          existingTexts.add(text);
-        }
+      if (isError && toolName) {
+        const errorText = extractTranscriptText(msg.content);
+        entries.push({
+          ts,
+          kind: "system",
+          text: errorText ? truncateForLog(errorText, 120) : `Error in ${toolName}`,
+        });
       }
     }
   }
 
-  // Cap total entries
-  if (entries.length > PROGRESS_LOG_MAX) {
-    return entries.slice(entries.length - PROGRESS_LOG_MAX);
-  }
   return entries;
 }
 
 /** Append new progress log entries to the execution entry inside an updateExecutionSnapshot callback. */
 function appendProgressLog(
-  entry: { progressLog?: ProgressLogEntry[] },
+  entry: { progressLog?: ProgressLogEntry[]; progressLogSeq?: number },
   newEntries: ProgressLogEntry[],
+  newSeq: number,
 ) {
   if (newEntries.length === 0) {
+    // Still update seq even if no new entries, so we don't re-scan
+    if (newSeq > (entry.progressLogSeq ?? 0)) {
+      entry.progressLogSeq = newSeq;
+    }
     return;
   }
   const existing = entry.progressLog ?? [];
@@ -377,6 +512,7 @@ function appendProgressLog(
   if (entry.progressLog.length > PROGRESS_LOG_MAX) {
     entry.progressLog = entry.progressLog.slice(entry.progressLog.length - PROGRESS_LOG_MAX);
   }
+  entry.progressLogSeq = newSeq;
 }
 
 function readProjectRunTranscriptSnapshot(sessionKey: string): {
@@ -561,6 +697,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
       const newProgressEntries = extractProgressLogFromTranscript(
         activeSessionKey,
         current.progressLog ?? [],
+        current.progressLogSeq ?? 0,
       );
       const currentTokens =
         typeof row?.totalTokensFresh === "number"
@@ -580,7 +717,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
               transcript.latestAssistantText ??
               "OpenClaw never reported a live session state for this Project Run.";
             entry.executorHint = resolveTerminalHint("error");
-            appendProgressLog(entry, newProgressEntries);
+            appendProgressLog(entry, newProgressEntries, transcript.messageCount);
             entry.results = [
               buildTranscriptEvidenceRun({
                 executionId,
@@ -596,7 +733,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
           entry.paused = Boolean(entry.paused);
           entry.progressPercentage = Math.max(entry.progressPercentage, entry.paused ? 8 : 15);
           entry.executorHint = resolveRunningHint(entry.targetUrl, entry.paused, entry.authMode);
-          appendProgressLog(entry, newProgressEntries);
+          appendProgressLog(entry, newProgressEntries, transcript.messageCount);
           if (typeof currentTokens === "number") {
             entry.logTokens = currentTokens;
           }
@@ -625,7 +762,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
             entry.paused ? 8 : resolveActiveRunProgress(transcript.messageCount),
           );
           entry.executorHint = resolveRunningHint(entry.targetUrl, entry.paused, entry.authMode);
-          appendProgressLog(entry, newProgressEntries);
+          appendProgressLog(entry, newProgressEntries, transcript.messageCount);
           if (typeof currentTokens === "number") {
             entry.logTokens = currentTokens;
           }
@@ -656,7 +793,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
               ? Math.max(0, Date.now() - entry.startTime)
               : null;
         entry.executorHint = resolveTerminalHint(terminalStatus);
-        appendProgressLog(entry, newProgressEntries);
+        appendProgressLog(entry, newProgressEntries, transcript.messageCount);
         if (typeof currentTokens === "number") {
           entry.logTokens = currentTokens;
         }

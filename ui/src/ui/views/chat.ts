@@ -1378,6 +1378,7 @@ export function renderChat(props: ChatProps) {
                             error: null,
                             onClose: props.onCloseLeftSidebar,
                             title: props.leftSidebarTitle ?? "Project",
+                            autoScroll: (props.leftSidebarTitle ?? "") === "Project Run",
                             onViewRawText: () => {
                               const c = props.leftSidebarMarkdown;
                               if (!c || !props.onOpenSidebar) {

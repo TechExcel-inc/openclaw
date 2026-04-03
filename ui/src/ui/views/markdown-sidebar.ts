@@ -11,6 +11,8 @@ export type MarkdownSidebarProps = {
   onViewRawText: () => void;
   /** Defaults to "Tool Output". */
   title?: string;
+  /** When true, adds log-stream class to sidebar-content for auto-scroll. */
+  autoScroll?: boolean;
 };
 
 export function renderMarkdownSidebar(props: MarkdownSidebarProps) {
@@ -29,7 +31,7 @@ export function renderMarkdownSidebar(props: MarkdownSidebarProps) {
             : nothing
         }
       </div>
-      <div class="sidebar-content">
+      <div class="sidebar-content${props.autoScroll ? " log-stream" : ""}">
         ${
           props.error
             ? html`
