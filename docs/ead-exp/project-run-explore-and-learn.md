@@ -22,12 +22,12 @@ This document captures the **product plan** for recording runs during **AI Explo
 
 ## Phasing (product)
 
-| Phase | Focus | Notes |
-|--------|--------|--------|
+| Phase | Focus                 | Notes                                                                                                                |
+| ----- | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | **1** | **Explore and Learn** | Executor-driven exploration; step timeline; **one screenshot per step** (MVP); AI synthesis to EAD-PFM + test cases. |
-| **2** | **AI testing** | Execute stored test cases; assertions; regression. |
-| **3** | **Live streaming** | Stream executor view to the frontend (complement thumbnails). |
-| **4** | **Polish** | Multi-thumbnail per step; pause; credentials-in-chat; **S3** for durable media at scale. |
+| **2** | **AI testing**        | Execute stored test cases; assertions; regression.                                                                   |
+| **3** | **Live streaming**    | Stream executor view to the frontend (complement thumbnails).                                                        |
+| **4** | **Polish**            | Multi-thumbnail per step; pause; credentials-in-chat; **S3** for durable media at scale.                             |
 
 ## Architecture (concise)
 
@@ -39,15 +39,15 @@ This document captures the **product plan** for recording runs during **AI Explo
 
 ## MVP vs full vision
 
-| Area | MVP | Full vision |
-|------|-----|-------------|
-| Steps | Number, name, description (where available) | Rich metadata, retries, branching |
-| Screenshots | **One per step** | **Multiple** per step; lightbox |
-| UI | **Right panel** + Run Status | Same + responsive drawer, accessibility |
-| Updates | **Polling** | **Push** (WebSocket subscriptions) |
-| Chat | Active; basic commands (optional) | **Pause / resume / cancel**; **credentials via chat** |
-| Storage | Local store + inline or small blobs | **S3** (or equivalent) for images |
-| Streaming | Not in MVP | **Live stream** to frontend |
+| Area        | MVP                                         | Full vision                                           |
+| ----------- | ------------------------------------------- | ----------------------------------------------------- |
+| Steps       | Number, name, description (where available) | Rich metadata, retries, branching                     |
+| Screenshots | **One per step**                            | **Multiple** per step; lightbox                       |
+| UI          | **Right panel** + Run Status                | Same + responsive drawer, accessibility               |
+| Updates     | **Polling**                                 | **Push** (WebSocket subscriptions)                    |
+| Chat        | Active; basic commands (optional)           | **Pause / resume / cancel**; **credentials via chat** |
+| Storage     | Local store + inline or small blobs         | **S3** (or equivalent) for images                     |
+| Streaming   | Not in MVP                                  | **Live stream** to frontend                           |
 
 ## Effort (rough)
 

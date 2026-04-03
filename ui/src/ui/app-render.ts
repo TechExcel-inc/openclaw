@@ -14,9 +14,13 @@ import {
   renderChatProjectModal,
   renderChatSessionSelect,
   formatProjectRunSimpleMarkdown,
+  hasProjectRunCaptures,
+  renderProjectRunCaptureGallery,
   renderProjectChatGate,
   renderProjectRunGate,
   renderProjectRunNavItems,
+  renderProjectRunToolbar,
+  renderProjectRunConfirmDialog,
   projectRunOrdinalLabel,
   renderTab,
   renderSidebarConnectionStatus,
@@ -370,7 +374,14 @@ export function renderApp(state: AppViewState) {
   const chatDisabledReason = state.connected ? null : t("chat.disconnected");
   const isChat = isChatTab(state.tab);
   const chatProjectLeftMarkdown = resolveChatProjectLeftMarkdown(state);
-  const chatLeftPanelOpen = Boolean(chatProjectLeftMarkdown) && !state.projectLeftPanelDismissed;
+  const isProjectRunChat = state.tab === "chatProjectRun";
+  const projectRunLeftExtra =
+    isProjectRunChat && state.chatProjectRunExecutionId && hasProjectRunCaptures(state)
+      ? renderProjectRunCaptureGallery(state)
+      : undefined;
+  const chatLeftPanelOpen = isProjectRunChat
+    ? Boolean(chatProjectLeftMarkdown?.trim() || hasProjectRunCaptures(state))
+    : Boolean(chatProjectLeftMarkdown) && !state.projectLeftPanelDismissed;
   const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
   const navDrawerOpen = Boolean(state.navDrawerOpen && !chatFocus && !state.onboarding);
   const navCollapsed = Boolean(state.settings.navCollapsed && !navDrawerOpen);
@@ -562,9 +573,12 @@ export function renderApp(state: AppViewState) {
     onLeftSplitRatioChange: (ratio: number) => {
       state.projectLeftSplitRatio = ratio;
     },
-    onCloseLeftSidebar: () => {
-      state.projectLeftPanelDismissed = true;
-    },
+    onCloseLeftSidebar: isProjectRunChat
+      ? undefined
+      : () => {
+          state.projectLeftPanelDismissed = true;
+        },
+    leftSidebarClosable: !isProjectRunChat,
     assistantName: projectChatTitle ?? projectChatAssistantName,
     assistantAvatar: state.assistantAvatar,
     basePath: state.basePath ?? "",
@@ -792,7 +806,24 @@ export function renderApp(state: AppViewState) {
                             : nothing
                         }
                       `
-                    : html`
+                    : state.tab === "chatProjectRun"
+                      ? html`
+                            <div style="display:flex;flex-direction:column;gap:10px;width:100%;">
+                              <div>
+                                <div class="page-title">${titleForTab(state.tab)}</div>
+                                <div class="page-sub">${subtitleForTab(state.tab)}</div>
+                              </div>
+                              ${
+                                state.lastError
+                                  ? html`<div class="content-header__chat-error pill danger">${state.lastError}</div>`
+                                  : nothing
+                              }
+                            </div>
+                            <div class="page-meta page-meta--chat-general">
+                              ${renderProjectRunToolbar(state)}
+                            </div>
+                          `
+                      : html`
                         <div>
                           <div class="page-title">${titleForTab(state.tab)}</div>
                           <div class="page-sub">${subtitleForTab(state.tab)}</div>
@@ -1731,15 +1762,23 @@ export function renderApp(state: AppViewState) {
                 onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
                 leftSidebarOpen: chatLeftPanelOpen,
                 leftSidebarMarkdown: chatProjectLeftMarkdown,
-                leftSidebarTitle: "Project",
+                leftSidebarExtra: projectRunLeftExtra,
+                leftSidebarTitle: state.tab === "chatProjectRun" ? "Project Run" : "Project",
                 leftSplitRatio: state.projectLeftSplitRatio,
                 onLeftSplitRatioChange: (ratio: number) => {
                   state.projectLeftSplitRatio = ratio;
                 },
-                onCloseLeftSidebar: () => {
-                  state.projectLeftPanelDismissed = true;
-                },
-                assistantName: state.assistantName,
+                onCloseLeftSidebar:
+                  state.tab === "chatProjectRun"
+                    ? undefined
+                    : () => {
+                        state.projectLeftPanelDismissed = true;
+                      },
+                leftSidebarClosable: state.tab !== "chatProjectRun",
+                assistantName:
+                  state.tab === "chatProjectRun" && state.chatProjectRunExecutionId
+                    ? `${projectRunOrdinalLabel(state, state.chatProjectRunExecutionId)} — ${state.assistantName}`
+                    : state.assistantName,
                 assistantAvatar: state.assistantAvatar,
                 basePath: state.basePath ?? "",
               })
@@ -2243,7 +2282,7 @@ export function renderApp(state: AppViewState) {
       ${renderChatProjectModal(state)}
       ${renderExecApprovalPrompt(state)}
       ${renderGatewayUrlConfirmation(state)}
-      ${nothing}
+      ${renderProjectRunConfirmDialog(state)}
     </div>
   `;
 }

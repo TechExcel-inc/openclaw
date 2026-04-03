@@ -1,10 +1,29 @@
 import { describe, expect, it } from "vitest";
+import type { ProjectExecute } from "../../../src/projects/types.js";
 import {
+  formatExecutionStatusForUi,
   isCronSessionKey,
   parseSessionKey,
+  pickAdjacentProjectRunIdForNav,
+  projectRunScreenshotSteps,
+  resolveActiveTemplateIdForProjectNav,
   resolveSessionDisplayName,
 } from "./app-render.helpers.ts";
+import type { AppViewState } from "./app-view-state.ts";
 import type { SessionsListResult } from "./types.ts";
+
+function projectNavState(partial: Partial<AppViewState>): AppViewState {
+  return {
+    templatesList: [],
+    chatActiveTemplateId: null,
+    activeTemplateId: null,
+    templateDetail: null,
+    globalExecutionsList: [],
+    executionDetail: null,
+    hiddenProjectRunNavIds: [],
+    ...partial,
+  } as AppViewState;
+}
 
 type SessionRow = SessionsListResult["sessions"][number];
 
@@ -282,5 +301,185 @@ describe("isCronSessionKey", () => {
     expect(isCronSessionKey("main")).toBe(false);
     expect(isCronSessionKey("discord:group:eng")).toBe(false);
     expect(isCronSessionKey("agent:main:slack:cron:job:run:uuid")).toBe(false);
+  });
+});
+
+describe("resolveActiveTemplateIdForProjectNav", () => {
+  it("resolves linkedTemplateId when chat id is an execution id and templatesList is empty", () => {
+    const execId = "00000000-0000-4000-8000-000000000001";
+    const tplId = "00000000-0000-4000-8000-000000000002";
+    const ex: ProjectExecute = {
+      id: execId,
+      linkedTemplateId: tplId,
+      name: "Plan",
+      description: "",
+      targetUrl: "",
+      aiPrompt: "",
+      status: "running",
+      progressPercentage: 0,
+      startTime: Date.now(),
+      durationMs: null,
+      results: [],
+    };
+    expect(
+      resolveActiveTemplateIdForProjectNav(
+        projectNavState({
+          chatActiveTemplateId: execId,
+          globalExecutionsList: [ex],
+        }),
+      ),
+    ).toBe(tplId);
+  });
+
+  it("falls back to executionDetail when the run is not yet in globalExecutionsList", () => {
+    const execId = "00000000-0000-4000-8000-000000000003";
+    const tplId = "00000000-0000-4000-8000-000000000004";
+    const ex: ProjectExecute = {
+      id: execId,
+      linkedTemplateId: tplId,
+      name: "Plan",
+      description: "",
+      targetUrl: "",
+      aiPrompt: "",
+      status: "pending",
+      progressPercentage: 0,
+      startTime: Date.now(),
+      durationMs: null,
+      results: [],
+    };
+    expect(
+      resolveActiveTemplateIdForProjectNav(
+        projectNavState({
+          chatActiveTemplateId: execId,
+          globalExecutionsList: [],
+          executionDetail: ex,
+        }),
+      ),
+    ).toBe(tplId);
+  });
+});
+
+describe("formatExecutionStatusForUi", () => {
+  it("maps completed to Finished", () => {
+    expect(formatExecutionStatusForUi("completed", false)).toBe("Finished");
+  });
+
+  it("shows Paused when running and paused", () => {
+    expect(formatExecutionStatusForUi("running", true)).toBe("Paused");
+  });
+
+  it("shows Running when running and not paused", () => {
+    expect(formatExecutionStatusForUi("running", false)).toBe("Running");
+  });
+
+  it("returns Loading when status is undefined", () => {
+    expect(formatExecutionStatusForUi(undefined, false)).toBe("Loading…");
+  });
+});
+
+describe("pickAdjacentProjectRunIdForNav", () => {
+  const tpl = "00000000-0000-4000-8000-0000000000aa";
+  const mk = (id: string, start: number): ProjectExecute => ({
+    id,
+    linkedTemplateId: tpl,
+    name: "p",
+    description: "",
+    targetUrl: "",
+    aiPrompt: "",
+    status: "completed",
+    progressPercentage: 100,
+    startTime: start,
+    durationMs: 1,
+    results: [],
+  });
+
+  it("prefers the run below when removing a middle item", () => {
+    const a = mk("a", 1);
+    const b = mk("b", 2);
+    const c = mk("c", 3);
+    expect(
+      pickAdjacentProjectRunIdForNav(
+        projectNavState({
+          chatActiveTemplateId: "b",
+          globalExecutionsList: [a, b, c],
+        }),
+        "b",
+      ),
+    ).toBe("c");
+  });
+
+  it("uses the run above when removing the last item", () => {
+    const a = mk("a", 1);
+    const b = mk("b", 2);
+    expect(
+      pickAdjacentProjectRunIdForNav(
+        projectNavState({
+          chatActiveTemplateId: "b",
+          globalExecutionsList: [a, b],
+        }),
+        "b",
+      ),
+    ).toBe("a");
+  });
+
+  it("returns null when removing the only run", () => {
+    const b = mk("b", 1);
+    expect(
+      pickAdjacentProjectRunIdForNav(
+        projectNavState({
+          chatActiveTemplateId: "b",
+          globalExecutionsList: [b],
+        }),
+        "b",
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("projectRunScreenshotSteps", () => {
+  it("flattens screenshot URLs from nested results", () => {
+    const ex: ProjectExecute = {
+      id: "e1",
+      linkedTemplateId: "t1",
+      name: "n",
+      description: "",
+      targetUrl: "",
+      aiPrompt: "",
+      status: "running",
+      progressPercentage: 50,
+      startTime: Date.now(),
+      durationMs: null,
+      results: [
+        {
+          nodeId: "n1",
+          nodeKey: "k",
+          type: "page",
+          title: "T",
+          status: "Success",
+          testCaseRuns: [
+            {
+              caseId: "c1",
+              title: "Case",
+              status: "Success",
+              testCaseStepRuns: [
+                {
+                  stepId: "s1",
+                  sortOrder: 1,
+                  procedureText: "Step A",
+                  expectedResult: "ok",
+                  mustPass: true,
+                  status: "Success",
+                  screenshotUrl: "data:image/png;base64,AAA",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const steps = projectRunScreenshotSteps(ex);
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.label).toBe("Step A");
+    expect(steps[0]?.url).toMatch(/^data:image\/png/);
   });
 });

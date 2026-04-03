@@ -98,7 +98,8 @@ function getSessionStorage(): Storage | null {
   return null;
 }
 
-function normalizeGatewayTokenScope(gatewayUrl: string): string {
+/** Used to scope project-run nav preferences to the active gateway WebSocket URL. */
+export function normalizeGatewayTokenScope(gatewayUrl: string): string {
   const trimmed = gatewayUrl.trim();
   if (!trimmed) {
     return "default";

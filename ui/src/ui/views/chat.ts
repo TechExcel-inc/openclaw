@@ -110,10 +110,17 @@ export type ChatProps = {
   /** Project summary panel (left): markdown + resizer; compose stays in the chat column only. */
   leftSidebarOpen?: boolean;
   leftSidebarMarkdown?: string | null;
+  /** Lit content below the markdown summary (e.g. Project Run screenshot gallery — too large for markdown). */
+  leftSidebarExtra?: TemplateResult;
   leftSidebarTitle?: string;
   leftSplitRatio?: number;
   onLeftSplitRatioChange?: (ratio: number) => void;
   onCloseLeftSidebar?: () => void;
+  /**
+   * When false, the left project summary stays open with no close button (Project Run).
+   * Default true (closable) when `onCloseLeftSidebar` is provided.
+   */
+  leftSidebarClosable?: boolean;
   onChatScroll?: (event: Event) => void;
   basePath?: string;
 };
@@ -884,8 +891,11 @@ export function renderChat(props: ChatProps) {
   const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
   const leftSplitRatio = props.leftSplitRatio ?? 0.26;
+  const leftSidebarClosable = props.leftSidebarClosable !== false;
   const leftPanelOpen = Boolean(
-    props.leftSidebarMarkdown?.trim() && props.onCloseLeftSidebar && props.leftSidebarOpen,
+    props.leftSidebarMarkdown?.trim() &&
+    props.leftSidebarOpen &&
+    (props.onCloseLeftSidebar !== undefined || !leftSidebarClosable),
   );
   const anySidePanel = sidebarOpen || leftPanelOpen;
 
@@ -1361,19 +1371,24 @@ export function renderChat(props: ChatProps) {
                   }; min-width: 0; display: flex; flex-direction: row;"
                 >
                   <div class="chat-sidebar chat-sidebar--left" style="flex: 0 0 ${leftSplitRatio * 100}%">
-                    ${renderMarkdownSidebar({
-                      content: props.leftSidebarMarkdown ?? null,
-                      error: null,
-                      onClose: props.onCloseLeftSidebar!,
-                      title: props.leftSidebarTitle ?? "Project",
-                      onViewRawText: () => {
-                        const c = props.leftSidebarMarkdown;
-                        if (!c || !props.onOpenSidebar) {
-                          return;
-                        }
-                        props.onOpenSidebar(`\`\`\`\n${c}\n\`\`\``);
-                      },
-                    })}
+                    ${
+                      props.leftSidebarMarkdown?.trim()
+                        ? renderMarkdownSidebar({
+                            content: props.leftSidebarMarkdown ?? null,
+                            error: null,
+                            onClose: props.onCloseLeftSidebar,
+                            title: props.leftSidebarTitle ?? "Project",
+                            onViewRawText: () => {
+                              const c = props.leftSidebarMarkdown;
+                              if (!c || !props.onOpenSidebar) {
+                                return;
+                              }
+                              props.onOpenSidebar(`\`\`\`\n${c}\n\`\`\``);
+                            },
+                          })
+                        : nothing
+                    }
+                    ${props.leftSidebarExtra ?? nothing}
                   </div>
                   <resizable-divider
                     .splitRatio=${leftSplitRatio}

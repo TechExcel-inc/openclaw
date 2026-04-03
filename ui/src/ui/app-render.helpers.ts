@@ -1,4 +1,4 @@
-import { html, nothing } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type {
   ExecutionStatus,
@@ -55,16 +55,40 @@ function resolveSidebarChatSessionKey(state: AppViewState): string {
   return "main";
 }
 
+/**
+ * Template id used to list "Project Run 1…N" under Chat.
+ * Prefer Project Chat selection; fall back to Test Plan page (active / detail) so runs show
+ * without opening Project Chat first.
+ */
 export function resolveActiveTemplateIdForProjectNav(state: AppViewState): string | null {
+  const isKnownTemplate = (id: string) => state.templatesList.some((t) => t.id === id);
+
   const tid = state.chatActiveTemplateId;
-  if (!tid) {
-    return null;
+  if (tid) {
+    if (isKnownTemplate(tid)) {
+      return tid;
+    }
+    // Execution id (run-scoped chat): resolve template from execution payload. Do not require
+    // linkedTemplateId to appear in templatesList yet — list can lag behind connect/loadTemplates.
+    const exFromList = state.globalExecutionsList?.find((e) => e.id === tid);
+    const exFromDetail = state.executionDetail?.id === tid ? state.executionDetail : undefined;
+    const ex = exFromList ?? exFromDetail;
+    if (ex?.linkedTemplateId) {
+      return ex.linkedTemplateId;
+    }
   }
-  if (state.templatesList.some((t) => t.id === tid)) {
-    return tid;
+
+  const active = state.activeTemplateId?.trim();
+  if (active && isKnownTemplate(active)) {
+    return active;
   }
-  const ex = state.globalExecutionsList?.find((e) => e.id === tid);
-  return ex?.linkedTemplateId ?? null;
+
+  const detailId = state.templateDetail?.id?.trim();
+  if (detailId && isKnownTemplate(detailId)) {
+    return detailId;
+  }
+
+  return null;
 }
 
 export function templateExecutionsOrdered(
@@ -76,15 +100,94 @@ export function templateExecutionsOrdered(
     .toSorted((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0));
 }
 
+/** Runs for this template excluding those the user removed from the sidebar. */
+export function visibleTemplateExecutionsForNav(
+  state: AppViewState,
+  templateId: string,
+): ProjectExecute[] {
+  const hidden = new Set(state.hiddenProjectRunNavIds ?? []);
+  return templateExecutionsOrdered(state, templateId).filter((e) => !hidden.has(e.id));
+}
+
+/**
+ * Before hiding a run from the sidebar, pick another visible run for the same template:
+ * prefer the next run below in start-time order, else the run above. Returns null if there
+ * is no sibling (caller should fall back to Project Chat).
+ */
+export function pickAdjacentProjectRunIdForNav(
+  state: AppViewState,
+  removedExecutionId: string,
+): string | null {
+  const templateId = resolveActiveTemplateIdForProjectNav(state);
+  if (!templateId) {
+    return null;
+  }
+  const visible = visibleTemplateExecutionsForNav(state, templateId);
+  const idx = visible.findIndex((e) => e.id === removedExecutionId);
+  if (idx === -1) {
+    return null;
+  }
+  if (idx + 1 < visible.length) {
+    return visible[idx + 1].id;
+  }
+  if (idx - 1 >= 0) {
+    return visible[idx - 1].id;
+  }
+  return null;
+}
+
 export function projectRunOrdinalLabel(state: AppViewState, executionId: string): string {
   const templateId = resolveActiveTemplateIdForProjectNav(state);
   if (!templateId) {
     return "Project Run";
   }
-  const list = templateExecutionsOrdered(state, templateId);
+  const list = visibleTemplateExecutionsForNav(state, templateId);
   const idx = list.findIndex((e) => e.id === executionId);
   const n = idx === -1 ? list.length + 1 : idx + 1;
   return `Project Run ${n}`;
+}
+
+/** User-facing run status for toolbar and summary (maps `completed` → Finished, etc.). */
+export function formatExecutionStatusForUi(
+  status: ExecutionStatus | undefined,
+  paused: boolean | undefined,
+): string {
+  if (!status) {
+    return t("chat.projectRunStatusLoading");
+  }
+  if (status === "running" && paused) {
+    return t("chat.projectRunStatusPaused");
+  }
+  switch (status) {
+    case "pending":
+      return t("chat.projectRunStatusPending");
+    case "running":
+      return t("chat.projectRunStatusRunning");
+    case "completed":
+      return t("chat.projectRunStatusFinished");
+    case "cancelled":
+      return t("chat.projectRunStatusCancelled");
+    case "error":
+      return t("chat.projectRunStatusError");
+    default:
+      return String(status);
+  }
+}
+
+function projectRunToolbarStatusDataState(
+  status: ExecutionStatus | undefined,
+  paused: boolean,
+): string {
+  if (!status) {
+    return "loading";
+  }
+  if (status === "running" && paused) {
+    return "paused";
+  }
+  if (status === "completed") {
+    return "finished";
+  }
+  return status;
 }
 
 export function formatProjectRunSimpleMarkdown(state: AppViewState): string {
@@ -99,7 +202,7 @@ export function formatProjectRunSimpleMarkdown(state: AppViewState): string {
   if (!ex) {
     return ["## Project Run & Chat", "", "Loading execution…", "", `\`id\`: \`${id}\``].join("\n");
   }
-  const statusLabel = ex.status.toUpperCase();
+  const statusLabel = formatExecutionStatusForUi(ex.status, ex.paused);
   const prog = ex.progressPercentage ?? 0;
   const started = new Date(ex.startTime ?? Date.now()).toLocaleString();
   const duration =
@@ -109,7 +212,10 @@ export function formatProjectRunSimpleMarkdown(state: AppViewState): string {
         ? "…"
         : "—";
   const title = projectRunOrdinalLabel(state, id);
-  return [
+  const hint = ex.executorHint?.trim();
+  const err = ex.lastErrorMessage?.trim();
+  const cancelR = ex.cancelReason?.trim();
+  const lines = [
     `## ${title}`,
     "",
     `**Status:** ${statusLabel}`,
@@ -117,18 +223,111 @@ export function formatProjectRunSimpleMarkdown(state: AppViewState): string {
     `**Started:** ${started}`,
     `**Duration:** ${duration}`,
     "",
+  ];
+  if (hint) {
+    lines.push(`**Note:** ${hint}`, "");
+  }
+  if (err) {
+    lines.push(`**Last error:** \`${err.replace(/`/g, "'")}\``, "");
+  }
+  if (cancelR) {
+    lines.push(`**Stop reason:** ${cancelR.replace(/`/g, "'")}`, "");
+  }
+  lines.push(
     `**Execution id:** \`${ex.id}\``,
     "",
-    "_Step-by-step timeline and thumbnails are a follow-up milestone._",
-  ].join("\n");
+    "_Step captures render in the gallery below when the gateway returns them._",
+  );
+  return lines.join("\n");
+}
+
+/** Flatten screenshot steps from execution results (same shape as Test Run Project). */
+export function projectRunScreenshotSteps(
+  ex: ProjectExecute,
+): Array<{ label: string; url: string }> {
+  const out: Array<{ label: string; url: string }> = [];
+  for (const node of ex.results ?? []) {
+    for (const tc of node.testCaseRuns ?? []) {
+      for (const step of tc.testCaseStepRuns ?? []) {
+        const url = step.screenshotUrl?.trim();
+        if (url) {
+          out.push({
+            label: (step.procedureText ?? "Capture").trim() || "Capture",
+            url,
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+export function hasProjectRunCaptures(state: AppViewState): boolean {
+  const id = state.chatProjectRunExecutionId?.trim();
+  if (!id) {
+    return false;
+  }
+  const ex =
+    state.executionDetail?.id === id
+      ? state.executionDetail
+      : state.globalExecutionsList?.find((e) => e.id === id);
+  return Boolean(ex && projectRunScreenshotSteps(ex).length > 0);
+}
+
+/**
+ * Renders capture thumbnails beside the Project Run markdown summary. Base64 screenshots are
+ * not embedded in markdown (size limit breaks the markdown pipeline).
+ */
+export function renderProjectRunCaptureGallery(state: AppViewState): TemplateResult | undefined {
+  const id = state.chatProjectRunExecutionId?.trim();
+  if (!id) {
+    return undefined;
+  }
+  const ex =
+    state.executionDetail?.id === id
+      ? state.executionDetail
+      : state.globalExecutionsList?.find((e) => e.id === id);
+  if (!ex) {
+    return undefined;
+  }
+  const steps = projectRunScreenshotSteps(ex);
+  if (steps.length === 0) {
+    return undefined;
+  }
+  return html`
+    <div
+      class="project-run-capture-gallery"
+      style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); max-height: min(70vh, 720px); overflow-y: auto;"
+    >
+      <div
+        style="font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px;"
+      >
+        ${t("chat.projectRunCaptureGalleryTitle")}
+      </div>
+      ${repeat(
+        steps,
+        (s) => s.url,
+        (s, i) => html`
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 12px; color: var(--muted); margin-bottom: 6px;">${i + 1}. ${s.label}</div>
+            <img
+              src=${s.url}
+              alt=""
+              style="max-width: 100%; max-height: 220px; object-fit: contain; display: block; border: 1px solid var(--border-color); border-radius: 6px; background: var(--surface);"
+            />
+          </div>
+        `,
+      )}
+    </div>
+  `;
 }
 
 export function renderProjectRunNavItems(state: AppViewState, opts?: { collapsed?: boolean }) {
   const templateId = resolveActiveTemplateIdForProjectNav(state);
-  if (!templateId || state.templatesLoading) {
+  if (!templateId) {
     return nothing;
   }
-  const runs = templateExecutionsOrdered(state, templateId);
+  const runs = visibleTemplateExecutionsForNav(state, templateId);
   if (runs.length === 0) {
     return nothing;
   }
@@ -248,22 +447,20 @@ function renderCronFilterIcon(hiddenCount: number) {
   `;
 }
 
+/** Test Plan id for Project Chat (template only; execution ids resolve to linked template). */
+function resolveTemplateIdForProjectChatPicker(state: AppViewState): string | null {
+  return resolveActiveTemplateIdForProjectNav(state);
+}
+
 export function renderChatSessionSelect(state: AppViewState) {
   let projectKindLabel = "";
   let projectDisplayName = t("chat.selectProjectContinue");
-  if (state.chatActiveTemplateId) {
-    const activeTemplate = state.templatesList.find((t) => t.id === state.chatActiveTemplateId);
+  const templateId = resolveTemplateIdForProjectChatPicker(state);
+  if (templateId) {
+    const activeTemplate = state.templatesList.find((t) => t.id === templateId);
     if (activeTemplate) {
       projectKindLabel = "Test Plan";
       projectDisplayName = activeTemplate.name;
-    } else {
-      const activeExecution = state.globalExecutionsList?.find(
-        (e) => e.id === state.chatActiveTemplateId,
-      );
-      if (activeExecution) {
-        projectKindLabel = "Test Run";
-        projectDisplayName = activeExecution.name || activeExecution.id.slice(0, 8);
-      }
     }
   }
   const hasProjectContext = Boolean(projectKindLabel);
@@ -295,7 +492,7 @@ export function renderChatSessionSelect(state: AppViewState) {
             type="button"
             class="btn btn--sm btn--icon chat-project-toolbar__picker"
             @click=${() => {
-              state.chatSelectedTemplateId = state.chatActiveTemplateId;
+              state.chatSelectedTemplateId = resolveTemplateIdForProjectChatPicker(state);
               state.showChatProjectModal = true;
             }}
             title="Select project"
@@ -320,7 +517,7 @@ export function renderProjectChatGate(state: AppViewState) {
           type="button"
           class="btn btn--primary"
           @click=${() => {
-            state.chatSelectedTemplateId = state.chatActiveTemplateId;
+            state.chatSelectedTemplateId = resolveTemplateIdForProjectChatPicker(state);
             state.showChatProjectModal = true;
           }}
         >
@@ -358,62 +555,6 @@ function formatChatModalDateTime(ts: number | null | undefined): string {
   return new Date(ts).toLocaleString();
 }
 
-function formatChatModalDuration(ms: number | null | undefined): string {
-  if (ms == null || !Number.isFinite(ms)) {
-    return "—";
-  }
-  if (ms < 1000) {
-    return `${Math.round(ms)} ms`;
-  }
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) {
-    return `${h}h ${m % 60}m`;
-  }
-  if (m > 0) {
-    return `${m}m ${s % 60}s`;
-  }
-  return `${s}s`;
-}
-
-function mapTestRunStatusLabel(status: ExecutionStatus): "Running" | "Failed" | "Finished" {
-  switch (status) {
-    case "running":
-    case "pending":
-      return "Running";
-    case "completed":
-      return "Finished";
-    case "error":
-    case "cancelled":
-      return "Failed";
-    default:
-      return "Failed";
-  }
-}
-
-function testRunStatusPillClass(status: ExecutionStatus): string {
-  const label = mapTestRunStatusLabel(status);
-  if (label === "Running") {
-    return "chat-project-modal__pill chat-project-modal__pill--running";
-  }
-  if (label === "Finished") {
-    return "chat-project-modal__pill chat-project-modal__pill--finished";
-  }
-  return "chat-project-modal__pill chat-project-modal__pill--failed";
-}
-
-function resolveExecutionFinishTimeMs(execution: ProjectExecute): number | null {
-  const { startTime, durationMs, status } = execution;
-  if (startTime == null || durationMs == null) {
-    return null;
-  }
-  if (status === "running" || status === "pending") {
-    return null;
-  }
-  return startTime + durationMs;
-}
-
 /** Placeholder until the gateway exposes Test Plan lifecycle. */
 function templatePlanStatusLabel(
   _template: ProjectTemplate,
@@ -436,9 +577,9 @@ export function renderChatProjectModal(state: AppViewState) {
     return nothing;
   }
 
-  const executions = state.globalExecutionsList ?? [];
-  const showExecEmpty = state.chatProjectTab === "executions" && executions.length === 0;
-  const modalOkDisabled = state.chatSelectedTemplateId == null;
+  const modalOkDisabled =
+    state.chatSelectedTemplateId == null ||
+    !state.templatesList.some((t) => t.id === state.chatSelectedTemplateId);
 
   return html`
     <div
@@ -452,7 +593,10 @@ export function renderChatProjectModal(state: AppViewState) {
       <div class="chat-project-modal__dialog">
         <header class="chat-project-modal__toolbar">
           <div class="chat-project-modal__toolbar-left">
-            <h2 class="chat-project-modal__title">Select a Project</h2>
+            <h2 class="chat-project-modal__title">${t("chat.projectModalTitle")}</h2>
+            <p class="chat-project-modal__subtitle" style="margin: 6px 0 0; font-size: 13px; color: var(--muted); max-width: 42rem;">
+              ${t("chat.projectModalSubtitle")}
+            </p>
           </div>
           <div class="chat-project-modal__toolbar-actions">
             <button
@@ -463,10 +607,12 @@ export function renderChatProjectModal(state: AppViewState) {
                 if (modalOkDisabled) {
                   return;
                 }
-                state.chatActiveTemplateId = state.chatSelectedTemplateId;
-                if (state.chatActiveTemplateId) {
-                  writePersistedProjectChatId(state.chatActiveTemplateId);
+                const id = state.chatSelectedTemplateId?.trim();
+                if (!id || !state.templatesList.some((t) => t.id === id)) {
+                  return;
                 }
+                state.chatActiveTemplateId = id;
+                writePersistedProjectChatId(id);
                 state.showChatProjectModal = false;
                 state.projectLeftPanelDismissed = false;
                 switchChatSession(state, state.sessionKey);
@@ -499,144 +645,51 @@ export function renderChatProjectModal(state: AppViewState) {
 
         <div class="chat-project-modal__body">
           <div class="chat-project-modal__panel">
-            <nav class="chat-project-modal__tabs" aria-label="Project type">
-              <div class="chat-project-modal__tabs-main">
-                <button
-                  type="button"
-                  class="chat-project-modal__tab ${
-                    state.chatProjectTab === "templates" ? "chat-project-modal__tab--active" : ""
-                  }"
-                  @click=${() => {
-                    state.chatProjectTab = "templates";
-                  }}
-                >
-                  Test Plan
-                </button>
-                <button
-                  type="button"
-                  class="chat-project-modal__tab ${
-                    state.chatProjectTab === "executions" ? "chat-project-modal__tab--active" : ""
-                  }"
-                  @click=${() => {
-                    state.chatProjectTab = "executions";
-                    if (!state.globalExecutionsList?.length) {
-                      void import("./controllers/projects.js").then((m) =>
-                        m.loadGlobalExecutions(
-                          state as unknown as Parameters<typeof m.loadGlobalExecutions>[0],
-                        ),
-                      );
-                    }
-                  }}
-                >
-                  Test Run
-                </button>
-              </div>
-            </nav>
-            ${
-              showExecEmpty
-                ? html`
-                    <div class="chat-project-modal__empty">No Test Runs available.</div>
-                  `
-                : state.chatProjectTab === "templates"
-                  ? html`
-                      <div class="chat-project-modal__tablewrap">
-                        <table class="chat-project-modal__table">
-                          <thead>
-                            <tr>
-                              <th>Project name</th>
-                              <th>Time created</th>
-                              <th>Created by</th>
-                              <th>Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            ${state.templatesList.map((template) => {
-                              const planStatus = templatePlanStatusLabel(template);
-                              return html`
-                                <tr
-                                  class=${
-                                    state.chatSelectedTemplateId === template.id
-                                      ? "chat-project-modal__row--selected"
-                                      : ""
-                                  }
-                                  @click=${() => {
-                                    state.chatSelectedTemplateId = template.id;
-                                  }}
-                                >
-                                  <td>
-                                    <div class="chat-project-modal__name">${template.name}</div>
-                                    <div class="chat-project-modal__muted">
-                                      ${template.description || "—"}
-                                    </div>
-                                  </td>
-                                  <td>${formatChatModalDateTime(template.createdAt)}</td>
-                                  <td>${template.createdBy?.trim() || "—"}</td>
-                                  <td>
-                                    <span
-                                      class=${templatePlanStatusPillClass(planStatus)}
-                                      title="Full lifecycle rules coming soon"
-                                      >${planStatus}</span
-                                    >
-                                  </td>
-                                </tr>
-                              `;
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    `
-                  : html`
-                      <div class="chat-project-modal__tablewrap">
-                        <table class="chat-project-modal__table">
-                          <thead>
-                            <tr>
-                              <th>Project name</th>
-                              <th>Time created</th>
-                              <th>Created by</th>
-                              <th>Status</th>
-                              <th>Finish time</th>
-                              <th>Duration</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            ${executions.map((execution) => {
-                              const finishMs = resolveExecutionFinishTimeMs(execution);
-                              return html`
-                                <tr
-                                  class=${
-                                    state.chatSelectedTemplateId === execution.id
-                                      ? "chat-project-modal__row--selected"
-                                      : ""
-                                  }
-                                  @click=${() => {
-                                    state.chatSelectedTemplateId = execution.id;
-                                  }}
-                                >
-                                  <td>
-                                    <div class="chat-project-modal__name">
-                                      ${execution.name || execution.id}
-                                    </div>
-                                    <div class="chat-project-modal__muted">
-                                      ${execution.targetUrl?.trim() || execution.description?.trim() || "—"}
-                                    </div>
-                                  </td>
-                                  <td>${formatChatModalDateTime(execution.startTime)}</td>
-                                  <td class="chat-project-modal__muted">—</td>
-                                  <td>
-                                    <span class=${testRunStatusPillClass(execution.status)}
-                                      >${mapTestRunStatusLabel(execution.status)}</span
-                                    >
-                                  </td>
-                                  <td>${formatChatModalDateTime(finishMs)}</td>
-                                  <td>${formatChatModalDuration(execution.durationMs)}</td>
-                                </tr>
-                              `;
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    `
-            }
+            <div class="chat-project-modal__tablewrap">
+              <table class="chat-project-modal__table">
+                <thead>
+                  <tr>
+                    <th>Project name</th>
+                    <th>Time created</th>
+                    <th>Created by</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${state.templatesList.map((template) => {
+                    const planStatus = templatePlanStatusLabel(template);
+                    return html`
+                      <tr
+                        class=${
+                          state.chatSelectedTemplateId === template.id
+                            ? "chat-project-modal__row--selected"
+                            : ""
+                        }
+                        @click=${() => {
+                          state.chatSelectedTemplateId = template.id;
+                        }}
+                      >
+                        <td>
+                          <div class="chat-project-modal__name">${template.name}</div>
+                          <div class="chat-project-modal__muted">
+                            ${template.description || "—"}
+                          </div>
+                        </td>
+                        <td>${formatChatModalDateTime(template.createdAt)}</td>
+                        <td>${template.createdBy?.trim() || "—"}</td>
+                        <td>
+                          <span
+                            class=${templatePlanStatusPillClass(planStatus)}
+                            title="Full lifecycle rules coming soon"
+                            >${planStatus}</span
+                          >
+                        </td>
+                      </tr>
+                    `;
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -874,6 +927,150 @@ export function renderChatControls(state: AppViewState) {
       >
         ${renderCronFilterIcon(hiddenCronCount)}
       </button>
+    </div>
+  `;
+}
+
+/** Toolbar for Project Run chat only (not General Chat or Project Chat). */
+export function renderProjectRunToolbar(state: AppViewState) {
+  const runId = state.chatProjectRunExecutionId?.trim();
+  const runExec = runId
+    ? state.executionDetail?.id === runId
+      ? state.executionDetail
+      : state.globalExecutionsList?.find((e) => e.id === runId)
+    : undefined;
+  const status = runExec?.status;
+  const paused = Boolean(runExec?.paused);
+  const canStop = Boolean(runId && (status === "pending" || status === "running"));
+  const canPauseResume = Boolean(runId && status === "running");
+  const statusText = runId
+    ? formatExecutionStatusForUi(status, runExec?.paused)
+    : t("chat.projectRunStatusLoading");
+  const statusDataState = projectRunToolbarStatusDataState(status, Boolean(runExec?.paused));
+  return html`
+    <div class="chat-controls chat-controls--project-run">
+      <span
+        class="chat-controls__project-run-status"
+        data-status=${statusDataState}
+        aria-live="polite"
+        >${statusText}</span
+      >
+      ${
+        canStop
+          ? html`
+              <button
+                type="button"
+                class="btn btn--sm"
+                @click=${() => state.openProjectRunConfirm("stop")}
+              >
+                ${t("chat.projectRunStop")}
+              </button>
+            `
+          : nothing
+      }
+      ${
+        canPauseResume
+          ? paused
+            ? html`
+                <button
+                  type="button"
+                  class="btn btn--sm btn--primary"
+                  @click=${() => {
+                    if (runId) {
+                      void state.handleExecutionResume(runId);
+                    }
+                  }}
+                >
+                  ${t("chat.projectRunResume")}
+                </button>
+              `
+            : html`
+                <button
+                  type="button"
+                  class="btn btn--sm"
+                  @click=${() => {
+                    if (runId) {
+                      void state.handleExecutionPause(runId);
+                    }
+                  }}
+                >
+                  ${t("chat.projectRunPause")}
+                </button>
+              `
+          : nothing
+      }
+      ${
+        runId
+          ? html`
+              <button
+                type="button"
+                class="btn btn--sm btn--ghost"
+                @click=${() => state.openProjectRunConfirm("remove")}
+              >
+                ${t("chat.projectRunRemove")}
+              </button>
+            `
+          : nothing
+      }
+    </div>
+  `;
+}
+
+export function renderProjectRunConfirmDialog(state: AppViewState) {
+  const kind = state.projectRunConfirmKind;
+  if (!kind) {
+    return nothing;
+  }
+  const body =
+    kind === "stop" ? t("chat.projectRunConfirmStop") : t("chat.projectRunConfirmRemove");
+  return html`
+    <div
+      class="project-create-modal"
+      style="z-index: 2000;"
+      @click=${(e: Event) => {
+        if (e.target === e.currentTarget) {
+          state.dismissProjectRunConfirm();
+        }
+      }}
+    >
+      <div
+        class="project-create-modal__dialog"
+        style="max-width: 420px;"
+        @click=${(e: Event) => e.stopPropagation()}
+      >
+        <p style="margin: 0 0 16px; line-height: 1.5;">${body}</p>
+        ${
+          kind === "stop"
+            ? html`
+                <label class="project-create-modal__label" style="display: block; margin-bottom: 8px; font-size: 13px; color: var(--muted);"
+                  >${t("chat.projectRunStopReasonOptional")}</label
+                >
+                <textarea
+                  class="project-create-modal__textarea"
+                  style="width: 100%; min-height: 72px; margin-bottom: 16px; box-sizing: border-box; padding: 8px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit;"
+                  .value=${state.projectRunStopReasonDraft}
+                  placeholder=${t("chat.projectRunStopReasonPlaceholder")}
+                  @input=${(e: Event) => {
+                    const el = e.target as HTMLTextAreaElement;
+                    state.projectRunStopReasonDraft = el.value;
+                  }}
+                ></textarea>
+              `
+            : nothing
+        }
+        <div class="project-create-modal__actions" style="margin-top: 0;">
+          <button type="button" class="project-create-modal__btn" @click=${() => state.dismissProjectRunConfirm()}>
+            ${t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            class="project-create-modal__btn ${kind === "stop" ? "project-create-modal__btn--danger" : "project-create-modal__btn--primary"}"
+            @click=${() => state.confirmProjectRunConfirm()}
+          >
+            ${t("chat.projectRunConfirm")}
+          </button>
+        </div>
+      </div>
     </div>
   `;
 }

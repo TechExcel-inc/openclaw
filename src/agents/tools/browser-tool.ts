@@ -25,6 +25,7 @@ import {
   untrackSessionBrowserTab,
 } from "../../browser/session-tab-registry.js";
 import { loadConfig } from "../../config/config.js";
+import { loadProjectsStore, resolveProjectsStorePath } from "../../projects/store.js";
 import {
   executeActAction,
   executeConsoleAction,
@@ -57,8 +58,10 @@ const browserToolDeps = {
   browserStop,
   imageResultFromFile,
   loadConfig,
+  loadProjectsStore,
   listNodes,
   callGatewayTool,
+  resolveProjectsStorePath,
   trackSessionBrowserTab,
   untrackSessionBrowserTab,
 };
@@ -81,8 +84,10 @@ export const __testing = {
       browserStop: typeof browserStop;
       imageResultFromFile: typeof imageResultFromFile;
       loadConfig: typeof loadConfig;
+      loadProjectsStore: typeof loadProjectsStore;
       listNodes: typeof listNodes;
       callGatewayTool: typeof callGatewayTool;
+      resolveProjectsStorePath: typeof resolveProjectsStorePath;
       trackSessionBrowserTab: typeof trackSessionBrowserTab;
       untrackSessionBrowserTab: typeof untrackSessionBrowserTab;
     }> | null,
@@ -104,8 +109,11 @@ export const __testing = {
     browserToolDeps.browserStop = overrides?.browserStop ?? browserStop;
     browserToolDeps.imageResultFromFile = overrides?.imageResultFromFile ?? imageResultFromFile;
     browserToolDeps.loadConfig = overrides?.loadConfig ?? loadConfig;
+    browserToolDeps.loadProjectsStore = overrides?.loadProjectsStore ?? loadProjectsStore;
     browserToolDeps.listNodes = overrides?.listNodes ?? listNodes;
     browserToolDeps.callGatewayTool = overrides?.callGatewayTool ?? callGatewayTool;
+    browserToolDeps.resolveProjectsStorePath =
+      overrides?.resolveProjectsStorePath ?? resolveProjectsStorePath;
     browserToolDeps.trackSessionBrowserTab =
       overrides?.trackSessionBrowserTab ?? trackSessionBrowserTab;
     browserToolDeps.untrackSessionBrowserTab =
@@ -365,6 +373,28 @@ function shouldPreferHostForProfile(profileName: string | undefined) {
   return capabilities.usesChromeMcp;
 }
 
+async function resolveProjectRunBrowserProfile(
+  agentSessionKey: string | undefined,
+): Promise<string | undefined> {
+  const sessionKey = agentSessionKey?.trim();
+  if (!sessionKey) {
+    return undefined;
+  }
+  try {
+    const store = await browserToolDeps.loadProjectsStore(
+      browserToolDeps.resolveProjectsStorePath(),
+    );
+    const execution = store.executions.find((entry) => entry.runSessionKey?.trim() === sessionKey);
+    if (!execution || execution.authMode !== "reuse-session") {
+      return undefined;
+    }
+    const profile = execution.authSessionProfile?.trim();
+    return profile || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function createBrowserTool(opts?: {
   sandboxBridgeUrl?: string;
   allowHostControl?: boolean;
@@ -391,7 +421,9 @@ export function createBrowserTool(opts?: {
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const action = readStringParam(params, "action", { required: true });
-      const profile = readStringParam(params, "profile");
+      const profile =
+        readStringParam(params, "profile") ??
+        (await resolveProjectRunBrowserProfile(opts?.agentSessionKey));
       const requestedNode = readStringParam(params, "node");
       let target = readStringParam(params, "target") as "sandbox" | "host" | "node" | undefined;
 

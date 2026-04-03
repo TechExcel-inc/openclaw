@@ -285,6 +285,10 @@ import {
   ExecutionsRunParamsSchema,
   type ExecutionsCancelParams,
   ExecutionsCancelParamsSchema,
+  type ExecutionsPauseParams,
+  ExecutionsPauseParamsSchema,
+  type ExecutionsResumeParams,
+  ExecutionsResumeParamsSchema,
   type ProjectsAutoFormatPromptParams,
   ProjectsAutoFormatPromptParamsSchema,
 } from "./schema.js";
@@ -454,6 +458,12 @@ export const validateExecutionsRunParams =
   ajv.compile<ExecutionsRunParams>(ExecutionsRunParamsSchema);
 export const validateExecutionsCancelParams = ajv.compile<ExecutionsCancelParams>(
   ExecutionsCancelParamsSchema,
+);
+export const validateExecutionsPauseParams = ajv.compile<ExecutionsPauseParams>(
+  ExecutionsPauseParamsSchema,
+);
+export const validateExecutionsResumeParams = ajv.compile<ExecutionsResumeParams>(
+  ExecutionsResumeParamsSchema,
 );
 export const validateProjectsAutoFormatPromptParams = ajv.compile<ProjectsAutoFormatPromptParams>(
   ProjectsAutoFormatPromptParamsSchema,
@@ -650,6 +660,8 @@ export {
   ExecutionsGetParamsSchema,
   ExecutionsRunParamsSchema,
   ExecutionsCancelParamsSchema,
+  ExecutionsPauseParamsSchema,
+  ExecutionsResumeParamsSchema,
   ProjectsAutoFormatPromptParamsSchema,
   LogsTailParamsSchema,
   LogsTailResultSchema,
@@ -777,6 +789,8 @@ export type {
   ExecutionsGetParams,
   ExecutionsRunParams,
   ExecutionsCancelParams,
+  ExecutionsPauseParams,
+  ExecutionsResumeParams,
   ProjectsAutoFormatPromptParams,
   ExecApprovalsGetParams,
   ExecApprovalsSetParams,

@@ -16,6 +16,7 @@ export const en: TranslationMap = {
     theme: "Theme",
     resources: "Resources",
     search: "Search",
+    cancel: "Cancel",
   },
   nav: {
     chat: "Chat",
@@ -66,7 +67,7 @@ export const en: TranslationMap = {
     skills: "Skills and API keys.",
     nodes: "Paired devices and commands.",
     chatGeneral: "Chat without a test project — same session as “none project” context.",
-    chatProject: "Chat scoped to a Test Plan or Test Run — select a project to begin.",
+    chatProject: "Chat scoped to a Test Plan. Start new runs from Test Plan Project only.",
     chatProjectRun: "One execution of your Test Plan: simple status and chat (steps come later).",
     config: "Edit openclaw.json.",
     communications: "Channels, messages, and audio settings.",
@@ -394,12 +395,39 @@ export const en: TranslationMap = {
     selectProjectContinue: "Select a project continue",
     projectGateTitle: "Select a project",
     projectGateBody:
-      "Choose a Test Plan or Test Run from the picker to open Project Chat and sync session history.",
+      "Choose a Test Plan for chat. To start a new test run, open Test Plan Project and use Test Run → Test Run for Learning.",
     projectGateButton: "Choose project",
+    projectModalTitle: "Choose Test Plan for chat",
+    projectModalSubtitle:
+      "Project Chat is for conversation only. Start new runs from Test Plan Project (Test Run → Test Run for Learning). Open a past run from Execution History, Project Run entries under Chat, or a bookmarked URL.",
     projectRunGateTitle: "Project Run",
     projectRunGateBody:
-      "No run is selected. Use Project Run 1, Project Run 2, … in the sidebar (after Project Chat), or open Test Run Project.",
+      "No run is selected. Open Test Plan Project and pick a run from Execution History, or use a bookmarked Project Run URL.",
     projectRunGateButton: "Go to Project Chat",
+    projectRunExit: "Close run",
+    projectRunExitTitle:
+      "Leave this run and remove it from the sidebar list (does not delete data on the server)",
+    projectRunCancel: "Cancel run",
+    projectRunStop: "Stop run",
+    projectRunPause: "Pause run",
+    projectRunResume: "Resume run",
+    projectRunRemove: "Remove",
+    projectRunStatusLoading: "Loading…",
+    projectRunStatusPending: "Pending",
+    projectRunStatusRunning: "Running",
+    projectRunStatusPaused: "Paused",
+    projectRunStatusFinished: "Finished",
+    projectRunStatusCancelled: "Cancelled",
+    projectRunStatusError: "Error",
+    projectRunConfirm: "Confirm",
+    projectRunConfirmStop:
+      "Stop this run? The executor will be cancelled. You can start a new run from Test Plan Project later.",
+    projectRunConfirmRemove:
+      "Are you sure you want to remove this Project Run from the side menu? This does not delete run data on the server.",
+    projectRunStopReasonOptional: "Why stop? (optional, saved on the run)",
+    projectRunStopReasonPlaceholder:
+      "e.g. Done testing login flow, or need credentials in chat first…",
+    projectRunCaptureGalleryTitle: "Step captures",
     disconnected: "Disconnected from gateway.",
     refreshTitle: "Refresh chat data",
     thinkingToggle: "Toggle assistant thinking/working output",

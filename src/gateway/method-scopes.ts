@@ -125,6 +125,8 @@ const METHOD_SCOPE_GROUPS: Record<OperatorScope, readonly string[]> = {
     "templates.setActive",
     "executions.run",
     "executions.cancel",
+    "executions.pause",
+    "executions.resume",
   ],
   [ADMIN_SCOPE]: [
     "channels.logout",

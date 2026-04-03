@@ -1,4 +1,4 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
@@ -6,7 +6,8 @@ import { toSanitizedMarkdownHtml } from "../markdown.ts";
 export type MarkdownSidebarProps = {
   content: string | null;
   error: string | null;
-  onClose: () => void;
+  /** When omitted, the panel has no close control (e.g. Project Run summary stays visible). */
+  onClose?: () => void;
   onViewRawText: () => void;
   /** Defaults to "Tool Output". */
   title?: string;
@@ -18,9 +19,15 @@ export function renderMarkdownSidebar(props: MarkdownSidebarProps) {
     <div class="sidebar-panel">
       <div class="sidebar-header">
         <div class="sidebar-title">${title}</div>
-        <button @click=${props.onClose} class="btn" title="Close sidebar">
-          ${icons.x}
-        </button>
+        ${
+          props.onClose
+            ? html`
+                <button @click=${props.onClose} class="btn" title="Close sidebar">
+                  ${icons.x}
+                </button>
+              `
+            : nothing
+        }
       </div>
       <div class="sidebar-content">
         ${

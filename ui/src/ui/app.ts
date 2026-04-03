@@ -1,5 +1,6 @@
 import { LitElement } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import type { ProfileStatus } from "../../../src/browser/client.js";
 import { resolveAgentIdFromSessionKey } from "../../../src/routing/session-key.js";
 import { i18n, I18nController, isSupportedLocale } from "../i18n/index.ts";
 import {
@@ -29,6 +30,7 @@ import {
   handleFirstUpdated,
   handleUpdated,
 } from "./app-lifecycle.ts";
+import { pickAdjacentProjectRunIdForNav } from "./app-render.helpers.ts";
 import { renderApp } from "./app-render.ts";
 import {
   exportLogs as exportLogsInternal,
@@ -56,6 +58,10 @@ import type { AppViewState } from "./app-view-state.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
 import { switchChatSession } from "./chat/ead-chat-sync.ts";
 import { writePersistedProjectChatId } from "./chat/ead-project-chat-persist.ts";
+import {
+  addHiddenProjectRunNavId,
+  readHiddenProjectRunNavIds,
+} from "./chat/ead-project-run-nav.ts";
 import { stripEadProjectSuffix } from "./chat/ead-project-session-key.ts";
 import { exportChatMarkdown } from "./chat/export.ts";
 import {
@@ -430,20 +436,28 @@ export class OpenClawApp extends LitElement {
   @state() showCreateModal = false;
   @state() templateModalMode: "create" | "edit" | "run" | null = null;
   @state() templateModalPreviewMarkdown = false;
-  @state() templateAutoFormatting = false;
   @state() createFormName = "";
   @state() createFormDescription = "";
   @state() createFormTargetUrl = "";
   @state() createFormAiPrompt = "";
+  @state() createFormAuthMode: "none" | "reuse-session" | "manual-bootstrap" = "none";
+  @state() createFormAuthLoginUrl = "";
+  @state() createFormAuthSessionProfile = "";
+  @state() createFormAuthInstructions = "";
+  @state() projectAuthProfilesLoading = false;
+  @state() projectAuthProfilesError: string | null = null;
+  @state() projectAuthProfiles: ProfileStatus[] = [];
   @state() chatActiveTemplateId: string | null = null;
   /** When tab is chatProjectRun, mirrors URL; also used with chatActiveTemplateId for run-scoped session. */
   @state() chatProjectRunExecutionId: string | null = null;
   @state() chatSelectedTemplateId: string | null = null;
-  @state() chatProjectTab: "templates" | "executions" = "templates";
   @state() showChatProjectModal = false;
   @state() chatShowNoneProjectChat = false;
   @state() projectLeftPanelDismissed = false;
   @state() projectLeftSplitRatio = 0.26;
+  @state() hiddenProjectRunNavIds: string[] = [];
+  @state() projectRunConfirmKind: "stop" | "remove" | null = null;
+  @state() projectRunStopReasonDraft = "";
 
   // Executions state
   @state() executionsLoading = false;
@@ -536,6 +550,7 @@ export class OpenClawApp extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.hiddenProjectRunNavIds = readHiddenProjectRunNavIds(this.settings.gatewayUrl ?? "");
     this.onSlashAction = (action: string) => {
       switch (action) {
         case "toggle-focus":
@@ -632,13 +647,70 @@ export class OpenClawApp extends LitElement {
 
   applySettings(next: UiSettings) {
     applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], next);
+    this.hiddenProjectRunNavIds = readHiddenProjectRunNavIds(next.gatewayUrl ?? "");
+  }
+
+  exitProjectRunRemoveFromNav() {
+    const id = this.chatProjectRunExecutionId?.trim();
+    if (!id) {
+      return;
+    }
+    const nextRunId = pickAdjacentProjectRunIdForNav(this as unknown as AppViewState, id);
+    const gw = this.settings.gatewayUrl?.trim() ?? "";
+    addHiddenProjectRunNavId(gw, id);
+    this.hiddenProjectRunNavIds = readHiddenProjectRunNavIds(gw);
+    if (nextRunId) {
+      this.setProjectRunTab(nextRunId);
+    } else {
+      setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], "chatProject");
+    }
+  }
+
+  openProjectRunConfirm(kind: "stop" | "remove") {
+    this.projectRunConfirmKind = kind;
+    if (kind === "stop") {
+      this.projectRunStopReasonDraft = "";
+    }
+  }
+
+  dismissProjectRunConfirm() {
+    this.projectRunConfirmKind = null;
+    this.projectRunStopReasonDraft = "";
+  }
+
+  confirmProjectRunConfirm() {
+    const kind = this.projectRunConfirmKind;
+    this.projectRunConfirmKind = null;
+    const id = this.chatProjectRunExecutionId?.trim();
+    if (!id) {
+      return;
+    }
+    if (kind === "stop") {
+      const reason = this.projectRunStopReasonDraft.trim();
+      this.projectRunStopReasonDraft = "";
+      void this.handleExecutionCancel(id, reason || undefined);
+    } else if (kind === "remove") {
+      this.exitProjectRunRemoveFromNav();
+    }
+  }
+
+  async handleExecutionPause(executionId: string) {
+    const { pauseExecution } = await import("./controllers/projects.js");
+    await pauseExecution(this as never, executionId);
+  }
+
+  async handleExecutionResume(executionId: string) {
+    const { resumeExecution } = await import("./controllers/projects.js");
+    await resumeExecution(this as never, executionId);
   }
 
   setTab(next: Tab) {
-    if (next === "autoTestRun" || next === "chatProjectRun") {
-      void import("./controllers/projects.js").then((m) =>
-        m.loadGlobalExecutions(this as unknown as Parameters<typeof m.loadGlobalExecutions>[0]),
-      );
+    if (next === "autoTestRun" || next === "chatProjectRun" || next === "projects") {
+      void import("./controllers/projects.js").then((m) => {
+        void m.loadGlobalExecutions(
+          this as unknown as Parameters<typeof m.loadGlobalExecutions>[0],
+        );
+      });
     }
     if (next === "projects") {
       // Reset page-local view state only — each page manages its own state
@@ -674,7 +746,10 @@ export class OpenClawApp extends LitElement {
     }
     void import("./controllers/projects.js").then((m) => {
       void m.loadGlobalExecutions(this as unknown as Parameters<typeof m.loadGlobalExecutions>[0]);
-      void m.loadExecutionDetail(this as unknown as Parameters<typeof m.loadExecutionDetail>[0], id);
+      void m.loadExecutionDetail(
+        this as unknown as Parameters<typeof m.loadExecutionDetail>[0],
+        id,
+      );
       m.attachExecutionWatch(this as unknown as Parameters<typeof m.attachExecutionWatch>[0], id);
     });
     setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], "chatProjectRun");
@@ -862,9 +937,15 @@ export class OpenClawApp extends LitElement {
     description?: string,
     targetUrl?: string,
     aiPrompt?: string,
+    auth?: {
+      authMode?: "none" | "reuse-session" | "manual-bootstrap";
+      authLoginUrl?: string;
+      authSessionProfile?: string;
+      authInstructions?: string;
+    },
   ) {
     const { createTemplate } = await import("./controllers/projects.js");
-    await createTemplate(this as never, name, description, targetUrl, aiPrompt);
+    await createTemplate(this as never, name, description, targetUrl, aiPrompt, auth);
   }
 
   async handleTemplateDelete(id: string) {
@@ -880,30 +961,54 @@ export class OpenClawApp extends LitElement {
 
   async handleTemplateUpdate(
     id: string,
-    updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
+    updates: {
+      name?: string;
+      description?: string;
+      targetUrl?: string;
+      aiPrompt?: string;
+      authMode?: "none" | "reuse-session" | "manual-bootstrap";
+      authLoginUrl?: string;
+      authSessionProfile?: string;
+      authInstructions?: string;
+    },
   ) {
     const { updateTemplate } = await import("./controllers/projects.js");
     await updateTemplate(this as never, id, updates);
   }
 
-  async handleAutoFormatPrompt(text: string): Promise<string> {
-    const { autoFormatPrompt } = await import("./controllers/projects.js");
-    return autoFormatPrompt(this as never, text);
-  }
-
-  async handleExecutionRun(templateId: string) {
+  async handleExecutionRun(
+    templateId: string,
+    overrides?: {
+      targetUrl?: string;
+      aiPrompt?: string;
+      authMode?: "none" | "reuse-session" | "manual-bootstrap";
+      authLoginUrl?: string;
+      authSessionProfile?: string;
+      authInstructions?: string;
+    },
+  ) {
     const { runExecution, loadGlobalExecutions } = await import("./controllers/projects.js");
-    const res = await runExecution(this as never, templateId);
+    const res = await runExecution(this as never, templateId, overrides);
     if (res) {
       await loadGlobalExecutions(this as never);
+      // If list refresh races the store write, keep the run we just created in the sidebar.
+      const list = this.globalExecutionsList ?? [];
+      if (!list.some((e) => e.id === res.id)) {
+        this.globalExecutionsList = [...list, res];
+      }
       this.setProjectRunTab(res.id);
     }
     return res;
   }
 
-  async handleExecutionCancel(executionId: string) {
+  async handleProjectAuthProfilesLoad(force = false) {
+    const { loadProjectBrowserProfiles } = await import("./controllers/projects.js");
+    await loadProjectBrowserProfiles(this as never, force);
+  }
+
+  async handleExecutionCancel(executionId: string, reason?: string) {
     const { cancelExecution } = await import("./controllers/projects.js");
-    await cancelExecution(this as never, executionId);
+    await cancelExecution(this as never, executionId, reason);
   }
 
   async handleExecutionSetActive(id: string | null) {

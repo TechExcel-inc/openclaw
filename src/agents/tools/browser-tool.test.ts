@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProjectsStoreFile } from "../../projects/types.js";
 
 const browserClientMocks = vi.hoisted(() => ({
   browserCloseTab: vi.fn(async (..._args: unknown[]) => ({})),
@@ -115,6 +116,19 @@ const configMocks = vi.hoisted(() => ({
 }));
 vi.mock("../../config/config.js", () => configMocks);
 
+const projectsStoreMocks = vi.hoisted(() => ({
+  loadProjectsStore: vi.fn(
+    async (): Promise<ProjectsStoreFile> => ({
+      version: 2,
+      templates: [],
+      executions: [],
+      activeTemplateId: null,
+    }),
+  ),
+  resolveProjectsStorePath: vi.fn(() => "/tmp/openclaw-projects-test.json"),
+}));
+vi.mock("../../projects/store.js", () => projectsStoreMocks);
+
 const sessionTabRegistryMocks = vi.hoisted(() => ({
   trackSessionBrowserTab: vi.fn(),
   untrackSessionBrowserTab: vi.fn(),
@@ -174,8 +188,10 @@ function resetBrowserToolMocks() {
     browserStop: browserClientMocks.browserStop as never,
     imageResultFromFile: toolCommonMocks.imageResultFromFile as never,
     loadConfig: configMocks.loadConfig as never,
+    loadProjectsStore: projectsStoreMocks.loadProjectsStore as never,
     listNodes: nodesUtilsMocks.listNodes as never,
     callGatewayTool: gatewayMocks.callGatewayTool as never,
+    resolveProjectsStorePath: projectsStoreMocks.resolveProjectsStorePath as never,
     trackSessionBrowserTab: sessionTabRegistryMocks.trackSessionBrowserTab as never,
     untrackSessionBrowserTab: sessionTabRegistryMocks.untrackSessionBrowserTab as never,
   });
@@ -503,6 +519,44 @@ describe("browser tool url alias support", () => {
       baseUrl: undefined,
       profile: undefined,
     });
+  });
+
+  it("defaults to the Project Run auth session profile when present", async () => {
+    setResolvedBrowserProfiles({
+      "qa-admin-session": { driver: "existing-session" },
+    });
+    projectsStoreMocks.loadProjectsStore.mockResolvedValueOnce({
+      version: 2,
+      templates: [],
+      executions: [
+        {
+          id: "run-1",
+          linkedTemplateId: "template-1",
+          name: "Run 1",
+          description: "",
+          targetUrl: "https://example.com",
+          aiPrompt: "Explore",
+          authMode: "reuse-session",
+          authSessionProfile: "qa-admin-session",
+          runSessionKey: "agent:main:main:eadproj:run:run-1",
+          status: "running",
+          progressPercentage: 15,
+          startTime: 1,
+          durationMs: null,
+          results: [],
+        },
+      ],
+      activeTemplateId: null,
+    });
+    const tool = createBrowserTool({ agentSessionKey: "agent:main:main:eadproj:run:run-1" });
+
+    await tool.execute?.("call-1", { action: "open", url: "https://example.com" });
+
+    expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
+      undefined,
+      "https://example.com",
+      expect.objectContaining({ profile: "qa-admin-session" }),
+    );
   });
 
   it("accepts url alias for navigate", async () => {

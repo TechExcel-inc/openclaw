@@ -1,6 +1,10 @@
 import { Type } from "@sinclair/typebox";
 import { NonEmptyString } from "./primitives.js";
 
+const ProjectAuthModeSchema = Type.String({
+  enum: ["none", "reuse-session", "manual-bootstrap"],
+});
+
 // Template Schemas
 export const TemplatesListParamsSchema = Type.Object({}, { additionalProperties: false });
 
@@ -15,6 +19,10 @@ export const TemplatesCreateParamsSchema = Type.Object(
     description: Type.Optional(Type.String()),
     targetUrl: Type.Optional(Type.String()),
     aiPrompt: Type.Optional(Type.String()),
+    authMode: Type.Optional(ProjectAuthModeSchema),
+    authLoginUrl: Type.Optional(Type.String()),
+    authSessionProfile: Type.Optional(Type.String()),
+    authInstructions: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
@@ -26,6 +34,10 @@ export const TemplatesUpdateParamsSchema = Type.Object(
     description: Type.Optional(Type.String()),
     targetUrl: Type.Optional(Type.String()),
     aiPrompt: Type.Optional(Type.String()),
+    authMode: Type.Optional(ProjectAuthModeSchema),
+    authLoginUrl: Type.Optional(Type.String()),
+    authSessionProfile: Type.Optional(Type.String()),
+    authInstructions: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
@@ -52,11 +64,32 @@ export const ExecutionsGetParamsSchema = Type.Object(
 );
 
 export const ExecutionsRunParamsSchema = Type.Object(
-  { templateId: NonEmptyString },
+  {
+    templateId: NonEmptyString,
+    targetUrl: Type.Optional(Type.String()),
+    aiPrompt: Type.Optional(Type.String()),
+    authMode: Type.Optional(ProjectAuthModeSchema),
+    authLoginUrl: Type.Optional(Type.String()),
+    authSessionProfile: Type.Optional(Type.String()),
+    authInstructions: Type.Optional(Type.String()),
+  },
   { additionalProperties: false },
 );
 
 export const ExecutionsCancelParamsSchema = Type.Object(
+  {
+    id: NonEmptyString,
+    reason: Type.Optional(Type.String({ maxLength: 2000 })),
+  },
+  { additionalProperties: false },
+);
+
+export const ExecutionsPauseParamsSchema = Type.Object(
+  { id: NonEmptyString },
+  { additionalProperties: false },
+);
+
+export const ExecutionsResumeParamsSchema = Type.Object(
   { id: NonEmptyString },
   { additionalProperties: false },
 );

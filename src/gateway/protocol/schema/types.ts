@@ -151,4 +151,6 @@ export type ExecutionsListParams = SchemaType<"ExecutionsListParams">;
 export type ExecutionsGetParams = SchemaType<"ExecutionsGetParams">;
 export type ExecutionsRunParams = SchemaType<"ExecutionsRunParams">;
 export type ExecutionsCancelParams = SchemaType<"ExecutionsCancelParams">;
+export type ExecutionsPauseParams = SchemaType<"ExecutionsPauseParams">;
+export type ExecutionsResumeParams = SchemaType<"ExecutionsResumeParams">;
 export type ProjectsAutoFormatPromptParams = SchemaType<"ProjectsAutoFormatPromptParams">;

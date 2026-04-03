@@ -33,7 +33,7 @@ export function writePersistedProjectChatId(id: string | null): void {
 
 /**
  * When opening Project Chat with no active selection, restore the last saved
- * Test Plan / Test Run id once template and execution lists are loaded.
+ * Test Plan id (template). Legacy persisted execution ids are mapped to linkedTemplateId.
  */
 export function applyPersistedProjectChatSelection(state: AppViewState): void {
   if (state.tab !== "chatProject") {
@@ -47,13 +47,23 @@ export function applyPersistedProjectChatSelection(state: AppViewState): void {
     return;
   }
   const inTemplates = state.templatesList.some((t) => t.id === id);
-  const inRuns = (state.globalExecutionsList ?? []).some((e) => e.id === id);
-  if (!inTemplates && !inRuns) {
+  if (inTemplates) {
+    state.chatActiveTemplateId = id;
+    state.chatSelectedTemplateId = id;
+    state.projectLeftPanelDismissed = false;
+    if (state.connected) {
+      switchChatSession(state, stripEadProjectSuffix(state.sessionKey));
+    }
     return;
   }
-  state.chatActiveTemplateId = id;
-  state.chatSelectedTemplateId = id;
-  state.chatProjectTab = inRuns && !inTemplates ? "executions" : "templates";
+  const ex = (state.globalExecutionsList ?? []).find((e) => e.id === id);
+  const templateId = ex?.linkedTemplateId;
+  if (!templateId || !state.templatesList.some((t) => t.id === templateId)) {
+    return;
+  }
+  state.chatActiveTemplateId = templateId;
+  state.chatSelectedTemplateId = templateId;
+  writePersistedProjectChatId(templateId);
   state.projectLeftPanelDismissed = false;
   if (state.connected) {
     switchChatSession(state, stripEadProjectSuffix(state.sessionKey));

@@ -3818,6 +3818,208 @@ public struct ShutdownEvent: Codable, Sendable {
     }
 }
 
+public struct TemplatesListParams: Codable, Sendable {}
+
+public struct TemplatesGetParams: Codable, Sendable {
+    public let id: String
+
+    public init(
+        id: String)
+    {
+        self.id = id
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+    }
+}
+
+public struct TemplatesCreateParams: Codable, Sendable {
+    public let name: String
+    public let description: String?
+    public let targeturl: String?
+    public let aiprompt: String?
+
+    public init(
+        name: String,
+        description: String?,
+        targeturl: String?,
+        aiprompt: String?)
+    {
+        self.name = name
+        self.description = description
+        self.targeturl = targeturl
+        self.aiprompt = aiprompt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case description
+        case targeturl = "targetUrl"
+        case aiprompt = "aiPrompt"
+    }
+}
+
+public struct TemplatesUpdateParams: Codable, Sendable {
+    public let id: String
+    public let name: String?
+    public let description: String?
+    public let targeturl: String?
+    public let aiprompt: String?
+
+    public init(
+        id: String,
+        name: String?,
+        description: String?,
+        targeturl: String?,
+        aiprompt: String?)
+    {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.targeturl = targeturl
+        self.aiprompt = aiprompt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case description
+        case targeturl = "targetUrl"
+        case aiprompt = "aiPrompt"
+    }
+}
+
+public struct TemplatesDeleteParams: Codable, Sendable {
+    public let id: String
+
+    public init(
+        id: String)
+    {
+        self.id = id
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+    }
+}
+
+public struct TemplatesSetActiveParams: Codable, Sendable {
+    public let id: String?
+
+    public init(
+        id: String?)
+    {
+        self.id = id
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+    }
+}
+
+public struct ExecutionsListParams: Codable, Sendable {
+    public let templateid: String?
+
+    public init(
+        templateid: String?)
+    {
+        self.templateid = templateid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case templateid = "templateId"
+    }
+}
+
+public struct ExecutionsGetParams: Codable, Sendable {
+    public let id: String
+
+    public init(
+        id: String)
+    {
+        self.id = id
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+    }
+}
+
+public struct ExecutionsRunParams: Codable, Sendable {
+    public let templateid: String
+
+    public init(
+        templateid: String)
+    {
+        self.templateid = templateid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case templateid = "templateId"
+    }
+}
+
+public struct ExecutionsCancelParams: Codable, Sendable {
+    public let id: String
+    public let reason: String?
+
+    public init(
+        id: String,
+        reason: String?)
+    {
+        self.id = id
+        self.reason = reason
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case reason
+    }
+}
+
+public struct ExecutionsPauseParams: Codable, Sendable {
+    public let id: String
+
+    public init(
+        id: String)
+    {
+        self.id = id
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+    }
+}
+
+public struct ExecutionsResumeParams: Codable, Sendable {
+    public let id: String
+
+    public init(
+        id: String)
+    {
+        self.id = id
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+    }
+}
+
+public struct ProjectsAutoFormatPromptParams: Codable, Sendable {
+    public let text: String
+
+    public init(
+        text: String)
+    {
+        self.text = text
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+    }
+}
+
 public enum GatewayFrame: Codable, Sendable {
     case req(RequestFrame)
     case res(ResponseFrame)

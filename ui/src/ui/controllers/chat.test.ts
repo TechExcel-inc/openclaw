@@ -8,6 +8,7 @@ import {
   type ChatEventPayload,
   type ChatState,
 } from "./chat.ts";
+import { setActiveExecution } from "./projects.ts";
 
 function createState(overrides: Partial<ChatState> = {}): ChatState {
   return {
@@ -499,6 +500,175 @@ describe("handleChatEvent", () => {
     // entry.text takes precedence — "real reply" is NOT silent, so the message is kept.
     expect(handleChatEvent(state, payload)).toBe("final");
     expect(state.chatMessages).toHaveLength(1);
+  });
+});
+
+describe("project run session bootstrap", () => {
+  it("creates the run session and bootstraps the first Project Run turn", async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.create") {
+        return { key: "agent:main:main:eadproj:run:run-123" };
+      }
+      if (method === "chat.inject") {
+        return { ok: true };
+      }
+      if (method === "chat.history") {
+        return { messages: [] };
+      }
+      if (method === "chat.send") {
+        return { runId: "bootstrap-run", status: "started" };
+      }
+      if (method === "executions.get") {
+        return {
+          id: "run-123",
+          name: "Project One Test",
+          description: "Explore the host app",
+          targetUrl: "https://example.com",
+          aiPrompt: "Map major product areas",
+          authMode: "reuse-session",
+          authSessionProfile: "qa-admin-session",
+        };
+      }
+      return undefined;
+    });
+
+    const state = {
+      client: { request },
+      connected: true,
+      templatesLoading: false,
+      templatesError: null,
+      templatesList: [],
+      activeTemplateId: null,
+      templateDetail: null,
+      templateDetailLoading: false,
+      templateCreating: false,
+      showCreateModal: false,
+      createFormName: "",
+      createFormDescription: "",
+      createFormTargetUrl: "",
+      createFormAiPrompt: "",
+      createFormAuthMode: "none" as const,
+      createFormAuthLoginUrl: "",
+      createFormAuthSessionProfile: "",
+      createFormAuthInstructions: "",
+      projectAuthProfilesLoading: false,
+      projectAuthProfilesError: null,
+      projectAuthProfiles: [],
+      executionsLoading: false,
+      executionsError: null,
+      executionsList: [],
+      activeExecutionId: null as string | null,
+      executionDetail: null,
+      executionDetailLoading: false,
+      globalExecutionsLoading: false,
+      globalExecutionsList: [],
+      sessionKey: "agent:main:main:eadproj:run:run-123",
+    };
+
+    await setActiveExecution(state as Parameters<typeof setActiveExecution>[0], "run-123");
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(request).toHaveBeenCalledWith("browser.request", {
+      method: "GET",
+      path: "/profiles",
+    });
+    expect(request).toHaveBeenCalledWith("sessions.create", {
+      key: "agent:main:main:eadproj:run:run-123",
+      label: "Project Run run-123",
+      parentSessionKey: "agent:main:main",
+    });
+    expect(request).toHaveBeenCalledWith("chat.history", {
+      sessionKey: "agent:main:main:eadproj:run:run-123",
+      limit: 20,
+    });
+    expect(request).toHaveBeenCalledWith("executions.get", { id: "run-123" });
+    expect(request).toHaveBeenCalledWith("chat.inject", {
+      sessionKey: "agent:main:main:eadproj:run:run-123",
+      label: "Project Run Context",
+      message: expect.stringContaining("Execution Run ID: run-123."),
+    });
+    expect(request).toHaveBeenCalledWith("chat.send", {
+      sessionKey: "agent:main:main:eadproj:run:run-123",
+      deliver: false,
+      idempotencyKey: "project-run-bootstrap:run-123",
+      message: expect.stringContaining("Session reuse hint: qa-admin-session."),
+    });
+  });
+
+  it("does not auto-bootstrap manual-bootstrap runs before resume", async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === "browser.request") {
+        return { profiles: [] };
+      }
+      if (method === "chat.history") {
+        return { messages: [] };
+      }
+      if (method === "executions.get") {
+        return {
+          id: "run-456",
+          name: "Project One Test",
+          description: "Explore the host app",
+          targetUrl: "https://example.com",
+          aiPrompt: "Map major product areas",
+          authMode: "manual-bootstrap",
+          authInstructions: "Log in first.",
+        };
+      }
+      return undefined;
+    });
+
+    const state = {
+      client: { request },
+      connected: true,
+      templatesLoading: false,
+      templatesError: null,
+      templatesList: [],
+      activeTemplateId: null,
+      templateDetail: null,
+      templateDetailLoading: false,
+      templateCreating: false,
+      showCreateModal: false,
+      createFormName: "",
+      createFormDescription: "",
+      createFormTargetUrl: "",
+      createFormAiPrompt: "",
+      createFormAuthMode: "none" as const,
+      createFormAuthLoginUrl: "",
+      createFormAuthSessionProfile: "",
+      createFormAuthInstructions: "",
+      projectAuthProfilesLoading: false,
+      projectAuthProfilesError: null,
+      projectAuthProfiles: [],
+      executionsLoading: false,
+      executionsError: null,
+      executionsList: [],
+      activeExecutionId: null as string | null,
+      executionDetail: null,
+      executionDetailLoading: false,
+      globalExecutionsLoading: false,
+      globalExecutionsList: [],
+      sessionKey: "agent:main:main:eadproj:run:run-456",
+    };
+
+    await setActiveExecution(state as Parameters<typeof setActiveExecution>[0], "run-456");
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(request).toHaveBeenCalledWith("sessions.create", {
+      key: "agent:main:main:eadproj:run:run-456",
+      label: "Project Run run-456",
+      parentSessionKey: "agent:main:main",
+    });
+    expect(request).toHaveBeenCalledWith("executions.get", { id: "run-456" });
+    expect(request).not.toHaveBeenCalledWith(
+      "chat.send",
+      expect.objectContaining({
+        sessionKey: "agent:main:main:eadproj:run:run-456",
+      }),
+    );
   });
 });
 

@@ -1,4 +1,6 @@
+import type { ProfileStatus } from "../../../../src/browser/client.js";
 import type { ProjectTemplate, ProjectExecute } from "../../../../src/projects/types.js";
+import { stripEadProjectSuffix } from "../chat/ead-project-session-key.ts";
 
 export type TemplatesListResult = {
   templates: ProjectTemplate[];
@@ -8,6 +10,65 @@ export type TemplatesListResult = {
 export type ExecutionsListResult = {
   executions: ProjectExecute[];
 };
+
+type SessionCreateResult = {
+  key?: string;
+};
+
+type ChatHistoryResult = {
+  messages?: unknown[];
+};
+
+type ProjectAuthMode = NonNullable<ProjectTemplate["authMode"]>;
+type ProjectAuthDraft = Pick<
+  ProjectTemplate,
+  "authMode" | "authLoginUrl" | "authSessionProfile" | "authInstructions"
+>;
+
+function buildProjectRunAuthMessage(execution: ProjectAuthDraft): string[] {
+  const lines: string[] = [];
+  const authMode = execution.authMode ?? "none";
+  lines.push(`Authentication strategy: ${authMode}.`);
+  if (execution.authLoginUrl?.trim()) {
+    lines.push(`Authentication URL: ${execution.authLoginUrl.trim()}.`);
+  }
+  if (execution.authSessionProfile?.trim()) {
+    lines.push(`Session reuse hint: ${execution.authSessionProfile.trim()}.`);
+  }
+  if (execution.authInstructions?.trim()) {
+    lines.push(`Authentication notes: ${execution.authInstructions.trim()}.`);
+  }
+  return lines;
+}
+
+function buildProjectRunBootstrapMessage(
+  execution: Pick<
+    ProjectExecute,
+    | "id"
+    | "name"
+    | "description"
+    | "targetUrl"
+    | "aiPrompt"
+    | "authMode"
+    | "authLoginUrl"
+    | "authSessionProfile"
+    | "authInstructions"
+  >,
+): string {
+  const parts = [
+    "You are OpenClaw helping with a Project Run.",
+    `Execution run ID: ${execution.id}.`,
+    execution.name?.trim() ? `Run name: ${execution.name.trim()}.` : "",
+    execution.description?.trim() ? `Run description: ${execution.description.trim()}.` : "",
+    execution.targetUrl?.trim() ? `Target URL: ${execution.targetUrl.trim()}.` : "",
+    execution.aiPrompt?.trim() ? `Project instructions: ${execution.aiPrompt.trim()}.` : "",
+    ...buildProjectRunAuthMessage(execution),
+    "Primary goal: use OpenClaw's existing capabilities to explore the target app rather than inventing a separate mini-runner.",
+    "Prefer a headless-friendly approach first. If authentication is required and no reusable authenticated state is available, explain what is needed instead of pretending the run succeeded.",
+    "Use the browser tool when appropriate, inspect current run data with read_ead_execution when helpful, and summarize discoveries, gaps, and blockers clearly.",
+  ].filter(Boolean);
+  return parts.join(" ");
+}
 
 export type ProjectsState = {
   client: {
@@ -31,6 +92,13 @@ export type ProjectsState = {
   createFormDescription: string;
   createFormTargetUrl: string;
   createFormAiPrompt: string;
+  createFormAuthMode: ProjectAuthMode;
+  createFormAuthLoginUrl: string;
+  createFormAuthSessionProfile: string;
+  createFormAuthInstructions: string;
+  projectAuthProfilesLoading: boolean;
+  projectAuthProfilesError: string | null;
+  projectAuthProfiles: ProfileStatus[];
 
   // Executions
   executionsLoading: boolean;
@@ -44,6 +112,8 @@ export type ProjectsState = {
 
   globalExecutionsLoading: boolean;
   globalExecutionsList: ProjectExecute[];
+
+  sessionKey?: string;
 };
 
 // ============================================================================
@@ -100,6 +170,7 @@ export async function createTemplate(
   description?: string,
   targetUrl?: string,
   aiPrompt?: string,
+  auth?: ProjectAuthDraft,
 ) {
   if (!state.client || !state.connected) {
     return;
@@ -112,6 +183,10 @@ export async function createTemplate(
       description: description ?? "",
       targetUrl: targetUrl ?? "",
       aiPrompt: aiPrompt ?? "",
+      authMode: auth?.authMode ?? "none",
+      authLoginUrl: auth?.authLoginUrl ?? "",
+      authSessionProfile: auth?.authSessionProfile ?? "",
+      authInstructions: auth?.authInstructions ?? "",
     });
     if (res) {
       state.templatesList.push(res);
@@ -124,6 +199,10 @@ export async function createTemplate(
       state.createFormDescription = "";
       state.createFormTargetUrl = "";
       state.createFormAiPrompt = "";
+      state.createFormAuthMode = "none";
+      state.createFormAuthLoginUrl = "";
+      state.createFormAuthSessionProfile = "";
+      state.createFormAuthInstructions = "";
       void loadExecutions(state, res.id);
     }
   } catch (err) {
@@ -136,7 +215,16 @@ export async function createTemplate(
 export async function updateTemplate(
   state: ProjectsState,
   id: string,
-  updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
+  updates: {
+    name?: string;
+    description?: string;
+    targetUrl?: string;
+    aiPrompt?: string;
+    authMode?: ProjectAuthMode;
+    authLoginUrl?: string;
+    authSessionProfile?: string;
+    authInstructions?: string;
+  },
 ) {
   if (!state.client || !state.connected) {
     return;
@@ -175,6 +263,41 @@ export async function autoFormatPrompt(state: ProjectsState, text: string): Prom
     state.templatesError = String(err);
   }
   return text;
+}
+
+export async function loadProjectBrowserProfiles(state: ProjectsState, force = false) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  if (state.projectAuthProfilesLoading) {
+    return;
+  }
+  const existingProfiles = state.projectAuthProfiles ?? [];
+  if (!force && existingProfiles.length > 0) {
+    return;
+  }
+  state.projectAuthProfilesLoading = true;
+  state.projectAuthProfilesError = null;
+  try {
+    const res = await state.client.request<{ profiles?: ProfileStatus[] }>("browser.request", {
+      method: "GET",
+      path: "/profiles",
+    });
+    const profiles = Array.isArray(res?.profiles) ? res.profiles : [];
+    state.projectAuthProfiles = profiles.toSorted((a, b) => {
+      if (a.driver !== b.driver) {
+        return a.driver === "existing-session" ? -1 : 1;
+      }
+      if (a.isDefault !== b.isDefault) {
+        return a.isDefault ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  } catch (err) {
+    state.projectAuthProfilesError = String(err);
+  } finally {
+    state.projectAuthProfilesLoading = false;
+  }
 }
 
 export async function deleteTemplate(state: ProjectsState, id: string) {
@@ -276,12 +399,26 @@ export async function loadExecutionDetail(state: ProjectsState, id: string) {
 
 const activeExecutionPollers = new Set<string>();
 
-export async function runExecution(state: ProjectsState, templateId: string) {
+export async function runExecution(
+  state: ProjectsState,
+  templateId: string,
+  overrides?: {
+    targetUrl?: string;
+    aiPrompt?: string;
+    authMode?: ProjectAuthMode;
+    authLoginUrl?: string;
+    authSessionProfile?: string;
+    authInstructions?: string;
+  },
+) {
   if (!state.client || !state.connected) {
     return;
   }
   try {
-    const res = await state.client.request<ProjectExecute>("executions.run", { templateId });
+    const res = await state.client.request<ProjectExecute>("executions.run", {
+      templateId,
+      ...overrides,
+    });
     if (res) {
       state.executionsList.push(res);
       const global = state.globalExecutionsList ?? [];
@@ -301,26 +438,61 @@ export function attachExecutionWatch(state: ProjectsState, executionId: string) 
   void runExecutionPoller(state, executionId);
 }
 
-export async function cancelExecution(state: ProjectsState, id: string) {
+export async function cancelExecution(state: ProjectsState, id: string, reason?: string) {
   if (!state.client || !state.connected) {
     return;
   }
   try {
-    const res = await state.client.request<ProjectExecute>("executions.cancel", { id });
+    const res = await state.client.request<ProjectExecute>("executions.cancel", {
+      id,
+      ...(reason?.trim() ? { reason: reason.trim().slice(0, 2000) } : {}),
+    });
     if (res) {
-      const idx = state.executionsList.findIndex((e) => e.id === id);
-      if (idx !== -1) {
-        state.executionsList[idx] = res;
-      }
-      if (state.executionDetail?.id === id) {
-        state.executionDetail = res;
-      }
-      const gIdx = (state.globalExecutionsList ?? []).findIndex((e) => e.id === id);
-      if (gIdx !== -1) {
-        const next = [...(state.globalExecutionsList ?? [])];
-        next[gIdx] = res;
-        state.globalExecutionsList = next;
-      }
+      mergeExecutionIntoState(state, res);
+    }
+  } catch (err) {
+    state.executionsError = String(err);
+  }
+}
+
+function mergeExecutionIntoState(state: ProjectsState, res: ProjectExecute) {
+  const idx = state.executionsList.findIndex((e) => e.id === res.id);
+  if (idx !== -1) {
+    state.executionsList[idx] = res;
+  }
+  if (state.executionDetail?.id === res.id) {
+    state.executionDetail = res;
+  }
+  const gIdx = (state.globalExecutionsList ?? []).findIndex((e) => e.id === res.id);
+  if (gIdx !== -1) {
+    const next = [...(state.globalExecutionsList ?? [])];
+    next[gIdx] = res;
+    state.globalExecutionsList = next;
+  }
+}
+
+export async function pauseExecution(state: ProjectsState, id: string) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  try {
+    const res = await state.client.request<ProjectExecute>("executions.pause", { id });
+    if (res) {
+      mergeExecutionIntoState(state, res);
+    }
+  } catch (err) {
+    state.executionsError = String(err);
+  }
+}
+
+export async function resumeExecution(state: ProjectsState, id: string) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  try {
+    const res = await state.client.request<ProjectExecute>("executions.resume", { id });
+    if (res) {
+      mergeExecutionIntoState(state, res);
     }
   } catch (err) {
     state.executionsError = String(err);
@@ -351,7 +523,9 @@ async function runExecutionPoller(state: ProjectsState, executionId: string) {
         break;
       }
       try {
-        const res = await state.client.request<ProjectExecute>("executions.get", { id: executionId });
+        const res = await state.client.request<ProjectExecute>("executions.get", {
+          id: executionId,
+        });
         if (res) {
           const idx = state.executionsList.findIndex((e) => e.id === executionId);
           if (idx !== -1) {
@@ -380,13 +554,48 @@ export async function setActiveExecution(
 ) {
   state.activeExecutionId = id;
   if (id) {
+    void loadProjectBrowserProfiles(state);
     if (state.client && state.sessionKey) {
+      const runSessionKey = state.sessionKey.trim();
+      const parentSessionKey = stripEadProjectSuffix(runSessionKey);
       void state.client
-        .request("chat.inject", {
-          sessionKey: state.sessionKey,
-          message: `[System] The user is viewing Execution Run ID: ${id}. This is a Learning/Exploration Phase. Please use the \`read_ead_execution\` tool to load the feature map (EAD-FM) nodes and generated test cases to answer their questions.`,
+        .request<SessionCreateResult>("sessions.create", {
+          key: runSessionKey,
+          label: `Project Run ${id.slice(0, 8)}`,
+          ...(parentSessionKey && parentSessionKey !== runSessionKey ? { parentSessionKey } : {}),
         })
-        .catch((err) => console.error("Failed to inject context:", err));
+        .then(async () => {
+          const [history, execution] = await Promise.all([
+            state.client?.request<ChatHistoryResult>("chat.history", {
+              sessionKey: runSessionKey,
+              limit: 20,
+            }),
+            state.client?.request<ProjectExecute>("executions.get", { id }),
+          ]);
+          const hasMessages = Array.isArray(history?.messages) && history.messages.length > 0;
+          const bootstrapStarted =
+            Boolean(execution?.agentRunId?.trim()) || execution?.authMode === "manual-bootstrap";
+          await state.client?.request("chat.inject", {
+            sessionKey: runSessionKey,
+            label: "Project Run Context",
+            message: [
+              "[System] Project Run context initialized.",
+              `Execution Run ID: ${id}.`,
+              "This is a Learning/Exploration Phase.",
+              "Use the `read_ead_execution` tool to inspect current run results before answering.",
+              "When the run is active, help the operator with login/setup questions and summarize discovered areas and gaps.",
+            ].join(" "),
+          });
+          if (!hasMessages && execution && !bootstrapStarted) {
+            await state.client?.request("chat.send", {
+              sessionKey: runSessionKey,
+              deliver: false,
+              idempotencyKey: `project-run-bootstrap:${id}`,
+              message: buildProjectRunBootstrapMessage(execution),
+            });
+          }
+        })
+        .catch((err) => console.error("Failed to initialize Project Run session:", err));
     }
     void loadExecutionDetail(state, id);
   } else {

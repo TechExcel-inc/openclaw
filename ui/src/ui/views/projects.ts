@@ -9,9 +9,21 @@ import { renderChat, type ChatProps } from "./chat.js";
 const DEFAULT_AI_PROMPT = `# Role & Objective
 Act as an Expert Automated Website Documentation Agent. Your objective is to systematically explore a target web application and generate comprehensive, production-ready Markdown documentation complete with screenshots. This documentation will serve as a user manual, system guide, and training material.
 
+# Project Run chat first (before heavy automation)
+- When a run starts, the **executor may pause** so the human can message here **before** the browser automation continues.
+- **Always prioritize this chat** for: login URL, username/password or secure handoff, which **modules or areas** to test first, compliance constraints, and test data rules.
+- Do **not** assume credentials are in the Test Plan alone; ask in chat if anything is missing.
+- After the user signals readiness (e.g. **Resume run** in the UI), coordinate with any live browser capture and keep answering questions here.
+
 # Operating Context & Setup
 - **Browser State**: Open the target web application at 1920x1080 resolution.
 - **Authentication**: If credentials are provided, locate the login page, enter the username/password, submit the form, and verify successful authentication before proceeding.
+
+# Execution discipline (Learning runs)
+- Navigate the **entire** functional surface of the target web application (major modules, workflows, and interactive controls) unless blocked by access, environment, or explicit scope limits.
+- **Exercise and verify** major features and user-visible flows (not only page loads): use controls, submit forms where safe, and confirm expected behavior when you can.
+- **Keep progressing** through the run until the operator stops or pauses it, or the plan is complete.
+- When **human input** is required (credentials, confirmations, ambiguous choices), ask clearly in **this Project Run chat** and wait for the user before continuing.
 
 # Exploration Strategy (Top-Down)
 Explore the application methodically to ensure 100% coverage:
@@ -166,6 +178,33 @@ function renderCustomChatHeader(state: AppViewState, chatProps?: ChatProps) {
   `;
 }
 
+function authStrategyLabel(mode: string | undefined): string {
+  if (mode === "reuse-session") {
+    return "Reuse existing session";
+  }
+  if (mode === "manual-bootstrap") {
+    return "Manual bootstrap";
+  }
+  return "No authentication";
+}
+
+function browserProfileOptionLabel(profile: {
+  name: string;
+  driver?: "openclaw" | "existing-session";
+  isDefault?: boolean;
+}): string {
+  const bits = [profile.name];
+  if (profile.driver === "existing-session") {
+    bits.push("existing session");
+  } else if (profile.driver === "openclaw") {
+    bits.push("openclaw");
+  }
+  if (profile.isDefault) {
+    bits.push("default");
+  }
+  return bits.join(" - ");
+}
+
 export function renderProjectsView(state: AppViewState, chatProps?: ChatProps) {
   const showExecution = !!state.activeExecutionId;
   const showDetail = !showExecution && !!state.templateDetail;
@@ -218,11 +257,16 @@ function renderTemplateList(state: AppViewState) {
         <button
           class="project-create-modal__btn project-create-modal__btn--primary"
           @click=${() => {
+            void state.handleProjectAuthProfilesLoad();
             state.templateModalMode = "create";
             state.createFormName = "";
             state.createFormDescription = "";
             state.createFormTargetUrl = "";
             state.createFormAiPrompt = DEFAULT_AI_PROMPT;
+            state.createFormAuthMode = "none";
+            state.createFormAuthLoginUrl = "";
+            state.createFormAuthSessionProfile = "";
+            state.createFormAuthInstructions = "";
             state.templateModalPreviewMarkdown = false;
             state.showCreateModal = true;
           }}
@@ -238,11 +282,16 @@ function renderTemplateList(state: AppViewState) {
           <button
             class="project-create-modal__btn project-create-modal__btn--primary"
             @click=${() => {
+              void state.handleProjectAuthProfilesLoad();
               state.templateModalMode = "create";
               state.createFormName = "";
               state.createFormDescription = "";
               state.createFormTargetUrl = "";
               state.createFormAiPrompt = DEFAULT_AI_PROMPT;
+              state.createFormAuthMode = "none";
+              state.createFormAuthLoginUrl = "";
+              state.createFormAuthSessionProfile = "";
+              state.createFormAuthInstructions = "";
               state.templateModalPreviewMarkdown = false;
               state.showCreateModal = true;
             }}
@@ -312,11 +361,10 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
 
               <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap;">
                 <div style="flex: 1; min-width: 300px;">
-                  <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                  <div style="margin-bottom: 12px;">
                     <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.02em; color: var(--fg-default);">
                       ${template.name}
                     </h1>
-                    <span class="pill" style="background: var(--accent); color: white; border: none;">Test Plan</span>
                   </div>
                   <p style="color: var(--muted); margin: 0; font-size: 16px; line-height: 1.6; max-width: 600px;">
                      ${template.description || "No description provided for this test plan."}
@@ -328,11 +376,16 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                     class="btn btn--ghost" 
                     style="padding: 10px 16px; font-size: 14px; border: 1px solid var(--border-color); border-radius: 8px;"
                     @click=${() => {
+                      void state.handleProjectAuthProfilesLoad();
                       state.templateModalMode = "edit";
                       state.createFormName = template.name;
                       state.createFormDescription = template.description || "";
                       state.createFormTargetUrl = template.targetUrl || "";
                       state.createFormAiPrompt = template.aiPrompt || "";
+                      state.createFormAuthMode = template.authMode || "none";
+                      state.createFormAuthLoginUrl = template.authLoginUrl || "";
+                      state.createFormAuthSessionProfile = template.authSessionProfile || "";
+                      state.createFormAuthInstructions = template.authInstructions || "";
                       state.templateModalPreviewMarkdown = false;
                       state.showCreateModal = true;
                     }}
@@ -340,21 +393,78 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                     ${icons.book} Edit Details
                   </button>
 
-                  <button
-                    class="btn btn--primary"
-                    style="font-size: 15px; font-weight: 600; padding: 12px 24px; border-radius: 8px; box-shadow: 0 4px 12px var(--shadow-color);"
-                    @click=${() => {
-                      state.templateModalMode = "run";
-                      state.createFormName = template.name;
-                      state.createFormDescription = template.description || "";
-                      state.createFormTargetUrl = template.targetUrl || "";
-                      state.createFormAiPrompt = template.aiPrompt || "";
-                      state.templateModalPreviewMarkdown = true;
-                      state.showCreateModal = true;
-                    }}
-                  >
-                    ${icons.spark} Run Learning
-                  </button>
+                  <div style="position: relative;">
+                    <button
+                      type="button"
+                      class="btn btn--primary"
+                      style="font-size: 15px; font-weight: 600; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 12px var(--shadow-color); display: inline-flex; align-items: center; gap: 8px;"
+                      @click=${(e: Event) => {
+                        e.stopPropagation();
+                        const btn = e.currentTarget as HTMLElement;
+                        const menu = btn.nextElementSibling as HTMLElement;
+                        const isVisible = menu.style.display === "block";
+                        document.querySelectorAll(".custom-chat-dropdown-menu").forEach((el) => {
+                          (el as HTMLElement).style.display = "none";
+                        });
+                        if (!isVisible) {
+                          menu.style.display = "block";
+                          const close = (ce: MouseEvent) => {
+                            if (
+                              !menu.contains(ce.target as Node) &&
+                              !btn.contains(ce.target as Node)
+                            ) {
+                              menu.style.display = "none";
+                              document.removeEventListener("click", close);
+                            }
+                          };
+                          setTimeout(() => document.addEventListener("click", close), 0);
+                        }
+                      }}
+                    >
+                      ${icons.spark} Test Run ${icons.chevronDown}
+                    </button>
+                    <div
+                      class="custom-chat-dropdown-menu ead-test-run-dropdown"
+                      style="display: none; position: absolute; top: 100%; right: 0; margin-top: 4px; z-index: 100; min-width: 260px; background: var(--bg-surface-2, #161b22); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 8px 0;"
+                    >
+                      <button
+                        type="button"
+                        class="btn btn--ghost"
+                        style="width: 100%; justify-content: flex-start; border-radius: 0; padding: 10px 16px; font-size: 14px; border: none;"
+                        @click=${(e: Event) => {
+                          e.stopPropagation();
+                          const menu = (e.currentTarget as HTMLElement).closest(
+                            ".ead-test-run-dropdown",
+                          ) as HTMLElement;
+                          if (menu) {
+                            menu.style.display = "none";
+                          }
+                          void state.handleProjectAuthProfilesLoad();
+                          state.templateModalMode = "run";
+                          state.createFormName = template.name;
+                          state.createFormDescription = template.description || "";
+                          state.createFormTargetUrl = template.targetUrl || "";
+                          state.createFormAiPrompt = template.aiPrompt || "";
+                          state.createFormAuthMode = template.authMode || "none";
+                          state.createFormAuthLoginUrl = template.authLoginUrl || "";
+                          state.createFormAuthSessionProfile = template.authSessionProfile || "";
+                          state.createFormAuthInstructions = template.authInstructions || "";
+                          state.templateModalPreviewMarkdown = true;
+                          state.showCreateModal = true;
+                        }}
+                      >
+                        ${icons.spark} Test Run for Learning
+                      </button>
+                      <button
+                        type="button"
+                        disabled
+                        title="Coming soon"
+                        style="width: 100%; text-align: left; padding: 10px 16px; font-size: 14px; border: none; background: transparent; color: var(--muted); cursor: not-allowed; opacity: 0.7;"
+                      >
+                        Test Run for Testing
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -362,35 +472,10 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
 
           <!-- Instructions Card -->
           <div style="background: var(--bg-surface-1); border: 1px solid var(--border-color); border-radius: 16px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
-            <div style="padding: 20px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface-2);">
+            <div style="padding: 20px 24px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface-2);">
               <h2 style="margin: 0; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
                 ${icons.zap} AI Testing Instructions
               </h2>
-              <button 
-                class="btn btn--ghost" 
-                style="padding: 6px 12px; font-size: 13px; color: var(--accent); border: 1px solid var(--accent); border-radius: 6px; display: flex; align-items: center; gap: 6px;"
-                ?disabled=${state.templateAutoFormatting}
-                @click=${async () => {
-                  if (!template.aiPrompt) {
-                    return;
-                  }
-                  state.templateAutoFormatting = true;
-                  try {
-                    const formatted = await state.handleAutoFormatPrompt(template.aiPrompt);
-                    await state.handleTemplateUpdate(template.id, { aiPrompt: formatted });
-                  } finally {
-                    state.templateAutoFormatting = false;
-                  }
-                }}
-              >
-                ${
-                  state.templateAutoFormatting
-                    ? html`
-                        <span class="spinner spinner--small"></span> Formatting...
-                      `
-                    : "Auto Improve ✨"
-                }
-              </button>
             </div>
             
             <div 
@@ -413,7 +498,9 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                     <div style="padding: 40px 24px; text-align: center; border: 1px dashed var(--border-color); border-radius: 12px; background: var(--bg-surface-2);">
                       <div style="color: var(--muted); margin-bottom: 12px;">${icons.spark}</div>
                       <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600;">No runs yet</h3>
-                      <p style="margin: 0; color: var(--muted); font-size: 14px;">Click "Run Learning" above to test this plan.</p>
+                      <p style="margin: 0; color: var(--muted); font-size: 14px;">
+                        Use <strong>Test Run</strong> → <strong>Test Run for Learning</strong> above to start a run.
+                      </p>
                     </div>
                   `
                 : html`
@@ -466,8 +553,28 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
 function renderCreateModal(state: AppViewState) {
   const isEdit = state.templateModalMode === "edit";
   const isRun = state.templateModalMode === "run";
+  const showTemplateFields =
+    state.templateModalMode === "create" || state.templateModalMode === "edit";
+  const showTargetUrlField = showTemplateFields || isRun;
+  const availableProfiles = state.projectAuthProfiles ?? [];
+  const selectedProfile = state.createFormAuthSessionProfile.trim();
+  const selectedProfileInfo = selectedProfile
+    ? availableProfiles.find((profile) => profile.name === selectedProfile)
+    : undefined;
+  const hasSelectedProfile = selectedProfile
+    ? availableProfiles.some((profile) => profile.name === selectedProfile)
+    : false;
+  const requiresSessionProfile = state.createFormAuthMode === "reuse-session";
+  const missingSessionProfile = requiresSessionProfile && !selectedProfile;
+  const unknownSessionProfile =
+    requiresSessionProfile &&
+    Boolean(selectedProfile) &&
+    availableProfiles.length > 0 &&
+    !hasSelectedProfile;
+  const submitBlocked =
+    !state.createFormName.trim() || state.templateCreating || missingSessionProfile;
   const title = isRun
-    ? "Run Project Execution"
+    ? "Test run for learning"
     : isEdit
       ? "Edit Project Template"
       : "New Project Template";
@@ -476,7 +583,7 @@ function renderCreateModal(state: AppViewState) {
       ? "Starting..."
       : "Saving..."
     : isRun
-      ? "Run Learning"
+      ? "Start learning run"
       : isEdit
         ? "Save Changes"
         : "Create Template";
@@ -498,7 +605,7 @@ function renderCreateModal(state: AppViewState) {
 
         <div style="overflow-y: auto; flex: 1; padding-right: 8px;">
           ${
-            state.templateModalMode === "create" || state.templateModalMode === "edit"
+            showTemplateFields
               ? html`
                 ${
                   state.templatesError
@@ -533,19 +640,205 @@ function renderCreateModal(state: AppViewState) {
                     }}
                   />
                 </div>
-                <div class="project-create-modal__field">
-                  <label class="project-create-modal__label">Target URL</label>
-                  <input
-                    class="project-create-modal__input"
-                    type="text"
-                    placeholder="https://example.com"
-                    .value=${state.createFormTargetUrl}
-                    @input=${(e: Event) => {
-                      state.createFormTargetUrl = (e.target as HTMLInputElement).value;
-                    }}
-                  />
-                </div>
               `
+              : nothing
+          }
+          ${
+            showTargetUrlField
+              ? html`
+                  <div class="project-create-modal__field">
+                    <label class="project-create-modal__label">Target URL</label>
+                    <input
+                      class="project-create-modal__input"
+                      type="text"
+                      placeholder="https://example.com"
+                      .value=${state.createFormTargetUrl}
+                      @input=${(e: Event) => {
+                        state.createFormTargetUrl = (e.target as HTMLInputElement).value;
+                      }}
+                    />
+                  </div>
+                `
+              : nothing
+          }
+          <div class="project-create-modal__field">
+            <label class="project-create-modal__label">Authentication strategy</label>
+            <select
+              class="project-create-modal__input"
+              .value=${state.createFormAuthMode}
+              @change=${(e: Event) => {
+                state.createFormAuthMode = (e.target as HTMLSelectElement).value as
+                  | "none"
+                  | "reuse-session"
+                  | "manual-bootstrap";
+              }}
+            >
+              <option value="none">None</option>
+              <option value="reuse-session">Reuse existing session</option>
+              <option value="manual-bootstrap">Manual bootstrap</option>
+            </select>
+            <div style="margin-top: 6px; color: var(--muted); font-size: 12px;">
+              ${
+                state.createFormAuthMode === "reuse-session"
+                  ? "Preferred for headless runs when an authenticated browser/session state already exists."
+                  : state.createFormAuthMode === "manual-bootstrap"
+                    ? "Use when the operator needs to log in or complete setup before the run can continue."
+                    : "Use this for public pages or apps that do not require login."
+              }
+            </div>
+          </div>
+          ${
+            state.createFormAuthMode !== "none"
+              ? html`
+                  <div class="project-create-modal__field">
+                    <label class="project-create-modal__label">Authentication URL</label>
+                    <input
+                      class="project-create-modal__input"
+                      type="text"
+                      placeholder="https://example.com/login"
+                      .value=${state.createFormAuthLoginUrl}
+                      @input=${(e: Event) => {
+                        state.createFormAuthLoginUrl = (e.target as HTMLInputElement).value;
+                      }}
+                    />
+                  </div>
+                  <div class="project-create-modal__field">
+                    <label class="project-create-modal__label">Authentication notes</label>
+                    <textarea
+                      class="project-create-modal__input"
+                      style="min-height: 84px; resize: vertical;"
+                      placeholder="Explain how OpenClaw should authenticate or what the operator must do first."
+                      .value=${state.createFormAuthInstructions}
+                      @input=${(e: Event) => {
+                        state.createFormAuthInstructions = (e.target as HTMLTextAreaElement).value;
+                      }}
+                    ></textarea>
+                  </div>
+                `
+              : nothing
+          }
+          ${
+            state.createFormAuthMode === "reuse-session"
+              ? html`
+                  <div class="project-create-modal__field">
+                    <label class="project-create-modal__label">Browser profile</label>
+                    ${
+                      availableProfiles.length > 0
+                        ? html`
+                            <select
+                              class="project-create-modal__input"
+                              .value=${selectedProfile}
+                              @change=${(e: Event) => {
+                                state.createFormAuthSessionProfile = (
+                                  e.target as HTMLSelectElement
+                                ).value;
+                              }}
+                            >
+                              <option value="">Select a browser profile</option>
+                              ${
+                                !hasSelectedProfile && selectedProfile
+                                  ? html`
+                                      <option value=${selectedProfile}>
+                                        ${selectedProfile} - current value
+                                      </option>
+                                    `
+                                  : nothing
+                              }
+                              ${availableProfiles.map(
+                                (profile) => html`
+                                  <option value=${profile.name}>
+                                    ${browserProfileOptionLabel(profile)}
+                                  </option>
+                                `,
+                              )}
+                            </select>
+                          `
+                        : html`
+                            <input
+                              class="project-create-modal__input"
+                              type="text"
+                              placeholder="qa-admin-session"
+                              .value=${state.createFormAuthSessionProfile}
+                              @input=${(e: Event) => {
+                                state.createFormAuthSessionProfile = (
+                                  e.target as HTMLInputElement
+                                ).value;
+                              }}
+                            />
+                          `
+                    }
+                    <div style="margin-top: 6px; color: var(--muted); font-size: 12px;">
+                      ${
+                        state.projectAuthProfilesLoading
+                          ? "Loading available browser profiles..."
+                          : availableProfiles.length > 0
+                            ? "Project Run will use this browser profile by default for browser actions in this run."
+                            : "No browser profiles were loaded from the gateway yet. You can still enter a profile name manually."
+                      }
+                    </div>
+                    ${
+                      state.projectAuthProfilesError
+                        ? html`
+                            <div style="margin-top: 6px; color: #ffb4b4; font-size: 12px;">
+                              ${state.projectAuthProfilesError}
+                            </div>
+                          `
+                        : nothing
+                    }
+                    <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                      <button
+                        type="button"
+                        class="project-create-modal__btn"
+                        style="padding: 4px 10px; font-size: 12px;"
+                        ?disabled=${state.projectAuthProfilesLoading}
+                        @click=${() => void state.handleProjectAuthProfilesLoad(true)}
+                      >
+                        Refresh profiles
+                      </button>
+                      ${
+                        selectedProfileInfo
+                          ? html`
+                              <span style="font-size: 12px; color: var(--muted);">
+                                Driver: ${selectedProfileInfo.driver}
+                                ${selectedProfileInfo.running ? " | running" : " | not running"}
+                                ${selectedProfileInfo.isDefault ? " | default" : ""}
+                              </span>
+                            `
+                          : nothing
+                      }
+                    </div>
+                    ${
+                      missingSessionProfile
+                        ? html`
+                            <div
+                              style="
+                                margin-top: 8px;
+                                color: #ffffff;
+                                background: rgba(248, 81, 73, 0.35);
+                                padding: 8px 12px;
+                                border-radius: 4px;
+                                font-size: 12px;
+                                border: 1px solid rgba(248, 81, 73, 0.55);
+                              "
+                            >
+                              Choose a browser profile before using <strong>Reuse existing session</strong>.
+                            </div>
+                          `
+                        : nothing
+                    }
+                    ${
+                      unknownSessionProfile
+                        ? html`
+                            <div
+                              style="margin-top: 8px; color: #ffffff; background: rgba(210,153,34,0.22); padding: 8px 12px; border-radius: 4px; font-size: 12px; border: 1px solid rgba(210,153,34,0.45);"
+                            >
+                              The selected profile <strong>${selectedProfile}</strong> is not currently available from the gateway. The run may fall back or fail to reuse login state.
+                            </div>
+                          `
+                        : nothing
+                    }
+                  </div>
+                `
               : nothing
           }
           <div class="project-create-modal__field">
@@ -605,12 +898,19 @@ function renderCreateModal(state: AppViewState) {
           </button>
           <button
             class="project-create-modal__btn project-create-modal__btn--primary"
-            ?disabled=${!state.createFormName.trim() || state.templateCreating}
+            ?disabled=${submitBlocked}
             @click=${async () => {
               if (isRun && state.templateDetail) {
                 state.templateCreating = true;
                 try {
-                  const res = await state.handleExecutionRun(state.templateDetail.id);
+                  const res = await state.handleExecutionRun(state.templateDetail.id, {
+                    targetUrl: state.createFormTargetUrl.trim(),
+                    aiPrompt: state.createFormAiPrompt.trim(),
+                    authMode: state.createFormAuthMode,
+                    authLoginUrl: state.createFormAuthLoginUrl.trim(),
+                    authSessionProfile: state.createFormAuthSessionProfile.trim(),
+                    authInstructions: state.createFormAuthInstructions.trim(),
+                  });
                   state.showCreateModal = false;
                   if (res) {
                     state.handleExecutionSetActive(res.id);
@@ -624,6 +924,10 @@ function renderCreateModal(state: AppViewState) {
                   description: state.createFormDescription.trim(),
                   targetUrl: state.createFormTargetUrl.trim(),
                   aiPrompt: state.createFormAiPrompt.trim(),
+                  authMode: state.createFormAuthMode,
+                  authLoginUrl: state.createFormAuthLoginUrl.trim(),
+                  authSessionProfile: state.createFormAuthSessionProfile.trim(),
+                  authInstructions: state.createFormAuthInstructions.trim(),
                 });
                 state.showCreateModal = false;
               } else {
@@ -632,6 +936,12 @@ function renderCreateModal(state: AppViewState) {
                   state.createFormDescription.trim(),
                   state.createFormTargetUrl.trim(),
                   state.createFormAiPrompt.trim(),
+                  {
+                    authMode: state.createFormAuthMode,
+                    authLoginUrl: state.createFormAuthLoginUrl.trim(),
+                    authSessionProfile: state.createFormAuthSessionProfile.trim(),
+                    authInstructions: state.createFormAuthInstructions.trim(),
+                  },
                 );
               }
             }}
@@ -662,6 +972,36 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
   const testCases: TestCaseRun[] = (execution.results || []).flatMap(
     (node: EadFmNodeRun) => node.testCaseRuns || [],
   );
+  const executionProfileInfo = execution.authSessionProfile?.trim()
+    ? (state.projectAuthProfiles ?? []).find(
+        (profile) => profile.name === execution.authSessionProfile?.trim(),
+      )
+    : undefined;
+  const executionProfileMissing =
+    execution.authMode === "reuse-session" &&
+    Boolean(execution.authSessionProfile?.trim()) &&
+    (state.projectAuthProfiles?.length ?? 0) > 0 &&
+    !executionProfileInfo;
+  const executionHint = execution.executorHint?.trim();
+  const executionWaitingForBootstrap =
+    execution.status === "running" &&
+    Boolean(execution.paused) &&
+    execution.authMode === "manual-bootstrap";
+  const executionStatusLabel =
+    execution.status === "running" && execution.paused
+      ? executionWaitingForBootstrap
+        ? "WAITING"
+        : "PAUSED"
+      : execution.status.toUpperCase();
+  const executionStatusPillClass =
+    execution.status === "completed"
+      ? "success"
+      : execution.status === "running"
+        ? execution.paused
+          ? "warning"
+          : "primary"
+        : "danger";
+  const shouldShowActiveRunFooter = execution.status === "running" && !execution.paused;
 
   return html`
     <div style="display: flex; flex: 1; width: 100%; overflow: hidden;">
@@ -675,21 +1015,83 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
              </button>
              <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                <h1 class="project-detail__name" style="margin: 0;">Project Run & Chat</h1>
-               <span class="pill ${execution.status === "completed" ? "success" : execution.status === "running" ? "primary" : "danger"}">${execution.status.toUpperCase()}</span>
+               <span class="pill ${executionStatusPillClass}">${executionStatusLabel}</span>
              </div>
              <p style="color: var(--muted); margin-top: 8px; font-size: 14px;">
                🧠 Phase: Learning & Mapping Product <br/>
                Execution ID: ${execution.id} $\middot Started: ${dateInfo} (${durationSec}s elapsed)
              </p>
+             <p style="color: var(--muted); margin-top: 8px; font-size: 13px;">
+               Auth: ${authStrategyLabel(execution.authMode)}
+               ${execution.authSessionProfile ? html`<br />Session hint: ${execution.authSessionProfile}` : nothing}
+               ${execution.authLoginUrl ? html`<br />Auth URL: ${execution.authLoginUrl}` : nothing}
+               ${
+                 executionProfileInfo
+                   ? html`
+                       <br />
+                       Profile driver: ${executionProfileInfo.driver}
+                       ${executionProfileInfo.running ? " | running" : " | not running"}
+                       ${executionProfileInfo.isDefault ? " | default" : ""}
+                     `
+                   : nothing
+               }
+             </p>
+             ${
+               executionProfileMissing
+                 ? html`
+                     <div
+                       style="margin-top: 10px; color: #ffffff; background: rgba(210,153,34,0.22); padding: 8px 12px; border-radius: 4px; font-size: 12px; border: 1px solid rgba(210,153,34,0.45); max-width: 520px;"
+                     >
+                       Browser profile <strong>${execution.authSessionProfile}</strong> was selected for session reuse, but it is not currently available from the gateway.
+                     </div>
+                   `
+                 : nothing
+             }
+             ${
+               executionHint
+                 ? html`
+                     <div
+                       style="margin-top: 12px; color: #ffffff; background: ${executionWaitingForBootstrap ? "rgba(210,153,34,0.22)" : "rgba(56,139,253,0.14)"}; padding: 10px 12px; border-radius: 6px; font-size: 13px; border: 1px solid ${executionWaitingForBootstrap ? "rgba(210,153,34,0.45)" : "rgba(56,139,253,0.3)"}; max-width: 560px;"
+                     >
+                       ${executionHint}
+                     </div>
+                   `
+                 : nothing
+             }
            </div>
            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
              ${
                execution.status === "running"
                  ? html`
-               <button class="project-create-modal__btn project-create-modal__btn--danger" style="padding: 8px 16px;" @click=${() => void state.handleExecutionCancel(execution.id)}>
-                 Cancel Execution
-               </button>
-             `
+                     ${
+                       execution.paused
+                         ? html`
+                             <button
+                               class="project-create-modal__btn project-create-modal__btn--primary"
+                               style="padding: 8px 16px;"
+                               @click=${() => void state.handleExecutionResume(execution.id)}
+                             >
+                               ${
+                                 execution.authMode === "manual-bootstrap"
+                                   ? "Login complete, continue run"
+                                   : "Resume Execution"
+                               }
+                             </button>
+                           `
+                         : html`
+                             <button
+                               class="project-create-modal__btn"
+                               style="padding: 8px 16px;"
+                               @click=${() => void state.handleExecutionPause(execution.id)}
+                             >
+                               Pause Execution
+                             </button>
+                           `
+                     }
+                     <button class="project-create-modal__btn project-create-modal__btn--danger" style="padding: 8px 16px;" @click=${() => void state.handleExecutionCancel(execution.id)}>
+                       Cancel Execution
+                     </button>
+                   `
                  : nothing
              }
              <button
@@ -697,7 +1099,6 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
                class="project-create-modal__btn"
                style="padding: 8px 16px; white-space: nowrap;"
                @click=${() => {
-                 state.chatProjectTab = "executions";
                  state.projectLeftPanelDismissed = false;
                  state.setProjectRunTab(execution.id);
                }}
@@ -784,14 +1185,37 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
             </div>
             
             <div style="margin-top: 24px; padding: 16px; background: var(--bg-surface-2, #21262d); border-radius: 8px; border: 1px solid var(--border-color);">
-               <div style="display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 500;">
-                 <span class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--accent-color); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></span>
-                 ⏳ Drafting Test Cases (${testCases.length}/... )
-               </div>
-               <div style="display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 500; margin-top: 8px;">
-                 <span class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--accent-color); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></span>
-                 ⏳ Compiling EAD-FM Document...
-               </div>
+              ${
+                shouldShowActiveRunFooter
+                  ? html`
+                      <div style="display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 500;">
+                        <span class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--accent-color); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+                        ⏳ Drafting Test Cases (${testCases.length}/... )
+                      </div>
+                      <div style="display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 500; margin-top: 8px;">
+                        <span class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--accent-color); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+                        ⏳ Compiling EAD-FM Document...
+                      </div>
+                    `
+                  : execution.paused
+                    ? html`
+                        <div style="font-size: 14px; font-weight: 500; color: #f2cc60;">
+                          ${
+                            executionWaitingForBootstrap
+                              ? "Waiting for operator login/setup confirmation before continuing discovery."
+                              : "Project Run is paused. Resume when you want OpenClaw to continue discovery."
+                          }
+                        </div>
+                        <div style="margin-top: 8px; font-size: 13px; color: var(--muted);">
+                          The run chat remains available while the browser work is paused.
+                        </div>
+                      `
+                    : html`
+                        <div style="font-size: 14px; font-weight: 500; color: var(--muted)">
+                          Project Run is no longer actively discovering new areas.
+                        </div>
+                      `
+              }
             </div>
           </div>
         </div>

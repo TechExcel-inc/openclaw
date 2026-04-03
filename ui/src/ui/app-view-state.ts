@@ -1,3 +1,4 @@
+import type { ProfileStatus } from "../../../src/browser/client.js";
 import type { ProjectExecute } from "../../../src/projects/types.js";
 import type { EventLogEntry } from "./app-events.ts";
 import type { CompactionStatus, FallbackStatus } from "./app-tool-stream.ts";
@@ -389,16 +390,21 @@ export type AppViewState = {
     showCreateModal: boolean;
     templateModalMode: "create" | "edit" | "run" | null;
     templateModalPreviewMarkdown: boolean;
-    templateAutoFormatting: boolean;
     createFormName: string;
     createFormDescription: string;
     createFormTargetUrl: string;
     createFormAiPrompt: string;
+    createFormAuthMode: NonNullable<ProjectExecute["authMode"]>;
+    createFormAuthLoginUrl: string;
+    createFormAuthSessionProfile: string;
+    createFormAuthInstructions: string;
+    projectAuthProfilesLoading: boolean;
+    projectAuthProfilesError: string | null;
+    projectAuthProfiles: ProfileStatus[];
     // Chat Project Integration
     chatActiveTemplateId: string | null;
     chatProjectRunExecutionId: string | null;
     chatSelectedTemplateId: string | null;
-    chatProjectTab: "templates" | "executions";
     showChatProjectModal: boolean;
     /** When true, chat uses the none-project session even if a project is selected. */
     chatShowNoneProjectChat: boolean;
@@ -406,6 +412,8 @@ export type AppViewState = {
     projectLeftPanelDismissed: boolean;
     /** Left project panel width as a fraction of the left+main row (0.15–0.45). */
     projectLeftSplitRatio: number;
+    /** Execution ids hidden from the Chat sidebar (local preference per gateway). */
+    hiddenProjectRunNavIds: string[];
 
     // Executions
     executionsLoading: boolean;
@@ -422,15 +430,49 @@ export type AppViewState = {
       description?: string,
       targetUrl?: string,
       aiPrompt?: string,
+      auth?: {
+        authMode?: NonNullable<ProjectExecute["authMode"]>;
+        authLoginUrl?: string;
+        authSessionProfile?: string;
+        authInstructions?: string;
+      },
     ) => Promise<void>;
     handleTemplateDelete: (id: string) => Promise<void>;
     handleTemplateSetActive: (id: string | null) => void;
     handleTemplateUpdate: (
       id: string,
-      updates: { name?: string; description?: string; targetUrl?: string; aiPrompt?: string },
+      updates: {
+        name?: string;
+        description?: string;
+        targetUrl?: string;
+        aiPrompt?: string;
+        authMode?: NonNullable<ProjectExecute["authMode"]>;
+        authLoginUrl?: string;
+        authSessionProfile?: string;
+        authInstructions?: string;
+      },
     ) => Promise<void>;
-    handleAutoFormatPrompt: (text: string) => Promise<string>;
     handleExecutionSetActive: (id: string | null) => void;
-    handleExecutionRun: (templateId: string) => Promise<ProjectExecute | undefined>;
-    handleExecutionCancel: (executionId: string) => Promise<void>;
+    handleExecutionRun: (
+      templateId: string,
+      overrides?: {
+        targetUrl?: string;
+        aiPrompt?: string;
+        authMode?: NonNullable<ProjectExecute["authMode"]>;
+        authLoginUrl?: string;
+        authSessionProfile?: string;
+        authInstructions?: string;
+      },
+    ) => Promise<ProjectExecute | undefined>;
+    handleProjectAuthProfilesLoad: (force?: boolean) => Promise<void>;
+    handleExecutionCancel: (executionId: string, reason?: string) => Promise<void>;
+    /** Leave Project Run view and remove this run from the sidebar list (does not delete the run on the server). */
+    exitProjectRunRemoveFromNav: () => void;
+    projectRunConfirmKind: "stop" | "remove" | null;
+    projectRunStopReasonDraft: string;
+    openProjectRunConfirm: (kind: "stop" | "remove") => void;
+    dismissProjectRunConfirm: () => void;
+    confirmProjectRunConfirm: () => void;
+    handleExecutionPause: (executionId: string) => Promise<void>;
+    handleExecutionResume: (executionId: string) => Promise<void>;
   };
