@@ -46,8 +46,8 @@ import {
 } from "./nodes-utils.js";
 
 /** Wait before each screenshot capture: page settle + spacing between heavy tool/vision turns. */
-const SCREENSHOT_PREFLIGHT_MIN_MS = 5000;
-const SCREENSHOT_PREFLIGHT_MAX_MS = 10000;
+const SCREENSHOT_PREFLIGHT_MIN_MS = 8000;
+const SCREENSHOT_PREFLIGHT_MAX_MS = 16000;
 
 function randomScreenshotPreflightDelayMs(): number {
   return (
@@ -452,7 +452,7 @@ export function createBrowserTool(opts?: {
       "When using refs from snapshot (e.g. e12), keep the same tab: prefer passing targetId from the snapshot response into subsequent actions (act/click/type/etc).",
       'For stable, self-resolving refs across calls, use snapshot with refs="aria" (Playwright aria-ref ids). Default refs="role" are role+name-based.',
       "Use snapshot+act for UI automation. Avoid act:wait by default; use only in exceptional cases when no reliable UI state exists.",
-      "If you omit headless, OpenClaw defaults to headless=true so Chrome does not open a visible window. Pass headless=false only when you need an interactive window (debugging, login, or rare anti-headless sites).",
+      "If you omit headless, OpenClaw defaults to headless=true so Chrome does not open a visible window. Pass headless=false only when you need an interactive window (debugging, login, or rare anti-headless sites). Project Run ignores this flag: headed vs headless comes only from the run's showLocalBrowser setting.",
       `target selects browser location (sandbox|host|node). Default: ${targetDefault}.`,
       hostHint,
       eadProjectRunHint,
@@ -485,10 +485,15 @@ async function executeBrowserToolBody(
   const profile = isProjectRun
     ? (projectRunBrowser.profile ?? readStringParam(params, "profile"))
     : (readStringParam(params, "profile") ?? projectRunBrowser.profile);
-  // When omitted, the control server would otherwise use browser.headless from config (often
-  // false), which launches a visible Chrome. Agent-driven browsing should default headless.
-  const headless =
-    typeof params.headless === "boolean" ? params.headless : (projectRunBrowser.headless ?? true);
+  // Non–Project Run: honor explicit headless from tool args, else default headless so the control
+  // server does not fall back to browser.headless in config (often false → visible Chrome).
+  // Project Run: headed vs headless comes only from the execution (showLocalBrowser). The model
+  // often passes headless=false for login; that must not override a headless run.
+  const headless = isProjectRun
+    ? (projectRunBrowser.headless ?? true)
+    : typeof params.headless === "boolean"
+      ? params.headless
+      : (projectRunBrowser.headless ?? true);
   const requestedNode = readStringParam(params, "node");
   let target = readStringParam(params, "target") as "sandbox" | "host" | "node" | undefined;
 

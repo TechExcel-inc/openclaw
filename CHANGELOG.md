@@ -8,6 +8,20 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Project Run: default pacing between successive model turns after tool rounds is 40s, and browser screenshot preflight waits 8–16s (was 5–10s), to reduce provider rate-limit pressure on heavy runs.
+- Project Run: bootstrap reminds the agent to use credentials from Instructions or Authentication notes when present, otherwise ask the operator in chat (no invented secrets).
+- Project Run: bootstrap and context messages ask the agent to state planned next steps before tool batches and brief recaps plus next intent after tools.
+- Project Run: context/bootstrap ask for ~1-minute pulse updates during long steps and to surface essential reasoning in visible assistant text.
+- Project Run: bootstrap/context instruct the agent to treat operator visibility as part of job quality and to interleave brief updates with work instead of long silent tool chains.
+- Project Run: bootstrap/context add a cadence—about every minute of sustained automation, pause for a short (~10s) engagement message to the operator before continuing with tools.
+- Project Run: bootstrap/context prioritize answering the operator’s new questions before resuming automation, and treat sign-in as highest priority with engagement and explicit requests for input when needed.
+- Project Run: bootstrap/context spell out login priority—pause other work, message the operator before login attempts, allow time for credentials, then pursue successful sign-in.
+- Project Run: bootstrap/context require explaining the login plan in chat before visiting the site or entering credentials; on failed visit or timeout, engage the operator instead of silent retries.
+- Project Run: bootstrap/context ask the agent to explain why login failed (observed error or page state) when sign-in does not succeed.
+- Project Run: bootstrap/context require ~20s pause and a user message between login retries; treat the main job as not started until sign-in works; prioritize operator chat when auth fails.
+- Project Run: bootstrap/context treat operator messages as urgent (reply before more tools) and ask for faster status during login/auth than the usual ~1 minute cadence.
+- Project Run: bootstrap/context require asking the operator for or confirming credentials in chat before filling login fields when values are not already in Instructions/auth/chat; no snapshot-to-credential burst without that.
+- Control UI/chat: restore per-message tool rendering (revert consolidated “Tool #1 / Tool #2” compact bundle) and trim Project Run bootstrap/context copy that over-steered task narration.
 - Agents/tools: make `/tools` show the tools the current agent can actually use right now, add a compact default view with an optional detailed mode, and add a live “Available Right Now” section in the Control UI so it is easier to see what will work before you ask.
 - Control UI/markdown preview: restyle the agent workspace file preview dialog with a frosted backdrop, sized panel, and styled header, and integrate `@create-markdown/preview` v2 system theme for rich markdown rendering (headings, tables, code blocks, callouts, blockquotes) that auto-adapts to the app's light/dark design tokens. (#53411) Thanks @BunsDev.
 - Skills/install metadata: add one-click install recipes to bundled skills (coding-agent, gh-issues, openai-whisper-api, session-logs, tmux, trello, weather) so the CLI and Control UI can offer dependency installation when requirements are missing. (#53411) Thanks @BunsDev.
@@ -24,6 +38,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Project Run/browser: ignore the agent's `headless` tool argument so headed vs headless follows only the run's `showLocalBrowser` flag (models often passed `headless: false` for login, which incorrectly opened visible Chrome on headless runs).
 - Memory/builtin sqlite: cut redundant sync and status query churn by snapshotting file state once per source, reusing sync statements, and consolidating status aggregation reads, which reduces builtin memory overhead on sync/status/doctor-style paths. Thanks @vincentkoc.
 - ACP/direct chats: always deliver a terminal ACP result when final TTS does not yield audio, even if block text already streamed earlier, and skip redundant empty-text final synthesis. (#53692) Thanks @w-sss.
 - Doctor/image generation: seed migrated legacy Nano Banana Google provider config with the `/v1beta` API root and an empty model list so `openclaw doctor --fix` completes and the migrated native Google image path keeps hitting the correct endpoint. (#53757) Thanks @mahopan.
@@ -44,6 +59,7 @@ Docs: https://docs.openclaw.ai
 - Gateway/ports: parse Docker Compose-style `OPENCLAW_GATEWAY_PORT` host publish values correctly without reviving the legacy `CLAWDBOT_GATEWAY_PORT` override. (#44083) Thanks @bebule.
 - Feishu/MSTeams message tool: keep provider-native `card` payloads optional in merged tool schemas so media-only sends stop failing validation before channel runtime dispatch. (#53715) Thanks @lndyzwdxhs.
 - Feishu/startup: keep `requireMention` enforcement strict when bot identity startup probes fail, raise the startup bot-info timeout to 30s, and add cancellable background identity recovery so mention-gated groups recover without noisy fallback. (#43788) Thanks @lefarcen.
+- Control UI/chat: preserve the reading-indicator and in-flight stream state when `chat.history` reloads in the background (for example after tool persistence or another run's final), so Project Run and follow-up sends no longer lose the waiting dots while a reply is still in progress.
 
 ## 2026.3.23
 

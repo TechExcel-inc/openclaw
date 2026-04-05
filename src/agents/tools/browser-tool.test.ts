@@ -687,7 +687,7 @@ describe("browser tool url alias support", () => {
     );
   });
 
-  it("allows headless override on Project Runs", async () => {
+  it("ignores agent headless=false on headless Project Runs (execution wins)", async () => {
     projectsStoreMocks.loadProjectsStore.mockResolvedValueOnce({
       version: 3,
       templates: [],
@@ -722,7 +722,49 @@ describe("browser tool url alias support", () => {
     expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
       undefined,
       "https://example.com",
-      expect.objectContaining({ profile: undefined, headless: false }),
+      expect.objectContaining({ profile: undefined, headless: true }),
+    );
+  });
+
+  it("ignores agent headless=true when execution has showLocalBrowser (headed)", async () => {
+    projectsStoreMocks.loadProjectsStore.mockResolvedValueOnce({
+      version: 3,
+      templates: [],
+      executions: [
+        {
+          id: "run-headed-2",
+          linkedTemplateId: "template-1",
+          name: "Run headed 2",
+          description: "",
+          targetUrl: "https://example.com",
+          aiPrompt: "Explore",
+          authMode: "none",
+          runSessionKey: "agent:main:main:eadproj:run:run-headed-2",
+          status: "running",
+          steps: [],
+          progressPercentage: 15,
+          startTime: 1,
+          durationMs: null,
+          results: [],
+          showLocalBrowser: true,
+        },
+      ],
+      activeTemplateId: null,
+    });
+    const tool = createBrowserTool({
+      agentSessionKey: "agent:main:main:eadproj:run:run-headed-2",
+    });
+
+    await tool.execute?.("call-1", {
+      action: "open",
+      url: "https://example.com",
+      headless: true,
+    });
+
+    expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
+      undefined,
+      "https://example.com",
+      expect.objectContaining({ headless: false }),
     );
   });
 

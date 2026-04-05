@@ -16,6 +16,16 @@ describe("project-run-messages", () => {
     expect(text).toContain("Dashboard execution status: running");
     expect(text).toContain("exec-1");
     expect(text).toContain("authoritative");
+    expect(text).toContain("plan to do next");
+    expect(text).toContain("Visibility is part of job quality");
+    expect(text).toContain("Cadence:");
+    expect(text).toContain("sign-in or account access");
+    expect(text).toContain("Do not open the target or login URL");
+    expect(text).toContain("login is not successful");
+    expect(text).toContain("20 seconds");
+    expect(text).toContain("much sooner");
+    expect(text).toContain("Credential fields:");
+    expect(text).toContain("one minute");
   });
 
   it("buildProjectRunContextMessage notes paused state", () => {

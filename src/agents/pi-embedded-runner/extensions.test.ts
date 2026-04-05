@@ -81,7 +81,7 @@ describe("buildEmbeddedExtensionFactories", () => {
       provider: "openai",
       modelId: "gpt-4o-mini",
       model,
-      projectRunPace: { minIntervalMs: 60_000 },
+      projectRunPace: { minIntervalMs: 40_000 },
     });
     expect(factories.length).toBe(1);
     expect(typeof factories[0]).toBe("function");

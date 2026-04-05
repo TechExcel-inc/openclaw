@@ -6,7 +6,6 @@ import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
 import { openExternalUrlSafe } from "../open-external-url.ts";
 import { detectTextDirection } from "../text-direction.ts";
-import { formatToolSummary, resolveToolDisplay } from "../tool-display.ts";
 import type { ChatItem, MessageGroup, ToolCard } from "../types/chat-types.ts";
 import { agentLogoUrl } from "../views/agents-utils.ts";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown.ts";
@@ -17,241 +16,12 @@ import {
 } from "./message-extract.ts";
 import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normalizer.ts";
 import { isTtsSupported, speakText, stopTts, isTtsSpeaking } from "./speech.ts";
-import { extractToolCards } from "./tool-cards.ts";
+import { extractToolCards, renderToolCardSidebar } from "./tool-cards.ts";
 
 type ImageBlock = {
   url: string;
   alt?: string;
 };
-
-const REPORT_STEP_MAX_THUMBS = 3;
-
-function mergeThumbnailUrls(urls: string[], max: number): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const u of urls) {
-    const s = u.trim();
-    if (!s || seen.has(s)) {
-      continue;
-    }
-    seen.add(s);
-    out.push(s);
-    if (out.length >= max) {
-      break;
-    }
-  }
-  return out;
-}
-
-/**
- * URLs the agent attached to `report_running_step` (thumbnailUrl or up to three thumbnailUrls).
- * Also see {@link collectThumbnailUrlsForMessage} for browser screenshot images on the same message.
- */
-export function extractReportRunningStepThumbnailUrls(message: unknown): string[] {
-  const m = message as Record<string, unknown>;
-  const content = m.content;
-  if (!Array.isArray(content)) {
-    return [];
-  }
-  for (const block of content) {
-    if (typeof block !== "object" || block === null) {
-      continue;
-    }
-    const b = block as Record<string, unknown>;
-    const rawType = b.type;
-    const type = typeof rawType === "string" ? rawType.toLowerCase() : "";
-    const isToolCall =
-      ["toolcall", "tool_call", "tooluse", "tool_use"].includes(type) ||
-      (typeof b.name === "string" && (b.arguments !== undefined || b.args !== undefined));
-    if (!isToolCall) {
-      continue;
-    }
-    const name = typeof b.name === "string" ? b.name : "";
-    if (name !== "report_running_step") {
-      continue;
-    }
-    const rawArgs = b.arguments ?? b.args;
-    const args = coerceReportStepArgs(rawArgs);
-    if (!args) {
-      continue;
-    }
-    const urls: string[] = [];
-    const multi = args.thumbnailUrls;
-    if (Array.isArray(multi)) {
-      for (const u of multi) {
-        if (typeof u === "string") {
-          const t = u.trim();
-          if (t.length > 0) {
-            urls.push(t);
-          }
-        }
-      }
-    }
-    if (urls.length === 0 && typeof args.thumbnailUrl === "string") {
-      const t = args.thumbnailUrl.trim();
-      if (t.length > 0) {
-        urls.push(t);
-      }
-    }
-    return urls.slice(0, REPORT_STEP_MAX_THUMBS);
-  }
-  return [];
-}
-
-function coerceReportStepArgs(value: unknown): Record<string, unknown> | null {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  if (typeof value === "string") {
-    const t = value.trim();
-    if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
-      try {
-        const parsed = JSON.parse(t) as unknown;
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          return parsed as Record<string, unknown>;
-        }
-      } catch {
-        return null;
-      }
-    }
-  }
-  return null;
-}
-
-function renderRunningStepThumbnails(urls: string[], opts?: { plain?: boolean }) {
-  if (urls.length === 0) {
-    return nothing;
-  }
-  const plain = opts?.plain ?? false;
-  const openImage = (url: string) => {
-    openExternalUrlSafe(url, { allowDataImage: true });
-  };
-  return html`
-    <div
-      class="chat-running-step-thumbs ${plain ? "chat-running-step-thumbs--plain" : ""}"
-      role="group"
-      aria-label=${plain ? "Screenshots" : "Step screenshots"}
-    >
-      ${urls.map(
-        (url, i) => html`
-          <button
-            type="button"
-            class="chat-running-step-thumb-wrap ${plain ? "chat-running-step-thumb-wrap--plain" : ""}"
-            title="View image ${i + 1}"
-            aria-label="View image ${i + 1}"
-            @click=${() => openImage(url)}
-          >
-            <img src=${url} alt="" class="chat-running-step-thumb" loading="lazy" />
-          </button>
-        `,
-      )}
-    </div>
-  `;
-}
-
-/** One line per tool (calls/results paired by index); always fully expanded. */
-function buildCompactToolLines(toolCards: ToolCard[]): string[] {
-  const calls = toolCards.filter((c) => c.kind === "call");
-  const results = toolCards.filter((c) => c.kind === "result");
-  const n = Math.max(calls.length, results.length);
-  if (n === 0) {
-    return [];
-  }
-  const lines: string[] = [];
-  for (let i = 0; i < n; i++) {
-    const call = calls[i];
-    const res = results[i];
-    let body = "";
-    if (call) {
-      body = formatToolSummary(resolveToolDisplay({ name: call.name, args: call.args }));
-    } else if (res) {
-      body = res.name;
-      if (res.text?.trim()) {
-        const tx = res.text.trim().replace(/\s+/g, " ");
-        body += `: ${tx.length > 140 ? `${tx.slice(0, 137)}…` : tx}`;
-      }
-    }
-    lines.push(`Tool #${i + 1} — ${body}`);
-  }
-  return lines;
-}
-
-function renderCompactToolRunCard(toolCards: ToolCard[]) {
-  const lines = buildCompactToolLines(toolCards);
-  if (lines.length === 0) {
-    return nothing;
-  }
-  return html`
-    <div class="chat-tool-run-compact" role="list" aria-label="Tool calls">
-      ${lines.map(
-        (line) => html`<div class="chat-tool-run-compact__line" role="listitem">${line}</div>`,
-      )}
-    </div>
-  `;
-}
-
-/**
- * One bubble for the whole tool group (Card 2: one line per tool, then thumbnails):
- * compact tool lines + optional plain thumbnail strip from report_running_step URLs.
- */
-function renderToolGroupBundle(
-  group: MessageGroup,
-  opts: {
-    isStreaming: boolean;
-    showReasoning: boolean;
-    showToolCalls?: boolean;
-  },
-  onOpenSidebar?: (content: string) => void,
-) {
-  const showTools = opts.showToolCalls ?? true;
-  if (!showTools) {
-    return group.messages.map((item, index) =>
-      renderGroupedMessage(
-        item.message,
-        {
-          isStreaming: opts.isStreaming && index === group.messages.length - 1,
-          showReasoning: opts.showReasoning,
-          showToolCalls: false,
-        },
-        onOpenSidebar,
-      ),
-    );
-  }
-
-  const allCards: ToolCard[] = [];
-  const thumbUrls: string[] = [];
-  for (const { message } of group.messages) {
-    allCards.push(...extractToolCards(message));
-    thumbUrls.push(...extractReportRunningStepThumbnailUrls(message));
-    // Same idea as executor dashboard fallback: show browser screenshot images even if the model
-    // omitted thumbnailUrl on report_running_step.
-    for (const img of extractImages(message)) {
-      thumbUrls.push(img.url);
-    }
-  }
-  const thumbs = mergeThumbnailUrls(thumbUrls, REPORT_STEP_MAX_THUMBS);
-
-  if (allCards.length === 0) {
-    return group.messages.map((item, index) =>
-      renderGroupedMessage(
-        item.message,
-        {
-          isStreaming: opts.isStreaming && index === group.messages.length - 1,
-          showReasoning: opts.showReasoning,
-          showToolCalls: true,
-        },
-        onOpenSidebar,
-      ),
-    );
-  }
-
-  return html`
-    <div class="chat-bubble chat-bubble--tool-run-bundle fade-in">
-      ${renderCompactToolRunCard(allCards)}
-      ${thumbs.length > 0 ? renderRunningStepThumbnails(thumbs, { plain: true }) : nothing}
-    </div>
-  `;
-}
 
 function extractImages(message: unknown): ImageBlock[] {
   const m = message as Record<string, unknown>;
@@ -274,17 +44,6 @@ function extractImages(message: unknown): ImageBlock[] {
           // If data is already a data URL, use it directly
           const url = data.startsWith("data:") ? data : `data:${mediaType};base64,${data}`;
           images.push({ url });
-        } else if (typeof b.data === "string" && b.data.length > 0) {
-          // Native tool results (browser screenshot, imageResult) use top-level data + mimeType
-          const mime =
-            (typeof b.mimeType === "string" && b.mimeType
-              ? b.mimeType
-              : typeof b.mime_type === "string"
-                ? b.mime_type
-                : null) || "image/png";
-          const raw = b.data;
-          const url = raw.startsWith("data:") ? raw : `data:${mime};base64,${raw}`;
-          images.push({ url });
         } else if (typeof b.url === "string") {
           images.push({ url: b.url });
         }
@@ -299,16 +58,6 @@ function extractImages(message: unknown): ImageBlock[] {
   }
 
   return images;
-}
-
-/**
- * Thumbnail strip URLs: `report_running_step` args plus image blocks on the same message
- * (browser screenshot tool results are often only present as `image` content).
- */
-export function collectThumbnailUrlsForMessage(message: unknown): string[] {
-  const fromReport = extractReportRunningStepThumbnailUrls(message);
-  const fromImages = extractImages(message).map((i) => i.url);
-  return mergeThumbnailUrls([...fromReport, ...fromImages], REPORT_STEP_MAX_THUMBS);
 }
 
 export function renderReadingIndicatorGroup(assistant?: AssistantIdentity, basePath?: string) {
@@ -451,29 +200,17 @@ export function renderMessageGroup(
         opts.basePath,
       )}
       <div class="chat-group-messages">
-        ${
-          normalizedRole === "tool"
-            ? renderToolGroupBundle(
-                group,
-                {
-                  isStreaming: group.isStreaming,
-                  showReasoning: opts.showReasoning,
-                  showToolCalls: opts.showToolCalls ?? true,
-                },
-                opts.onOpenSidebar,
-              )
-            : group.messages.map((item, index) =>
-                renderGroupedMessage(
-                  item.message,
-                  {
-                    isStreaming: group.isStreaming && index === group.messages.length - 1,
-                    showReasoning: opts.showReasoning,
-                    showToolCalls: opts.showToolCalls ?? true,
-                  },
-                  opts.onOpenSidebar,
-                ),
-              )
-        }
+        ${group.messages.map((item, index) =>
+          renderGroupedMessage(
+            item.message,
+            {
+              isStreaming: group.isStreaming && index === group.messages.length - 1,
+              showReasoning: opts.showReasoning,
+              showToolCalls: opts.showToolCalls ?? true,
+            },
+            opts.onOpenSidebar,
+          ),
+        )}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${who}</span>
           <span class="chat-group-timestamp">${timestamp}</span>
@@ -849,21 +586,32 @@ function renderMessageImages(images: ImageBlock[]) {
   `;
 }
 
-function buildCollapsedToolSummaryLabel(toolCards: ToolCard[]): string {
+/** Render tool cards inside a collapsed `<details>` element. */
+function renderCollapsedToolCards(
+  toolCards: ToolCard[],
+  onOpenSidebar?: (content: string) => void,
+) {
   const calls = toolCards.filter((c) => c.kind === "call");
-  if (calls.length === 0) {
-    const toolNames = [...new Set(toolCards.map((c) => c.name))];
-    return toolNames.length <= 3
+  const results = toolCards.filter((c) => c.kind === "result");
+  const totalTools = Math.max(calls.length, results.length) || toolCards.length;
+  const toolNames = [...new Set(toolCards.map((c) => c.name))];
+  const summaryLabel =
+    toolNames.length <= 3
       ? toolNames.join(", ")
       : `${toolNames.slice(0, 2).join(", ")} +${toolNames.length - 2} more`;
-  }
-  const summaries = calls.map((c) =>
-    formatToolSummary(resolveToolDisplay({ name: c.name, args: c.args })),
-  );
-  const unique = [...new Set(summaries)];
-  return unique.length <= 3
-    ? unique.join(", ")
-    : `${unique.slice(0, 2).join(", ")} +${unique.length - 2} more`;
+
+  return html`
+    <details class="chat-tools-collapse">
+      <summary class="chat-tools-summary">
+        <span class="chat-tools-summary__icon">${icons.zap}</span>
+        <span class="chat-tools-summary__count">${totalTools} tool${totalTools === 1 ? "" : "s"}</span>
+        <span class="chat-tools-summary__names">${summaryLabel}</span>
+      </summary>
+      <div class="chat-tools-collapse__body">
+        ${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}
+      </div>
+    </details>
+  `;
 }
 
 /**
@@ -942,7 +690,6 @@ function renderGroupedMessage(
 
   const toolCards = (opts.showToolCalls ?? true) ? extractToolCards(message) : [];
   const hasToolCards = toolCards.length > 0;
-  const reportStepThumbs = collectThumbnailUrlsForMessage(message);
   const images = extractImages(message);
   const hasImages = images.length > 0;
 
@@ -963,12 +710,7 @@ function renderGroupedMessage(
     .join(" ");
 
   if (!markdown && hasToolCards && isToolResult) {
-    return html`
-      <div class="chat-bubble chat-bubble--tools-only fade-in">
-        ${renderCompactToolRunCard(toolCards)}
-        ${renderRunningStepThumbnails(reportStepThumbs, { plain: true })}
-      </div>
-    `;
+    return renderCollapsedToolCards(toolCards, onOpenSidebar);
   }
 
   // Suppress empty bubbles when tool cards are the only content and toggle is off
@@ -978,7 +720,11 @@ function renderGroupedMessage(
   }
 
   const isToolMessage = normalizedRole === "tool" || isToolResult;
-  const toolSummaryLabel = buildCollapsedToolSummaryLabel(toolCards);
+  const toolNames = [...new Set(toolCards.map((c) => c.name))];
+  const toolSummaryLabel =
+    toolNames.length <= 3
+      ? toolNames.join(", ")
+      : `${toolNames.slice(0, 2).join(", ")} +${toolNames.length - 2} more`;
   const toolPreview =
     markdown && !toolSummaryLabel ? markdown.trim().replace(/\s+/g, " ").slice(0, 120) : "";
 
@@ -997,7 +743,7 @@ function renderGroupedMessage(
       ${
         isToolMessage
           ? html`
-            <details class="chat-tool-msg-collapse" open>
+            <details class="chat-tool-msg-collapse">
               <summary class="chat-tool-msg-summary">
                 <span class="chat-tool-msg-summary__icon">${icons.zap}</span>
                 <span class="chat-tool-msg-summary__label">Tool output</span>
@@ -1031,10 +777,9 @@ function renderGroupedMessage(
                       ? html`<div class="chat-text" dir="${detectTextDirection(markdown)}">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`
                       : nothing
                 }
-                ${hasToolCards ? renderCompactToolRunCard(toolCards) : nothing}
+                ${hasToolCards ? renderCollapsedToolCards(toolCards, onOpenSidebar) : nothing}
               </div>
             </details>
-            ${renderRunningStepThumbnails(reportStepThumbs, { plain: true })}
           `
           : html`
             ${renderMessageImages(images)}
@@ -1058,8 +803,7 @@ function renderGroupedMessage(
                   ? html`<div class="chat-text" dir="${detectTextDirection(markdown)}">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`
                   : nothing
             }
-            ${hasToolCards ? renderCompactToolRunCard(toolCards) : nothing}
-            ${renderRunningStepThumbnails(reportStepThumbs, { plain: true })}
+            ${hasToolCards ? renderCollapsedToolCards(toolCards, onOpenSidebar) : nothing}
           `
       }
     </div>

@@ -7,7 +7,7 @@
 #   DEPLOY_SSH_HOST        — default: 108.175.14.99
 #   DEPLOY_SSH_PORT        — default: 21005
 #   DEPLOY_SSH_USER        — default: root
-#   DEPLOY_REMOTE_DIR      — default: /opt/openclaw
+#   DEPLOY_REMOTE_DIR      — path on the server to the git clone (required if not /opt/openclaw)
 #   DEPLOY_GIT_BRANCH      — default: current local branch name
 #
 # You will be prompted for the SSH password unless you use an SSH key.
@@ -50,10 +50,22 @@ echo ">>> Remote: git pull, install, build, openclaw gateway restart"
 echo "    (enter SSH password when prompted)"
 echo ""
 
+QDIR=$(printf '%q' "$DEPLOY_REMOTE_DIR")
 # shellcheck disable=SC2029
 ssh -p "$DEPLOY_SSH_PORT" -o StrictHostKeyChecking=accept-new -t "$REMOTE" \
   "set -euo pipefail
-cd $(printf '%q' "$DEPLOY_REMOTE_DIR")
+if [ ! -d $QDIR ]; then
+  echo ''
+  echo \"ERROR: Remote directory does not exist: ${DEPLOY_REMOTE_DIR}\"
+  echo \"Set DEPLOY_REMOTE_DIR to your server clone path, then re-run, e.g.:\"
+  echo \"  DEPLOY_REMOTE_DIR=/root/EAD-EXP pnpm deploy:prod\"
+  echo ''
+  echo \"On the server, find the repo (then use that path):\"
+  echo \"  find /root /home /opt -maxdepth 5 -name package.json 2>/dev/null | head -20\"
+  echo ''
+  exit 1
+fi
+cd $QDIR
 git fetch origin
 git checkout $(printf '%q' "$BRANCH")
 git pull origin $(printf '%q' "$BRANCH")

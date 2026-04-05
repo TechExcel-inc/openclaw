@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ProjectExecute } from "../../../../src/projects/types.js";
 import { GatewayRequestError } from "../gateway.ts";
 import {
   abortChatRun,
@@ -9,6 +10,22 @@ import {
   type ChatState,
 } from "./chat.ts";
 import { setActiveExecution } from "./projects.ts";
+
+function minimalRunningExecution(id: string): ProjectExecute {
+  return {
+    id,
+    linkedTemplateId: "tmpl-1",
+    name: "Run",
+    description: "",
+    aiPrompt: "",
+    status: "running",
+    steps: [],
+    progressPercentage: 50,
+    startTime: Date.now(),
+    durationMs: null,
+    results: [],
+  };
+}
 
 function createState(overrides: Partial<ChatState> = {}): ChatState {
   return {
@@ -1408,6 +1425,44 @@ describe("loadChatHistory", () => {
     await loadChatHistory(state);
 
     expect(state.chatMessages).toEqual([...serverMsgs, followUpUser]);
+  });
+
+  it("preserves reading indicator and stream timing while an outbound chat run is in flight", async () => {
+    const request = vi.fn().mockResolvedValue({ messages: [] });
+    const startedAt = 1_700_000_000_000;
+    const state = createState({
+      connected: true,
+      client: { request } as unknown as ChatState["client"],
+      chatRunId: "user-follow-up-run",
+      chatStream: "",
+      chatStreamStartedAt: startedAt,
+    });
+
+    await loadChatHistory(state);
+
+    expect(state.chatStream).toBe("");
+    expect(state.chatStreamStartedAt).toBe(startedAt);
+  });
+
+  it("preserves inter-turn Project Run placeholder when execution is still active", async () => {
+    const request = vi.fn().mockResolvedValue({ messages: [] });
+    const execId = "exec-active";
+    const startedAt = 1_700_000_000_001;
+    const state = createState({
+      connected: true,
+      client: { request } as unknown as ChatState["client"],
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: execId,
+      globalExecutionsList: [minimalRunningExecution(execId)],
+      chatRunId: null,
+      chatStream: "",
+      chatStreamStartedAt: startedAt,
+    });
+
+    await loadChatHistory(state);
+
+    expect(state.chatStream).toBe("");
+    expect(state.chatStreamStartedAt).toBe(startedAt);
   });
 
   it("shows a targeted message when chat history is unauthorized", async () => {

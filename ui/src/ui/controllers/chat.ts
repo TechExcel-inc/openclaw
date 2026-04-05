@@ -89,6 +89,21 @@ function projectRunShouldShowInterTurnWorking(state: ChatState): boolean {
 }
 
 /**
+ * `loadChatHistory` must not wipe the reading indicator / in-flight stream. Background reloads
+ * (e.g. after another run's `final` or tool persistence) would otherwise clear `chatStream` while
+ * the operator is still waiting for a reply.
+ */
+function shouldPreserveStreamingDuringHistoryReload(state: ChatState): boolean {
+  if (state.chatRunId?.trim()) {
+    return true;
+  }
+  if (!projectRunShouldShowInterTurnWorking(state)) {
+    return false;
+  }
+  return state.chatStream !== null;
+}
+
+/**
  * Clear synthetic `chatStream === ""` inter-turn placeholder when the execution row becomes terminal.
  * Called after executions.get / list merges so the thread does not show “working” after the run ends.
  */
@@ -234,11 +249,19 @@ export async function loadChatHistory(state: ChatState) {
     const merged = mergeMissingUserMessagesFromHistory(messages, previousLocal);
     state.chatMessages = merged.filter((message) => !isAssistantSilentReply(message));
     state.chatThinkingLevel = res.thinkingLevel ?? null;
+    const preserveStream = shouldPreserveStreamingDuringHistoryReload(state);
+    const savedStream = state.chatStream;
+    const savedStartedAt = state.chatStreamStartedAt;
     // Clear all streaming state — history includes tool results and text
     // inline, so keeping streaming artifacts would cause duplicates.
     maybeResetToolStream(state);
-    state.chatStream = null;
-    state.chatStreamStartedAt = null;
+    if (preserveStream) {
+      state.chatStream = savedStream;
+      state.chatStreamStartedAt = savedStartedAt;
+    } else {
+      state.chatStream = null;
+      state.chatStreamStartedAt = null;
+    }
   } catch (err) {
     if (isMissingOperatorReadScopeError(err)) {
       state.chatMessages = [];
