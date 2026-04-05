@@ -334,12 +334,6 @@ describe("provider discovery contract", () => {
   });
 
   it("keeps Ollama empty autodiscovery disabled without keys or explicit config", async () => {
-    buildOllamaProviderMock.mockResolvedValueOnce({
-      baseUrl: "http://127.0.0.1:11434",
-      api: "ollama",
-      models: [],
-    });
-
     await expect(
       runProviderCatalog({
         provider: ollamaProvider,
@@ -354,7 +348,7 @@ describe("provider discovery contract", () => {
         }),
       }),
     ).resolves.toBeNull();
-    expect(buildOllamaProviderMock).toHaveBeenCalledWith(undefined, { quiet: true });
+    expect(buildOllamaProviderMock).not.toHaveBeenCalled();
   });
 
   it("keeps vLLM self-hosted discovery provider-owned", async () => {

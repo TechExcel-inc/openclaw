@@ -5,6 +5,7 @@ import type {
 } from "./client-actions-types.js";
 import { buildProfileQuery, withBaseUrl } from "./client-actions-url.js";
 import { fetchBrowserJson } from "./client-fetch.js";
+import { BROWSER_PAGE_LOAD_TIMEOUT_MS } from "./http-timeouts.js";
 
 export type BrowserFormField = {
   ref: string;
@@ -140,7 +141,7 @@ export async function browserNavigate(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url: opts.url, targetId: opts.targetId }),
-    timeoutMs: 20000,
+    timeoutMs: BROWSER_PAGE_LOAD_TIMEOUT_MS,
   });
 }
 
@@ -283,6 +284,6 @@ export async function browserScreenshotAction(
       element: opts.element,
       type: opts.type,
     }),
-    timeoutMs: 20000,
+    timeoutMs: BROWSER_PAGE_LOAD_TIMEOUT_MS,
   });
 }

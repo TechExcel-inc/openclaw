@@ -20,6 +20,7 @@ export const en: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    projectRun: "Project Run",
     control: "Control",
     agent: "Agent",
     settings: "Settings",
@@ -392,6 +393,7 @@ export const en: TranslationMap = {
     passwordPlaceholder: "optional",
   },
   chat: {
+    thumbnailBoxLabel: "Thumbnails",
     selectProjectContinue: "Select a project continue",
     projectGateTitle: "Select a project",
     projectGateBody:
@@ -399,7 +401,7 @@ export const en: TranslationMap = {
     projectGateButton: "Choose project",
     projectModalTitle: "Choose Test Plan for chat",
     projectModalSubtitle:
-      "Project Chat is for conversation only. Start new runs from Test Plan Project (Test Run → Test Run for Learning). Open a past run from Execution History, Project Run entries under Chat, or a bookmarked URL.",
+      "Project Chat is for conversation only. Start new runs from Test Plan Project (Test Run → Test Run for Learning). Open a past run from Execution History, the Project Run section in the sidebar, or a bookmarked URL.",
     projectRunGateTitle: "Project Run",
     projectRunGateBody:
       "No run is selected. Open Test Plan Project and pick a run from Execution History, or use a bookmarked Project Run URL.",
@@ -409,19 +411,37 @@ export const en: TranslationMap = {
       "Leave this run and remove it from the sidebar list (does not delete data on the server)",
     projectRunCancel: "Cancel run",
     projectRunStop: "Stop run",
+    projectRunFinish: "Finish run",
+    projectRunNavOrdinal: "Project {n}",
+    projectRunNavLine1: "Test Run {n} - {status}",
+    projectRunNavNoName: "Untitled",
+    projectRunNavUnknown: "Project",
+    projectRunCancelRunAction: "Cancel run",
     projectRunPause: "Pause run",
     projectRunResume: "Resume run",
     projectRunRemove: "Remove",
     projectRunStatusLoading: "Loading…",
     projectRunStatusPending: "Pending",
     projectRunStatusRunning: "Running",
+    projectRunStatusFinishing: "Finishing…",
     projectRunStatusPaused: "Paused",
     projectRunStatusFinished: "Finished",
-    projectRunStatusCancelled: "Cancelled",
+    projectRunStatusAiFinished: "AI Finished",
+    projectRunStatusStopFinish: "Stop — Finish",
+    projectRunStatusStopCancel: "Stop — Cancel",
+    projectRunStatusSuperseded: "Superseded",
+    projectRunStatusAiCanceled: "AI Canceled",
+    projectRunStatusCancelled: "Canceled",
     projectRunStatusError: "Error",
+    projectRunStatusAiFailed: "AI Failed",
+    projectRunStatusFailed: "Failed",
     projectRunConfirm: "Confirm",
-    projectRunConfirmStop:
-      "Stop this run? The executor will be cancelled. You can start a new run from Test Plan Project later.",
+    projectRunConfirmStopFinish:
+      "Finish this run as successful? Automation and pacing stop immediately. You can keep chatting here for follow-up.",
+    projectRunConfirmStopCancel:
+      "Cancel this run? The run is marked canceled, automation stops, and you can still chat in this thread.",
+    projectRunConfirmStopAnalyze:
+      "Send an analyze request and stop heavy automation? Add context below; the run is canceled like a normal stop.",
     projectRunConfirmRemove:
       "Are you sure you want to remove this Project Run from the side menu? This does not delete run data on the server.",
     projectRunStopReasonOptional: "Why stop? (optional, saved on the run)",

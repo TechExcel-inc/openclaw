@@ -398,6 +398,9 @@ export type AppViewState = {
     createFormAuthLoginUrl: string;
     createFormAuthSessionProfile: string;
     createFormAuthInstructions: string;
+    createFormTimeBudgetMinutes: number;
+    createFormCostBudgetDollars: number;
+    createFormShowLocalBrowser: boolean;
     projectAuthProfilesLoading: boolean;
     projectAuthProfilesError: string | null;
     projectAuthProfiles: ProfileStatus[];
@@ -441,6 +444,8 @@ export type AppViewState = {
         authLoginUrl?: string;
         authSessionProfile?: string;
         authInstructions?: string;
+        timeBudgetMinutes?: number;
+        costBudgetDollars?: number;
       },
     ) => Promise<void>;
     handleTemplateDelete: (id: string) => Promise<void>;
@@ -456,6 +461,8 @@ export type AppViewState = {
         authLoginUrl?: string;
         authSessionProfile?: string;
         authInstructions?: string;
+        timeBudgetMinutes?: number;
+        costBudgetDollars?: number;
       },
     ) => Promise<void>;
     handleExecutionSetActive: (id: string | null) => void;
@@ -468,15 +475,24 @@ export type AppViewState = {
         authLoginUrl?: string;
         authSessionProfile?: string;
         authInstructions?: string;
+        timeBudgetMinutes?: number;
+        costBudgetDollars?: number;
+        showLocalBrowser?: boolean;
       },
-    ) => Promise<ProjectExecute | undefined>;
+    ) => Promise<import("../../../src/projects/types.js").ProjectExecute | undefined>;
     handleProjectAuthProfilesLoad: (force?: boolean) => Promise<void>;
-    handleExecutionCancel: (executionId: string, reason?: string) => Promise<void>;
+    handleExecutionCancel: (
+      executionId: string,
+      reason?: string,
+      mode?: "finish" | "cancel",
+    ) => Promise<void>;
     /** Leave Project Run view and remove this run from the sidebar list (does not delete the run on the server). */
     exitProjectRunRemoveFromNav: () => void;
-    projectRunConfirmKind: "stop" | "remove" | null;
+    projectRunConfirmKind: "stop_finish" | "stop_cancel" | "stop_analyze" | "remove" | null;
     projectRunStopReasonDraft: string;
-    openProjectRunConfirm: (kind: "stop" | "remove") => void;
+    openProjectRunConfirm: (
+      kind: "stop_finish" | "stop_cancel" | "stop_analyze" | "remove",
+    ) => void;
     dismissProjectRunConfirm: () => void;
     confirmProjectRunConfirm: () => void;
     handleExecutionPause: (executionId: string) => Promise<void>;

@@ -11,6 +11,7 @@ import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { prepareProviderRuntimeAuth } from "../../plugins/provider-runtime.js";
 import type { PluginHookBeforeAgentStartResult } from "../../plugins/types.js";
 import { enqueueCommandInLane } from "../../process/command-queue.js";
+import { isProjectRunSessionKey } from "../../projects/project-run-session-guard.js";
 import { isMarkdownCapableMessageChannel } from "../../utils/message-channel.js";
 import { resolveOpenClawAgentDir } from "../agent-paths.js";
 import { hasConfiguredModelFallbacks } from "../agent-scope.js";
@@ -63,6 +64,7 @@ import {
   pickFallbackThinkingLevel,
   type FailoverReason,
 } from "../pi-embedded-helpers.js";
+import { PROJECT_RUN_MIN_LLM_INTERVAL_MS } from "../pi-extensions/project-run-pace.js";
 import { ensureRuntimePluginsLoaded } from "../runtime-plugins.js";
 import { derivePromptTokens, normalizeUsage, type UsageLike } from "../usage.js";
 import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace-run.js";
@@ -867,6 +869,9 @@ export async function runEmbeddedPiAgent(
           const prompt =
             provider === "anthropic" ? scrubAnthropicRefusalMagic(params.prompt) : params.prompt;
 
+          const projectRunPaceMs = isProjectRunSessionKey(params.sessionKey)
+            ? PROJECT_RUN_MIN_LLM_INTERVAL_MS
+            : undefined;
           const attempt = await runEmbeddedAttempt({
             sessionId: params.sessionId,
             sessionKey: params.sessionKey,
@@ -942,6 +947,7 @@ export async function runEmbeddedPiAgent(
             bootstrapPromptWarningSignaturesSeen,
             bootstrapPromptWarningSignature:
               bootstrapPromptWarningSignaturesSeen[bootstrapPromptWarningSignaturesSeen.length - 1],
+            projectRunMinLlmIntervalMs: projectRunPaceMs,
           });
 
           const {
@@ -1532,6 +1538,50 @@ export async function runEmbeddedPiAgent(
               });
             }
             logAssistantFailoverDecision("surface_error");
+            const surfaceErrorMessage =
+              (lastAssistant
+                ? formatAssistantErrorText(lastAssistant, {
+                    cfg: params.config,
+                    sessionKey: params.sessionKey ?? params.sessionId,
+                    provider: activeErrorContext.provider,
+                    model: activeErrorContext.model,
+                  })
+                : undefined) ||
+              lastAssistant?.errorMessage?.trim() ||
+              (timedOut
+                ? "LLM request timed out."
+                : rateLimitFailure
+                  ? "LLM request rate limited."
+                  : billingFailure
+                    ? formatBillingErrorMessage(
+                        activeErrorContext.provider,
+                        activeErrorContext.model,
+                      )
+                    : authFailure
+                      ? "LLM request unauthorized."
+                      : "LLM request failed.");
+            return {
+              payloads: [{ text: surfaceErrorMessage, isError: true }],
+              meta: {
+                durationMs: Date.now() - started,
+                agentMeta: buildErrorAgentMeta({
+                  sessionId: sessionIdUsed,
+                  provider,
+                  model: model.id,
+                  usageAccumulator,
+                  lastRunPromptUsage,
+                  lastAssistant,
+                  lastTurnTotal,
+                }),
+                systemPromptReport: attempt.systemPromptReport,
+              },
+              didSendViaMessagingTool: attempt.didSendViaMessagingTool,
+              didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
+              messagingToolSentTexts: attempt.messagingToolSentTexts,
+              messagingToolSentMediaUrls: attempt.messagingToolSentMediaUrls,
+              messagingToolSentTargets: attempt.messagingToolSentTargets,
+              successfulCronAdds: attempt.successfulCronAdds,
+            };
           }
 
           const usageMeta = buildUsageAgentMetaFields({

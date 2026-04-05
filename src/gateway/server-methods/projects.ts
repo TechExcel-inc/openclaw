@@ -6,6 +6,15 @@ import { prepareModelForSimpleCompletion } from "../../agents/simple-completion-
 import type { ProfileStatus } from "../../browser/client.js";
 import { loadConfig } from "../../config/config.js";
 import { resolveMainSessionKey } from "../../config/sessions.js";
+import { resolveSessionStoreKey } from "../../gateway/session-utils.js";
+import { SUPERSEDED_EXECUTION_REASON } from "../../projects/execution-constants.js";
+import {
+  buildProjectRunBootstrapMessage,
+  buildProjectRunContextMessage,
+  buildProjectRunPausedInjectMessage,
+  buildProjectRunResumedInjectMessage,
+  buildProjectRunTerminalStatusInjectMessage,
+} from "../../projects/project-run-messages.js";
 import {
   loadProjectsStore,
   resolveProjectsStorePath,
@@ -30,12 +39,11 @@ import {
   validateProjectsAutoFormatPromptParams,
 } from "../protocol/index.js";
 import { browserHandlers } from "./browser.js";
-import { chatHandlers } from "./chat.js";
+import { abortChatSessionRunsForOperatorStop, chatHandlers } from "./chat.js";
 import { sessionsHandlers } from "./sessions.js";
 import type { GatewayRequestHandlerOptions, GatewayRequestHandlers } from "./types.js";
 
 const storePath = resolveProjectsStorePath();
-const SUPERSEDED_EXECUTION_REASON = "Superseded by a newer Project Run.";
 const EAD_PROJECT_MARKER = ":eadproj:";
 const PROJECT_AUTH_MODES = new Set<ProjectAuthMode>(["none", "reuse-session", "manual-bootstrap"]);
 
@@ -123,79 +131,6 @@ function buildProjectRunSessionKey(baseSessionKey: string, executionId: string):
   return `${base}${EAD_PROJECT_MARKER}run:${safeProjectSessionSegment(executionId)}`;
 }
 
-function buildProjectRunContextMessage(executionId: string): string {
-  return [
-    "[System] Project Run context initialized.",
-    `Execution Run ID: ${executionId}.`,
-    "This is a Learning/Exploration Phase.",
-    "Use the `read_ead_execution` tool to inspect current run results before answering.",
-    "When the run is active, help the operator with login/setup questions and summarize discovered areas and gaps.",
-  ].join(" ");
-}
-
-function describeProjectRunAuth(execution: ProjectAuthFields): string[] {
-  const lines: string[] = [];
-  const authMode = execution.authMode ?? "none";
-  lines.push(`Authentication strategy: ${authMode}.`);
-  if (execution.authLoginUrl?.trim()) {
-    lines.push(`Authentication URL: ${execution.authLoginUrl.trim()}.`);
-  }
-  if (execution.authSessionProfile?.trim()) {
-    lines.push(`Session reuse hint: ${execution.authSessionProfile.trim()}.`);
-  }
-  if (execution.authInstructions?.trim()) {
-    lines.push(`Authentication notes: ${execution.authInstructions.trim()}.`);
-  }
-  if (authMode === "reuse-session") {
-    lines.push(
-      "Prefer reusing existing authenticated browser/session state before asking for manual login.",
-    );
-  } else if (authMode === "manual-bootstrap") {
-    lines.push(
-      "Ask the operator to complete login/bootstrap steps first, then continue the run after confirmation.",
-    );
-  }
-  return lines;
-}
-
-function buildProjectRunBootstrapMessage(
-  execution: Pick<
-    ProjectExecute,
-    | "id"
-    | "name"
-    | "description"
-    | "targetUrl"
-    | "aiPrompt"
-    | "authMode"
-    | "authLoginUrl"
-    | "authSessionProfile"
-    | "authInstructions"
-  >,
-  options?: { operatorConfirmed?: boolean },
-): string {
-  const operatorConfirmed = Boolean(options?.operatorConfirmed);
-  return [
-    "You are OpenClaw helping with a Project Run.",
-    `Execution run ID: ${execution.id}.`,
-    execution.name?.trim() ? `Run name: ${execution.name.trim()}.` : "",
-    execution.description?.trim() ? `Run description: ${execution.description.trim()}.` : "",
-    execution.targetUrl?.trim() ? `Target URL: ${execution.targetUrl.trim()}.` : "",
-    execution.aiPrompt?.trim() ? `Project instructions: ${execution.aiPrompt.trim()}.` : "",
-    ...describeProjectRunAuth(execution),
-    "Primary goal: use OpenClaw's existing capabilities to explore the target app rather than inventing a separate mini-runner.",
-    "Prefer a headless-friendly approach first. If authentication is required and no reusable authenticated state is available, explain what is needed instead of pretending the run succeeded.",
-    execution.authMode === "manual-bootstrap" && !operatorConfirmed
-      ? "For manual-bootstrap runs, ask the operator to complete login/setup first and then wait for explicit confirmation before continuing any deeper exploration."
-      : "",
-    execution.authMode === "manual-bootstrap" && operatorConfirmed
-      ? "The operator already confirmed that login/bootstrap is complete. Continue immediately from the authenticated state instead of asking to wait again."
-      : "",
-    "Use the browser tool when appropriate, inspect current run data with read_ead_execution when helpful, and summarize discoveries, gaps, and blockers clearly.",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
 function resolveProjectRunWaitingHint(
   execution: Pick<ProjectExecute, "authMode" | "targetUrl">,
 ): string {
@@ -250,7 +185,7 @@ async function sendProjectRunChatMessage(
     req: options.req,
     params: {
       sessionKey: options.sessionKey,
-      deliver: false,
+      deliver: true,
       ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
       message: options.message,
     },
@@ -276,8 +211,14 @@ async function kickoffProjectRunSession(
     execution: ProjectExecute;
   },
 ): Promise<{ runSessionKey: string; agentRunId?: string; error?: string }> {
-  const mainSessionKey = resolveMainSessionKey(loadConfig());
-  const runSessionKey = buildProjectRunSessionKey(mainSessionKey, options.execution.id);
+  const cfg = loadConfig();
+  const mainSessionKey = resolveMainSessionKey(cfg);
+  // Match sessions.create / chat routing: store the canonical session key so clients (browser
+  // tool) that see resolveSessionStoreKey(sessionKey) still join execution.runSessionKey in projects.json.
+  const runSessionKey = resolveSessionStoreKey({
+    cfg,
+    sessionKey: buildProjectRunSessionKey(mainSessionKey, options.execution.id),
+  });
 
   let createError: unknown;
   await sessionsHandlers["sessions.create"]({
@@ -311,7 +252,7 @@ async function kickoffProjectRunSession(
     params: {
       sessionKey: runSessionKey,
       label: "Project Run Context",
-      message: buildProjectRunContextMessage(options.execution.id),
+      message: buildProjectRunContextMessage(options.execution),
     },
     respond: () => {},
     context: options.context,
@@ -371,28 +312,49 @@ async function loadAvailableBrowserProfiles(
   };
 }
 
-async function abortProjectRunChat(
+async function injectProjectRunChatLine(
   options: Pick<GatewayRequestHandlerOptions, "req" | "context" | "client" | "isWebchatConnect"> & {
-    execution: Pick<ProjectExecute, "runSessionKey" | "agentRunId">;
+    sessionKey: string;
+    message: string;
+    label: string;
   },
 ): Promise<void> {
-  const sessionKey = options.execution.runSessionKey?.trim();
+  const sessionKey = options.sessionKey.trim();
   if (!sessionKey) {
     return;
   }
-  await chatHandlers["chat.abort"]({
+  await chatHandlers["chat.inject"]({
     req: options.req,
     params: {
       sessionKey,
-      ...(options.execution.agentRunId?.trim()
-        ? { runId: options.execution.agentRunId.trim() }
-        : {}),
+      message: options.message,
+      label: options.label,
     },
     respond: () => {},
     context: options.context,
     client: options.client,
     isWebchatConnect: options.isWebchatConnect,
   });
+}
+
+async function abortProjectRunChat(
+  options: Pick<GatewayRequestHandlerOptions, "req" | "context" | "client" | "isWebchatConnect"> & {
+    execution: Pick<ProjectExecute, "runSessionKey">;
+  },
+): Promise<void> {
+  const sessionKey = options.execution.runSessionKey?.trim();
+  if (!sessionKey) {
+    return;
+  }
+  // Trusted abort: `chat.abort` from the RPC client can no-op when the caller device/conn does not
+  // match the chat run owner, which left agents running after operator stop. executions.* is
+  // already authorized at the gateway; abort in-flight runs unconditionally for this session.
+  const res = abortChatSessionRunsForOperatorStop(options.context, sessionKey);
+  if (!res.aborted && res.unauthorized) {
+    options.context.logGateway.warn(
+      `project run chat abort unexpectedly unauthorized sessionKey=${sessionKey}`,
+    );
+  }
 }
 
 function cancelActiveExecutions(
@@ -408,6 +370,7 @@ function cancelActiveExecutions(
     execution.paused = false;
     execution.durationMs = execution.startTime ? Math.max(0, now - execution.startTime) : null;
     execution.cancelReason = SUPERSEDED_EXECUTION_REASON;
+    execution.operatorStopKind = undefined;
     cancelledExecutions.push(execution);
   }
   return cancelledExecutions;
@@ -471,12 +434,15 @@ export const projectsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { name, description, targetUrl, aiPrompt } = params as {
-      name: string;
-      description?: string;
-      targetUrl?: string;
-      aiPrompt?: string;
-    };
+    const { name, description, targetUrl, aiPrompt, timeBudgetMinutes, costBudgetDollars } =
+      params as {
+        name: string;
+        description?: string;
+        targetUrl?: string;
+        aiPrompt?: string;
+        timeBudgetMinutes?: number;
+        costBudgetDollars?: number;
+      };
     const auth = resolveProjectAuthFields(params as Record<string, unknown>);
     try {
       const store = await loadProjectsStore(storePath);
@@ -487,6 +453,8 @@ export const projectsHandlers: GatewayRequestHandlers = {
         description: description ?? "",
         targetUrl: targetUrl ?? "",
         aiPrompt: aiPrompt ?? "",
+        timeBudgetMinutes,
+        costBudgetDollars,
         ...auth,
         totalTestSteps: 0,
         failedTestSteps: 0,
@@ -519,13 +487,16 @@ export const projectsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { id, name, description, targetUrl, aiPrompt } = params as {
-      id: string;
-      name?: string;
-      description?: string;
-      targetUrl?: string;
-      aiPrompt?: string;
-    };
+    const { id, name, description, targetUrl, aiPrompt, timeBudgetMinutes, costBudgetDollars } =
+      params as {
+        id: string;
+        name?: string;
+        description?: string;
+        targetUrl?: string;
+        aiPrompt?: string;
+        timeBudgetMinutes?: number;
+        costBudgetDollars?: number;
+      };
     try {
       const store = await loadProjectsStore(storePath);
       const template = store.templates.find((p) => p.id === id);
@@ -548,6 +519,12 @@ export const projectsHandlers: GatewayRequestHandlers = {
       }
       if (aiPrompt !== undefined) {
         template.aiPrompt = aiPrompt;
+      }
+      if (timeBudgetMinutes !== undefined) {
+        template.timeBudgetMinutes = timeBudgetMinutes;
+      }
+      if (costBudgetDollars !== undefined) {
+        template.costBudgetDollars = costBudgetDollars;
       }
       const nextAuth = resolveProjectAuthFields({
         authMode: hasOwnProjectParam(params, "authMode")
@@ -715,11 +692,18 @@ export const projectsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { templateId } = params as {
+    const { templateId, timeBudgetMinutes, costBudgetDollars } = params as {
       templateId: string;
       targetUrl?: string;
       aiPrompt?: string;
+      timeBudgetMinutes?: number;
+      costBudgetDollars?: number;
+      showLocalBrowser?: boolean;
     };
+    const showLocalBrowser =
+      typeof (params as { showLocalBrowser?: unknown }).showLocalBrowser === "boolean"
+        ? (params as { showLocalBrowser: boolean }).showLocalBrowser
+        : false;
     try {
       const store = await loadProjectsStore(storePath);
       const template = store.templates.find((t) => t.id === templateId);
@@ -803,6 +787,8 @@ export const projectsHandlers: GatewayRequestHandlers = {
         description: template.description,
         targetUrl,
         aiPrompt,
+        timeBudgetMinutes: timeBudgetMinutes ?? template.timeBudgetMinutes,
+        costBudgetDollars: costBudgetDollars ?? template.costBudgetDollars,
         ...runAuth,
         status: "pending",
         steps: [],
@@ -811,6 +797,7 @@ export const projectsHandlers: GatewayRequestHandlers = {
         startTime: now,
         durationMs: null,
         results: [],
+        ...(showLocalBrowser ? { showLocalBrowser: true } : {}),
       };
 
       store.executions.push(execution);
@@ -878,7 +865,11 @@ export const projectsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { id, reason } = params as { id: string; reason?: string };
+    const { id, reason, mode } = params as {
+      id: string;
+      reason?: string;
+      mode?: "finish" | "cancel";
+    };
     try {
       const store = await loadProjectsStore(storePath);
       const execution = store.executions.find((e) => e.id === id);
@@ -891,9 +882,11 @@ export const projectsHandlers: GatewayRequestHandlers = {
         return;
       }
       if (execution.status === "pending" || execution.status === "running") {
-        execution.status = "cancelled";
+        const finish = mode === "finish";
+        execution.status = finish ? "completed" : "cancelled";
         execution.paused = false;
         execution.durationMs = execution.startTime ? Date.now() - execution.startTime : null;
+        execution.operatorStopKind = finish ? "finish" : "cancel";
         const trimmed = typeof reason === "string" ? reason.trim().slice(0, 2000) : "";
         if (trimmed) {
           execution.cancelReason = trimmed;
@@ -907,6 +900,19 @@ export const projectsHandlers: GatewayRequestHandlers = {
           isWebchatConnect,
           execution,
         });
+
+        const sk = execution.runSessionKey?.trim();
+        if (sk) {
+          await injectProjectRunChatLine({
+            req,
+            context,
+            client,
+            isWebchatConnect,
+            sessionKey: sk,
+            label: "Project Run status",
+            message: buildProjectRunTerminalStatusInjectMessage(execution),
+          });
+        }
 
         // Signal cancellation to executor engine
         const { cancelProjectExecution } = await import("../../projects/executor.js");
@@ -960,6 +966,18 @@ export const projectsHandlers: GatewayRequestHandlers = {
       execution.paused = true;
       execution.executorHint = resolveProjectRunWaitingHint(execution);
       await saveProjectsStore(storePath, store);
+      const pauseKey = execution.runSessionKey?.trim();
+      if (pauseKey) {
+        await injectProjectRunChatLine({
+          req,
+          context,
+          client,
+          isWebchatConnect,
+          sessionKey: pauseKey,
+          label: "Project Run status",
+          message: buildProjectRunPausedInjectMessage(execution),
+        });
+      }
       respond(true, execution);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
@@ -1062,6 +1080,18 @@ export const projectsHandlers: GatewayRequestHandlers = {
       }
       execution.agentRunId = resumeRunId;
       await saveProjectsStore(storePath, store);
+      const resumeKey = execution.runSessionKey?.trim();
+      if (resumeKey) {
+        await injectProjectRunChatLine({
+          req,
+          context,
+          client,
+          isWebchatConnect,
+          sessionKey: resumeKey,
+          label: "Project Run status",
+          message: buildProjectRunResumedInjectMessage(execution),
+        });
+      }
       respond(true, execution);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));

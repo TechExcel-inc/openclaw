@@ -1,6 +1,20 @@
 import type { ProfileStatus } from "../../../../src/browser/client.js";
+import {
+  buildProjectRunBootstrapMessage,
+  buildProjectRunContextMessage,
+} from "../../../../src/projects/project-run-messages.js";
 import type { ProjectTemplate, ProjectExecute } from "../../../../src/projects/types.js";
-import { stripEadProjectSuffix } from "../chat/ead-project-session-key.ts";
+import { flushChatQueue, type ChatHost } from "../app-chat.ts";
+import { resetToolStream } from "../app-tool-stream.ts";
+import {
+  buildEadProjectChatSessionKey,
+  stripEadProjectSuffix,
+} from "../chat/ead-project-session-key.ts";
+import {
+  abortChatRun,
+  clearProjectRunInterTurnPlaceholderIfTerminal,
+  type ChatState,
+} from "./chat.ts";
 
 export type TemplatesListResult = {
   templates: ProjectTemplate[];
@@ -22,53 +36,13 @@ type ChatHistoryResult = {
 type ProjectAuthMode = NonNullable<ProjectTemplate["authMode"]>;
 type ProjectAuthDraft = Pick<
   ProjectTemplate,
-  "authMode" | "authLoginUrl" | "authSessionProfile" | "authInstructions"
+  | "authMode"
+  | "authLoginUrl"
+  | "authSessionProfile"
+  | "authInstructions"
+  | "timeBudgetMinutes"
+  | "costBudgetDollars"
 >;
-
-function buildProjectRunAuthMessage(execution: ProjectAuthDraft): string[] {
-  const lines: string[] = [];
-  const authMode = execution.authMode ?? "none";
-  lines.push(`Authentication strategy: ${authMode}.`);
-  if (execution.authLoginUrl?.trim()) {
-    lines.push(`Authentication URL: ${execution.authLoginUrl.trim()}.`);
-  }
-  if (execution.authSessionProfile?.trim()) {
-    lines.push(`Session reuse hint: ${execution.authSessionProfile.trim()}.`);
-  }
-  if (execution.authInstructions?.trim()) {
-    lines.push(`Authentication notes: ${execution.authInstructions.trim()}.`);
-  }
-  return lines;
-}
-
-function buildProjectRunBootstrapMessage(
-  execution: Pick<
-    ProjectExecute,
-    | "id"
-    | "name"
-    | "description"
-    | "targetUrl"
-    | "aiPrompt"
-    | "authMode"
-    | "authLoginUrl"
-    | "authSessionProfile"
-    | "authInstructions"
-  >,
-): string {
-  const parts = [
-    "You are OpenClaw helping with a Project Run.",
-    `Execution run ID: ${execution.id}.`,
-    execution.name?.trim() ? `Run name: ${execution.name.trim()}.` : "",
-    execution.description?.trim() ? `Run description: ${execution.description.trim()}.` : "",
-    execution.targetUrl?.trim() ? `Target URL: ${execution.targetUrl.trim()}.` : "",
-    execution.aiPrompt?.trim() ? `Project instructions: ${execution.aiPrompt.trim()}.` : "",
-    ...buildProjectRunAuthMessage(execution),
-    "Primary goal: use OpenClaw's existing capabilities to explore the target app rather than inventing a separate mini-runner.",
-    "Prefer a headless-friendly approach first. If authentication is required and no reusable authenticated state is available, explain what is needed instead of pretending the run succeeded.",
-    "Use the browser tool when appropriate, inspect current run data with read_ead_execution when helpful, and summarize discoveries, gaps, and blockers clearly.",
-  ].filter(Boolean);
-  return parts.join(" ");
-}
 
 export type ProjectsState = {
   client: {
@@ -96,6 +70,7 @@ export type ProjectsState = {
   createFormAuthLoginUrl: string;
   createFormAuthSessionProfile: string;
   createFormAuthInstructions: string;
+  createFormShowLocalBrowser: boolean;
   projectAuthProfilesLoading: boolean;
   projectAuthProfilesError: string | null;
   projectAuthProfiles: ProfileStatus[];
@@ -115,6 +90,101 @@ export type ProjectsState = {
 
   sessionKey?: string;
 };
+
+/** Host fields optional: only the control UI app provides them for Project Run chat sync. */
+export type ProjectRunChatSyncHost = ProjectsState & {
+  tab?: string;
+  chatProjectRunExecutionId?: string | null;
+  sessionKey?: string;
+  chatRunId?: string | null;
+  chatStream?: string | null;
+  chatStreamStartedAt?: number | null;
+  chatSending?: boolean;
+  chatQueue?: unknown[];
+  resetToolStream?: () => void;
+  requestUpdate?: () => void;
+};
+
+export function isTerminalExecutionStatus(status: ProjectExecute["status"] | undefined): boolean {
+  if (!status) {
+    return false;
+  }
+  return (
+    status === "completed" || status === "failed" || status === "cancelled" || status === "error"
+  );
+}
+
+/**
+ * Client-side dedupe for Project Run bootstrap `chat.send` (same execution, overlapping
+ * setActiveExecution / sessions.create chains). The gateway also dedupes; this avoids races
+ * where two calls both see an empty transcript before the first write lands.
+ */
+const projectRunBootstrapSent = new Set<string>();
+
+/**
+ * Append-only context inject: only when the transcript is empty and the run is active on the server.
+ * When `runSessionKey` is set, gateway kickoff already ran chat.inject + bootstrap for this run.
+ */
+export function shouldInjectProjectRunContextMessage(
+  hasMessages: boolean,
+  execution: ProjectExecute | undefined,
+): boolean {
+  if (hasMessages) {
+    return false;
+  }
+  if (!execution) {
+    return false;
+  }
+  if (execution.paused) {
+    return false;
+  }
+  if (execution.runSessionKey?.trim()) {
+    return false;
+  }
+  return execution.status === "running" || execution.status === "pending";
+}
+
+/**
+ * When a test/project run is no longer active, clear client-side streaming state and abort any
+ * in-flight chat run so the UI does not keep "running" after the execution row is terminal.
+ * Also clears busy flags and drains the outbound chat queue so follow-up messages are not stuck
+ * behind a stale "running" state.
+ */
+export async function syncProjectRunChatIfTerminal(host: ProjectRunChatSyncHost): Promise<void> {
+  if (host.tab !== "chatProjectRun") {
+    return;
+  }
+  const id = host.chatProjectRunExecutionId?.trim();
+  if (!id) {
+    return;
+  }
+  const ex =
+    host.executionDetail?.id === id
+      ? host.executionDetail
+      : host.globalExecutionsList?.find((e) => e.id === id);
+  if (!ex || !isTerminalExecutionStatus(ex.status)) {
+    return;
+  }
+  const busy =
+    Boolean(host.chatRunId?.trim()) ||
+    Boolean(host.chatStream?.trim()) ||
+    Boolean(host.chatSending);
+
+  if (typeof host.resetToolStream === "function") {
+    host.resetToolStream();
+  } else if ((host as { toolStreamById?: unknown }).toolStreamById instanceof Map) {
+    resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+  }
+  if (busy) {
+    await abortChatRun(host as unknown as ChatState);
+  }
+  host.chatRunId = null;
+  host.chatStream = null;
+  host.chatStreamStartedAt = null;
+  host.chatSending = false;
+  void flushChatQueue(host as unknown as ChatHost);
+  host.requestUpdate?.();
+}
 
 // ============================================================================
 // TEMPLATES
@@ -187,6 +257,8 @@ export async function createTemplate(
       authLoginUrl: auth?.authLoginUrl ?? "",
       authSessionProfile: auth?.authSessionProfile ?? "",
       authInstructions: auth?.authInstructions ?? "",
+      timeBudgetMinutes: auth?.timeBudgetMinutes,
+      costBudgetDollars: auth?.costBudgetDollars,
     });
     if (res) {
       state.templatesList.push(res);
@@ -224,6 +296,8 @@ export async function updateTemplate(
     authLoginUrl?: string;
     authSessionProfile?: string;
     authInstructions?: string;
+    timeBudgetMinutes?: number;
+    costBudgetDollars?: number;
   },
 ) {
   if (!state.client || !state.connected) {
@@ -377,21 +451,32 @@ export async function loadGlobalExecutions(state: ProjectsState) {
     state.executionsError = String(err);
   } finally {
     state.globalExecutionsLoading = false;
+    clearProjectRunInterTurnPlaceholderIfTerminal(state as ProjectRunChatSyncHost);
   }
 }
 
-export async function loadExecutionDetail(state: ProjectsState, id: string) {
+export async function loadExecutionDetail(
+  state: ProjectsState,
+  id: string,
+): Promise<ProjectExecute | undefined> {
   if (!state.client || !state.connected) {
-    return;
+    return undefined;
+  }
+  if (state.executionDetail?.id !== id) {
+    state.executionDetail = null;
   }
   state.executionDetailLoading = true;
   try {
     const res = await state.client.request<ProjectExecute>("executions.get", { id });
     if (res) {
       state.executionDetail = res;
+      void syncProjectRunChatIfTerminal(state as ProjectRunChatSyncHost);
+      clearProjectRunInterTurnPlaceholderIfTerminal(state as ProjectRunChatSyncHost);
     }
+    return res;
   } catch (err) {
     state.executionsError = String(err);
+    return undefined;
   } finally {
     state.executionDetailLoading = false;
   }
@@ -409,6 +494,9 @@ export async function runExecution(
     authLoginUrl?: string;
     authSessionProfile?: string;
     authInstructions?: string;
+    timeBudgetMinutes?: number;
+    costBudgetDollars?: number;
+    showLocalBrowser?: boolean;
   },
 ) {
   if (!state.client || !state.connected) {
@@ -438,14 +526,21 @@ export function attachExecutionWatch(state: ProjectsState, executionId: string) 
   void runExecutionPoller(state, executionId);
 }
 
-export async function cancelExecution(state: ProjectsState, id: string, reason?: string) {
+export async function cancelExecution(
+  state: ProjectsState,
+  id: string,
+  reason?: string,
+  mode?: "finish" | "cancel",
+) {
   if (!state.client || !state.connected) {
     return;
   }
+
   try {
     const res = await state.client.request<ProjectExecute>("executions.cancel", {
       id,
       ...(reason?.trim() ? { reason: reason.trim().slice(0, 2000) } : {}),
+      ...(mode ? { mode } : {}),
     });
     if (res) {
       mergeExecutionIntoState(state, res);
@@ -468,6 +563,9 @@ function mergeExecutionIntoState(state: ProjectsState, res: ProjectExecute) {
     const next = [...(state.globalExecutionsList ?? [])];
     next[gIdx] = res;
     state.globalExecutionsList = next;
+  }
+  if (isTerminalExecutionStatus(res.status)) {
+    void syncProjectRunChatIfTerminal(state as ProjectRunChatSyncHost);
   }
 }
 
@@ -509,6 +607,7 @@ function mergeGlobalExecution(state: ProjectsState, res: ProjectExecute) {
   } else {
     state.globalExecutionsList = [...list, res];
   }
+  clearProjectRunInterTurnPlaceholderIfTerminal(state as ProjectRunChatSyncHost);
 }
 
 async function runExecutionPoller(state: ProjectsState, executionId: string) {
@@ -517,7 +616,9 @@ async function runExecutionPoller(state: ProjectsState, executionId: string) {
   }
   activeExecutionPollers.add(executionId);
   try {
-    for (let i = 0; i < 60; i++) {
+    // Poll until the execution is terminal. A fixed cap (previously 60×2s) stopped updates
+    // after ~2 minutes while long Project Runs kept running, so the Running Step Log never refreshed.
+    for (;;) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
       if (!state.client) {
         break;
@@ -535,7 +636,8 @@ async function runExecutionPoller(state: ProjectsState, executionId: string) {
             state.executionDetail = res;
           }
           mergeGlobalExecution(state, res);
-          if (res.status === "completed" || res.status === "error" || res.status === "cancelled") {
+          if (isTerminalExecutionStatus(res.status)) {
+            void syncProjectRunChatIfTerminal(state as ProjectRunChatSyncHost);
             return;
           }
         }
@@ -549,15 +651,24 @@ async function runExecutionPoller(state: ProjectsState, executionId: string) {
 }
 
 export async function setActiveExecution(
-  state: ProjectsState & { sessionKey?: string },
+  state: ProjectsState & {
+    sessionKey?: string;
+    /** When set, must match `id` for chat.inject / bootstrap — avoids wrong-template prompts when the Projects dashboard selects another run while Project Run chat is open. */
+    tab?: string;
+    chatProjectRunExecutionId?: string | null;
+  },
   id: string | null,
 ) {
   state.activeExecutionId = id;
   if (id) {
     void loadProjectBrowserProfiles(state);
     if (state.client && state.sessionKey) {
-      const runSessionKey = state.sessionKey.trim();
-      const parentSessionKey = stripEadProjectSuffix(runSessionKey);
+      const base = stripEadProjectSuffix(state.sessionKey.trim());
+      const runSessionKey = buildEadProjectChatSessionKey(base, { mode: "run", id });
+      const parentSessionKey = base;
+      /** Only mutate the run transcript when this execution is the one shown in Project Run chat (not a background dashboard selection). */
+      const isProjectRunChatForThisExecution =
+        state.tab === "chatProjectRun" && state.chatProjectRunExecutionId?.trim() === id;
       void state.client
         .request<SessionCreateResult>("sessions.create", {
           key: runSessionKey,
@@ -565,33 +676,63 @@ export async function setActiveExecution(
           ...(parentSessionKey && parentSessionKey !== runSessionKey ? { parentSessionKey } : {}),
         })
         .then(async () => {
-          const [history, execution] = await Promise.all([
+          const [history, executionFirst] = await Promise.all([
             state.client?.request<ChatHistoryResult>("chat.history", {
               sessionKey: runSessionKey,
-              limit: 20,
+              // Match loadChatHistory so we do not think the transcript is empty when only the tail is loaded.
+              limit: 200,
             }),
             state.client?.request<ProjectExecute>("executions.get", { id }),
           ]);
+          // Authoritative snapshot: operator may have just clicked Finish — the parallel batch can
+          // still see status "running" while executions.cancel has already persisted "completed".
+          const execution =
+            (await state.client?.request<ProjectExecute>("executions.get", { id })) ??
+            executionFirst;
           const hasMessages = Array.isArray(history?.messages) && history.messages.length > 0;
-          const bootstrapStarted =
-            Boolean(execution?.agentRunId?.trim()) || execution?.authMode === "manual-bootstrap";
-          await state.client?.request("chat.inject", {
-            sessionKey: runSessionKey,
-            label: "Project Run Context",
-            message: [
-              "[System] Project Run context initialized.",
-              `Execution Run ID: ${id}.`,
-              "This is a Learning/Exploration Phase.",
-              "Use the `read_ead_execution` tool to inspect current run results before answering.",
-              "When the run is active, help the operator with login/setup questions and summarize discovered areas and gaps.",
-            ].join(" "),
-          });
-          if (!hasMessages && execution && !bootstrapStarted) {
-            await state.client?.request("chat.send", {
+          // Avoid duplicate OpenClaw bootstrap: server kickoff sets runSessionKey and usually agentRunId.
+          const bootstrapAlreadyHandled =
+            Boolean(execution?.agentRunId?.trim()) ||
+            execution?.authMode === "manual-bootstrap" ||
+            Boolean(execution?.runSessionKey?.trim());
+          const executionStillActive = execution && !isTerminalExecutionStatus(execution.status);
+          // chat.inject appends to the transcript — only for an empty transcript while the run is
+          // running or pending on the server (not completed/failed; not when executions.get is missing).
+          // Never inject from a dashboard-only selection for a different visible Project Run chat.
+          if (
+            isProjectRunChatForThisExecution &&
+            execution &&
+            shouldInjectProjectRunContextMessage(hasMessages, execution)
+          ) {
+            await state.client?.request("chat.inject", {
               sessionKey: runSessionKey,
-              deliver: false,
-              idempotencyKey: `project-run-bootstrap:${id}`,
-              message: buildProjectRunBootstrapMessage(execution),
+              label: "Project Run Context",
+              message: buildProjectRunContextMessage(execution),
+            });
+          }
+          if (
+            isProjectRunChatForThisExecution &&
+            execution &&
+            !hasMessages &&
+            executionStillActive &&
+            !bootstrapAlreadyHandled &&
+            !projectRunBootstrapSent.has(id)
+          ) {
+            projectRunBootstrapSent.add(id);
+            try {
+              await state.client?.request("chat.send", {
+                sessionKey: runSessionKey,
+                deliver: false,
+                idempotencyKey: `project-run-bootstrap:${id}`,
+                message: buildProjectRunBootstrapMessage(execution),
+              });
+            } catch {
+              projectRunBootstrapSent.delete(id);
+            }
+          }
+          if (execution?.paused && isProjectRunChatForThisExecution) {
+            await state.client?.request("executions.resume", { id }).catch((err) => {
+              console.warn("Failed to auto-resume execution:", err);
             });
           }
         })

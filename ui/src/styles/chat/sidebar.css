@@ -348,6 +348,63 @@
   padding: 0 12px 10px;
 }
 
+/* Project Run left panel: summary hierarchy (metadata + findings) */
+.chat-sidebar--left .sidebar-markdown :where(h2) {
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  color: var(--text-strong, #f4f4f5);
+  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  padding-bottom: 0.35rem;
+  margin-top: 0;
+}
+.chat-sidebar--left .sidebar-markdown :where(h3) {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted-strong, #a1a1aa);
+  margin-top: 1rem;
+  margin-bottom: 0.35rem;
+}
+.chat-sidebar--left .sidebar-markdown :where(h3:first-of-type) {
+  margin-top: 0.5rem;
+}
+.chat-sidebar--left .sidebar-markdown :where(table) {
+  font-size: 12px;
+}
+.chat-sidebar--left .sidebar-markdown :where(hr) {
+  margin: 0.75rem 0;
+  opacity: 0.65;
+}
+
+/* Narrow split: long URLs, UUIDs, and log lines wrap instead of forcing horizontal scroll */
+.chat-sidebar--left .sidebar-markdown :where(a) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-sidebar--left .sidebar-markdown :where(pre) {
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  margin-top: 0.35em;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.chat-sidebar--left .sidebar-markdown :where(pre code) {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.chat-sidebar--left .sidebar-markdown :where(ul) {
+  padding-left: 1.15em;
+}
+
+.chat-sidebar--left .sidebar-markdown :where(li) {
+  line-height: 1.45;
+}
+
 /* Mobile: Full-screen modal */
 @media (max-width: 768px) {
   .chat-split-container--open {

@@ -14,8 +14,9 @@ import {
   renderChatProjectModal,
   renderChatSessionSelect,
   formatProjectRunSimpleMarkdown,
-  hasProjectRunCaptures,
-  renderProjectRunCaptureGallery,
+  formatProjectRunLeftPanelMarkdown,
+  buildProjectRunStatusBanner,
+  resolveExecutionForProjectRun,
   renderProjectChatGate,
   renderProjectRunGate,
   renderProjectRunNavItems,
@@ -303,7 +304,17 @@ type AiAgentsSectionKey = (typeof AI_AGENTS_SECTION_KEYS)[number];
 
 function resolveChatProjectLeftMarkdown(state: AppViewState): string | null {
   if (state.tab === "chatProjectRun") {
-    return formatProjectRunSimpleMarkdown(state);
+    const id = state.chatProjectRunExecutionId?.trim();
+    if (!id) {
+      return formatProjectRunSimpleMarkdown(state);
+    }
+    const ex = resolveExecutionForProjectRun(state, id);
+    if (!ex) {
+      return ["## Project Run", "", "_Loading run details…_", "", `\`id\`: \`${id}\``].join("\n");
+    }
+    return formatProjectRunLeftPanelMarkdown(ex, {
+      ordinalTitle: projectRunOrdinalLabel(state, id),
+    });
   }
   if (state.tab !== "chatProject") {
     return null;
@@ -375,17 +386,22 @@ export function renderApp(state: AppViewState) {
   const isChat = isChatTab(state.tab);
   const chatProjectLeftMarkdown = resolveChatProjectLeftMarkdown(state);
   const isProjectRunChat = state.tab === "chatProjectRun";
-  const projectRunLeftExtra =
-    isProjectRunChat && state.chatProjectRunExecutionId && hasProjectRunCaptures(state)
-      ? renderProjectRunCaptureGallery(state)
-      : undefined;
+  const projectRunThreadHeaderMarkdown =
+    state.tab === "chatProjectRun" ? formatProjectRunSimpleMarkdown(state) : null;
+  const projectRunStatusBanner = buildProjectRunStatusBanner(state);
+  const projectRunLeftExtra = undefined;
   const chatLeftPanelOpen = isProjectRunChat
-    ? Boolean(chatProjectLeftMarkdown?.trim() || hasProjectRunCaptures(state))
+    ? Boolean(chatProjectLeftMarkdown?.trim())
     : Boolean(chatProjectLeftMarkdown) && !state.projectLeftPanelDismissed;
   const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
   const navDrawerOpen = Boolean(state.navDrawerOpen && !chatFocus && !state.onboarding);
   const navCollapsed = Boolean(state.settings.navCollapsed && !navDrawerOpen);
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
+  /** Project Run: always show reasoning/thinking blocks when the model emits them (visibility of steps). */
+  const showThinkingForChat =
+    state.tab === "chatProjectRun" && Boolean(state.chatProjectRunExecutionId)
+      ? true
+      : showThinking;
   const showToolCalls = state.onboarding ? true : state.settings.chatShowToolCalls;
   const assistantAvatarUrl = resolveAssistantAvatarUrl(state);
   const chatAvatarUrl = state.chatAvatarUrl ?? assistantAvatarUrl ?? null;
@@ -468,7 +484,9 @@ export function renderApp(state: AppViewState) {
       projectChatTitle =
         exec.status === "completed"
           ? `${exec.name} - Finished`
-          : `${exec.name} - Learning In Progress`;
+          : exec.status === "failed" || exec.status === "error" || exec.status === "cancelled"
+            ? `${exec.name} - Stopped`
+            : `${exec.name} - Learning In Progress`;
     } else if (state.templateDetail) {
       projectChatTitle = `Project Template: ${state.templateDetail.name}`;
     } else {
@@ -706,7 +724,7 @@ export function renderApp(state: AppViewState) {
                       <div class="nav-section__items" style=${!navCollapsed ? "padding-left: 12px;" : ""}>
                         ${group.tabs.map((tab) => renderTab(state, tab, { collapsed: navCollapsed }))}
                         ${
-                          group.label === "chat"
+                          group.label === "projectRun"
                             ? renderProjectRunNavItems(state, { collapsed: navCollapsed })
                             : nothing
                         }
@@ -808,19 +826,21 @@ export function renderApp(state: AppViewState) {
                       `
                     : state.tab === "chatProjectRun"
                       ? html`
-                            <div style="display:flex;flex-direction:column;gap:10px;width:100%;">
-                              <div>
-                                <div class="page-title">${titleForTab(state.tab)}</div>
-                                <div class="page-sub">${subtitleForTab(state.tab)}</div>
+                            <div style="display:flex; flex-direction:row; justify-content:space-between; align-items:flex-start; width:100%; gap:16px; background: var(--bg-surface-2); padding: 16px 20px; border-radius: 8px; border: 1px solid var(--border-color);">
+                              <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
+                                <div>
+                                  <div class="page-title">Project Run</div>
+                                  <div class="page-sub">Exploring and generating the PFM.</div>
+                                </div>
+                                ${
+                                  state.lastError
+                                    ? html`<div class="content-header__chat-error pill danger" style="align-self:flex-start;">${state.lastError}</div>`
+                                    : nothing
+                                }
                               </div>
-                              ${
-                                state.lastError
-                                  ? html`<div class="content-header__chat-error pill danger">${state.lastError}</div>`
-                                  : nothing
-                              }
-                            </div>
-                            <div class="page-meta page-meta--chat-general">
-                              ${renderProjectRunToolbar(state)}
+                              <div class="page-meta page-meta--chat-general" style="margin: 0; min-width: max-content;">
+                                ${renderProjectRunToolbar(state)}
+                              </div>
                             </div>
                           `
                       : html`
@@ -1679,8 +1699,8 @@ export function renderApp(state: AppViewState) {
                   void refreshChatAvatar(state);
                 },
                 thinkingLevel: state.chatThinkingLevel,
-                showThinking,
-                showToolCalls,
+                showThinking: showThinkingForChat,
+                showToolCalls: state.tab === "chatProjectRun" ? true : showToolCalls,
                 loading: state.chatLoading,
                 sending: state.chatSending,
                 compactionStatus: state.compactionStatus,
@@ -1696,7 +1716,8 @@ export function renderApp(state: AppViewState) {
                 connected: state.connected,
                 canSend: state.connected,
                 disabledReason: chatDisabledReason,
-                error: state.lastError,
+                // content-header already shows lastError for these chat tabs (avoid duplicate callouts).
+                error: null,
                 sessions: state.sessionsResult,
                 focusMode: chatFocus,
                 onRefresh: () => {
@@ -1775,6 +1796,8 @@ export function renderApp(state: AppViewState) {
                         state.projectLeftPanelDismissed = true;
                       },
                 leftSidebarClosable: state.tab !== "chatProjectRun",
+                projectRunThreadHeaderMarkdown,
+                projectRunStatusBanner,
                 assistantName:
                   state.tab === "chatProjectRun" && state.chatProjectRunExecutionId
                     ? `${projectRunOrdinalLabel(state, state.chatProjectRunExecutionId)} — ${state.assistantName}`

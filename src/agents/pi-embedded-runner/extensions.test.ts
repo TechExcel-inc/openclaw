@@ -69,4 +69,21 @@ describe("buildEmbeddedExtensionFactories", () => {
       qualityGuardMaxRetries: 2,
     });
   });
+
+  it("appends project run pace factory when projectRunPace is set", () => {
+    const model = {
+      id: "gpt-4o-mini",
+      contextWindow: 128_000,
+    } as Model<Api>;
+    const factories = buildEmbeddedExtensionFactories({
+      cfg: undefined,
+      sessionManager: {} as SessionManager,
+      provider: "openai",
+      modelId: "gpt-4o-mini",
+      model,
+      projectRunPace: { minIntervalMs: 60_000 },
+    });
+    expect(factories.length).toBe(1);
+    expect(typeof factories[0]).toBe("function");
+  });
 });

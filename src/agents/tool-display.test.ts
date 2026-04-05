@@ -88,6 +88,20 @@ describe("tool display details", () => {
     expect(detail).toBe('for "OpenClaw docs" (top 3)');
   });
 
+  it("shows browser navigate URL when the model sends url instead of targetUrl", () => {
+    const detail = formatToolDetail(
+      resolveToolDisplay({
+        name: "browser",
+        args: {
+          action: "navigate",
+          url: "https://www.cnn.com/world",
+        },
+      }),
+    );
+
+    expect(detail).toContain("cnn.com");
+  });
+
   it("summarizes exec commands with context", () => {
     const detail = formatToolDetail(
       resolveToolDisplay({

@@ -173,11 +173,13 @@
   }
 
   .sidebar--collapsed .nav-item__text,
+  .sidebar--collapsed .nav-item__stack,
   .sidebar--collapsed .nav-item__external-icon {
     display: inline-flex;
   }
 
   .shell--nav-collapsed:not(.shell--nav-drawer-open) .sidebar--collapsed .nav-item__text,
+  .shell--nav-collapsed:not(.shell--nav-drawer-open) .sidebar--collapsed .nav-item__stack,
   .shell--nav-collapsed:not(.shell--nav-drawer-open) .sidebar--collapsed .nav-item__external-icon {
     display: none;
   }

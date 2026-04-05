@@ -63,20 +63,20 @@
         "start": { "label": "start" },
         "stop": { "label": "stop" },
         "tabs": { "label": "tabs" },
-        "open": { "label": "open", "detailKeys": ["targetUrl"] },
+        "open": { "label": "open", "detailKeys": ["targetUrl", "url", "targetId"] },
         "focus": { "label": "focus", "detailKeys": ["targetId"] },
         "close": { "label": "close", "detailKeys": ["targetId"] },
         "snapshot": {
           "label": "snapshot",
-          "detailKeys": ["targetUrl", "targetId", "ref", "element", "format"]
+          "detailKeys": ["targetUrl", "url", "targetId", "ref", "element", "format"]
         },
         "screenshot": {
           "label": "screenshot",
-          "detailKeys": ["targetUrl", "targetId", "ref", "element"]
+          "detailKeys": ["targetUrl", "url", "targetId", "ref", "element"]
         },
         "navigate": {
           "label": "navigate",
-          "detailKeys": ["targetUrl", "targetId"]
+          "detailKeys": ["targetUrl", "url", "targetId"]
         },
         "console": { "label": "console", "detailKeys": ["level", "targetId"] },
         "pdf": { "label": "pdf", "detailKeys": ["targetId"] },
@@ -90,7 +90,7 @@
         },
         "act": {
           "label": "act",
-          "detailKeys": ["request.kind", "request.ref", "request.selector", "request.text", "request.value"]
+          "detailKeys": ["request.url", "request.kind", "request.ref", "request.selector", "request.text", "request.value"]
         }
       }
     },

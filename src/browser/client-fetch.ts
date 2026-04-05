@@ -102,6 +102,10 @@ const BROWSER_TOOL_MODEL_HINT =
   "Do NOT retry the browser tool — it will keep failing. " +
   "Use an alternative approach or inform the user that the browser is currently unavailable.";
 
+/** When the wait is likely slow-page / ads rather than a dead gateway (timeouts, aborts). */
+const BROWSER_TOOL_SLOW_PAGE_HINT =
+  "Slow or ad-heavy pages can exceed the client wait. You may retry the same browser action after a short pause, try a lighter action (e.g. snapshot), or continue if the page is usable.";
+
 const BROWSER_SERVICE_RATE_LIMIT_MESSAGE =
   "Browser service rate limit reached. " +
   "Wait for the current session to complete, or retry later.";
@@ -153,6 +157,17 @@ function appendBrowserToolModelHint(message: string): string {
   return `${message} ${BROWSER_TOOL_MODEL_HINT}`;
 }
 
+function looksLikeTimeoutOrAbortMessage(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("timed out") ||
+    m.includes("timeout") ||
+    m.includes("aborted") ||
+    m.includes("abort") ||
+    m.includes("aborterror")
+  );
+}
+
 async function discardResponseBody(res: Response): Promise<void> {
   try {
     await res.body?.cancel();
@@ -163,26 +178,21 @@ async function discardResponseBody(res: Response): Promise<void> {
 
 function enhanceDispatcherPathError(url: string, err: unknown): Error {
   const msg = normalizeErrorMessage(err);
-  const suffix = `${resolveBrowserFetchOperatorHint(url)} ${BROWSER_TOOL_MODEL_HINT}`;
+  const operatorHint = resolveBrowserFetchOperatorHint(url);
   const normalized = msg.endsWith(".") ? msg : `${msg}.`;
+  const suffix = looksLikeTimeoutOrAbortMessage(msg)
+    ? `${operatorHint} ${BROWSER_TOOL_SLOW_PAGE_HINT}`
+    : `${operatorHint} ${BROWSER_TOOL_MODEL_HINT}`;
   return new Error(`${normalized} ${suffix}`, err instanceof Error ? { cause: err } : undefined);
 }
 
 function enhanceBrowserFetchError(url: string, err: unknown, timeoutMs: number): Error {
   const operatorHint = resolveBrowserFetchOperatorHint(url);
   const msg = String(err);
-  const msgLower = msg.toLowerCase();
-  const looksLikeTimeout =
-    msgLower.includes("timed out") ||
-    msgLower.includes("timeout") ||
-    msgLower.includes("aborted") ||
-    msgLower.includes("abort") ||
-    msgLower.includes("aborterror");
+  const looksLikeTimeout = looksLikeTimeoutOrAbortMessage(msg);
   if (looksLikeTimeout) {
     return new Error(
-      appendBrowserToolModelHint(
-        `Can't reach the OpenClaw browser control service (timed out after ${timeoutMs}ms). ${operatorHint}`,
-      ),
+      `Browser control request timed out after ${timeoutMs}ms. ${operatorHint} ${BROWSER_TOOL_SLOW_PAGE_HINT}`,
     );
   }
   return new Error(

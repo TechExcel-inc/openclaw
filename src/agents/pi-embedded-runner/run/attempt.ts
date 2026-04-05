@@ -2133,6 +2133,13 @@ export async function runEmbeddedAttempt(
         provider: params.provider,
         modelId: params.modelId,
         model: params.model,
+        projectRunPace:
+          params.projectRunMinLlmIntervalMs && params.projectRunMinLlmIntervalMs > 0
+            ? {
+                minIntervalMs: params.projectRunMinLlmIntervalMs,
+                abortSignal: params.abortSignal,
+              }
+            : undefined,
       });
       // Only create an explicit resource loader when there are extension factories
       // to register; otherwise let createAgentSession use its built-in default.

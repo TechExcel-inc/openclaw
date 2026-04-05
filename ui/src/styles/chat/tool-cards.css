@@ -152,6 +152,16 @@
   word-break: break-word;
 }
 
+/* Collapsed tool runs (assistant): card-like block in the transcript */
+.chat-tools-collapse {
+  margin: 10px 0;
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--secondary) 35%, transparent);
+  overflow: hidden;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--border) 40%, transparent);
+}
+
 .chat-tools-summary {
   display: flex;
   align-items: center;

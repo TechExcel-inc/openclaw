@@ -116,7 +116,10 @@ export function formatReasoningMarkdown(text: string): string {
   const lines = trimmed
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => `_${line}_`);
-  return lines.length ? ["_Reasoning:_", ...lines].join("\n") : "";
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return "";
+  }
+  const quoted = lines.map((line) => `> ${line}`).join("\n");
+  return ["**Reasoning**", "", quoted].join("\n");
 }

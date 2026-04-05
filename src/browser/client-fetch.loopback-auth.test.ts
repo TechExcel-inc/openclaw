@@ -170,12 +170,12 @@ describe("fetchBrowserJson loopback auth", () => {
     expect(headers.get("authorization")).toBe("Bearer loopback-token");
   });
 
-  it("preserves dispatcher error context while keeping no-retry hint", async () => {
+  it("preserves dispatcher error context for timeouts with slow-page recovery hint", async () => {
     mocks.dispatch.mockRejectedValueOnce(new Error("Chrome CDP handshake timeout"));
 
     await expectThrownBrowserFetchError(() => fetchBrowserJson<{ ok: boolean }>("/tabs"), {
-      contains: ["Chrome CDP handshake timeout", "Do NOT retry the browser tool"],
-      omits: ["Can't reach the OpenClaw browser control service"],
+      contains: ["Chrome CDP handshake timeout", "Slow or ad-heavy pages"],
+      omits: ["Can't reach the OpenClaw browser control service", "Do NOT retry the browser tool"],
     });
   });
 

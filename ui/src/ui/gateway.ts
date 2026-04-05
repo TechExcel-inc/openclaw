@@ -525,7 +525,12 @@ export class GatewayBrowserClient {
       const seq = typeof evt.seq === "number" ? evt.seq : null;
       if (seq !== null) {
         if (this.lastSeq !== null && seq > this.lastSeq + 1) {
-          this.opts.onGap?.({ expected: this.lastSeq + 1, received: seq });
+          // Global broadcast seq advances once per event; targeted sends omit seq. Slow clients can
+          // miss exactly one dropIfSlow frame while others still advance — looks like a 1-seq gap.
+          const missing = seq - this.lastSeq - 1;
+          if (missing > 1) {
+            this.opts.onGap?.({ expected: this.lastSeq + 1, received: seq });
+          }
         }
         this.lastSeq = seq;
       }

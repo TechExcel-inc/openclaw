@@ -734,6 +734,20 @@
   border-color: transparent;
 }
 
+/* Project Run "Finish": accent outline only (avoid heavy solid accent fill). */
+.btn--project-run-finish {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+  box-shadow: none;
+}
+
+.btn--project-run-finish:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: var(--accent);
+  color: var(--accent-hover, var(--accent));
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

@@ -1,6 +1,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import {
   CHAT_ATTACHMENT_ACCEPT,
   isSupportedChatAttachmentMimeType,
@@ -9,11 +10,16 @@ import { DeletedMessages } from "../chat/deleted-messages.ts";
 import { exportChatMarkdown } from "../chat/export.ts";
 import {
   renderMessageGroup,
+  renderPendingQueueBubble,
   renderReadingIndicatorGroup,
   renderStreamingGroup,
 } from "../chat/grouped-render.ts";
 import { InputHistory } from "../chat/input-history.ts";
-import { normalizeMessage, normalizeRoleForGrouping } from "../chat/message-normalizer.ts";
+import {
+  messageHasRecordedTimestamp,
+  normalizeMessage,
+  normalizeRoleForGrouping,
+} from "../chat/message-normalizer.ts";
 import { PinnedMessages } from "../chat/pinned-messages.ts";
 import { getPinnedMessageSummary } from "../chat/pinned-summary.ts";
 import { messageMatchesSearchQuery } from "../chat/search-match.ts";
@@ -27,6 +33,7 @@ import {
 } from "../chat/slash-commands.ts";
 import { isSttSupported, startStt, stopStt } from "../chat/speech.ts";
 import { icons } from "../icons.ts";
+import { toSanitizedMarkdownHtml } from "../markdown.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
 import type { ChatItem, MessageGroup } from "../types/chat-types.ts";
@@ -121,6 +128,10 @@ export type ChatProps = {
    * Default true (closable) when `onCloseLeftSidebar` is provided.
    */
   leftSidebarClosable?: boolean;
+  /** Project Run: full run summary + Running Step Log above the message list (main column). */
+  projectRunThreadHeaderMarkdown?: string | null;
+  /** Project Run: always-visible status strip (matches dashboard execution row for this run). */
+  projectRunStatusBanner?: { headline: string; sub?: string; tone: string } | null;
   onChatScroll?: (event: Event) => void;
   basePath?: string;
 };
@@ -165,6 +176,9 @@ interface ChatEphemeralState {
   searchOpen: boolean;
   searchQuery: string;
   pinnedExpanded: boolean;
+  commandsMenuOpen: boolean;
+  /** Last session key we applied to the compose box (avoid clobbering draft while typing). */
+  lastDraftSessionKey: string;
 }
 
 function createChatEphemeralState(): ChatEphemeralState {
@@ -180,6 +194,8 @@ function createChatEphemeralState(): ChatEphemeralState {
     searchOpen: false,
     searchQuery: "",
     pinnedExpanded: false,
+    commandsMenuOpen: false,
+    lastDraftSessionKey: "",
   };
 }
 
@@ -201,6 +217,33 @@ export const cleanupChatModuleState = resetChatViewState;
 function adjustTextareaHeight(el: HTMLTextAreaElement) {
   el.style.height = "auto";
   el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+}
+
+/**
+ * Sync compose draft from props when the chat session changes, or when props drift from the textarea.
+ * While focused, avoid overwriting user typing from unrelated prop updates — except when the draft is
+ * cleared to empty (after send), which must clear the textarea even though focus stays in the field.
+ */
+function syncComposeDraft(el: Element | undefined, props: ChatProps, vs: ChatEphemeralState) {
+  if (!(el instanceof HTMLTextAreaElement)) {
+    return;
+  }
+  const sk = props.sessionKey;
+  if (vs.lastDraftSessionKey !== sk) {
+    vs.lastDraftSessionKey = sk;
+    el.value = props.draft;
+    adjustTextareaHeight(el);
+    return;
+  }
+  if (el.value === props.draft) {
+    return;
+  }
+  const focused = document.activeElement === el;
+  const shouldSync = !focused || props.draft === "";
+  if (shouldSync) {
+    el.value = props.draft;
+    adjustTextareaHeight(el);
+  }
 }
 
 function renderCompactionIndicator(status: CompactionIndicatorStatus | null | undefined) {
@@ -917,6 +960,40 @@ export function renderChat(props: ChatProps) {
   const chatItems = buildChatItems(props);
   const isEmpty = chatItems.length === 0 && !props.loading;
 
+  const projectRunBanner = props.projectRunStatusBanner?.headline
+    ? html`
+        <div
+          class="chat-project-run-status-banner"
+          data-tone=${props.projectRunStatusBanner.tone}
+          role="status"
+          aria-live="polite"
+        >
+          <div class="chat-project-run-status-banner__headline">${props.projectRunStatusBanner.headline}</div>
+          ${
+            props.projectRunStatusBanner.sub
+              ? html`<div class="chat-project-run-status-banner__sub">${props.projectRunStatusBanner.sub}</div>`
+              : nothing
+          }
+        </div>
+      `
+    : nothing;
+
+  const projectRunThreadHeader = props.projectRunThreadHeaderMarkdown?.trim()
+    ? html`
+        <div class="chat-project-run-thread-header">
+          <details class="chat-project-run-thread-header__details" open>
+            <summary class="chat-project-run-thread-header__summary">Run status & Running Step Log</summary>
+            <p class="chat-project-run-thread-header__hint">
+              Same content as in the left rail; step thumbnails may update shortly after new chat messages.
+            </p>
+            <div class="sidebar-markdown log-stream chat-project-run-thread-header__md">
+              ${unsafeHTML(toSanitizedMarkdownHtml(props.projectRunThreadHeaderMarkdown.trim()))}
+            </div>
+          </details>
+        </div>
+      `
+    : nothing;
+
   const thread = html`
     <div
       class="chat-thread"
@@ -926,6 +1003,8 @@ export function renderChat(props: ChatProps) {
       @click=${handleCodeBlockCopy}
     >
       <div class="chat-thread-inner">
+      ${projectRunBanner}
+      ${projectRunThreadHeader}
       ${
         props.loading
           ? html`
@@ -989,7 +1068,14 @@ export function renderChat(props: ChatProps) {
               props.onOpenSidebar,
               assistantIdentity,
               props.basePath,
+              showReasoning,
             );
+          }
+          if (item.kind === "pending-user") {
+            return renderPendingQueueBubble(item, {
+              basePath: props.basePath,
+              onRemove: () => props.onQueueRemove(item.queueId),
+            });
           }
           if (item.kind === "group") {
             if (deleted.has(item.key)) {
@@ -1136,38 +1222,6 @@ export function renderChat(props: ChatProps) {
   };
 
   const chatFooterBlock = html`
-      ${
-        props.queue?.length
-          ? html`
-            <div class="chat-queue" role="status" aria-live="polite">
-              <div class="chat-queue__title">Queued (${props.queue.length})</div>
-              <div class="chat-queue__list">
-                ${props.queue.map(
-                  (item) => html`
-                    <div class="chat-queue__item">
-                      <div class="chat-queue__text">
-                        ${
-                          item.text ||
-                          (item.attachments?.length ? `Image (${item.attachments.length})` : "")
-                        }
-                      </div>
-                      <button
-                        class="btn chat-queue__remove"
-                        type="button"
-                        aria-label="Remove queued message"
-                        @click=${() => props.onQueueRemove(item.id)}
-                      >
-                        ${icons.x}
-                      </button>
-                    </div>
-                  `,
-                )}
-              </div>
-            </div>
-          `
-          : nothing
-      }
-
       ${renderFallbackIndicator(props.fallbackStatus)}
       ${renderCompactionIndicator(props.compactionStatus)}
       ${renderContextNotice(activeSession, props.sessions?.defaults?.contextTokens ?? null)}
@@ -1201,12 +1255,15 @@ export function renderChat(props: ChatProps) {
         ${vs.sttRecording && vs.sttInterimText ? html`<div class="agent-chat__stt-interim">${vs.sttInterimText}</div>` : nothing}
 
         <textarea
-          ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement))}
-          .value=${props.draft}
-          dir=${detectTextDirection(props.draft)}
+          ${ref((el) => syncComposeDraft(el, props, vs))}
+          dir=${detectTextDirection(getDraft())}
           ?disabled=${!props.connected}
           @keydown=${handleKeyDown}
           @input=${handleInput}
+          @blur=${(e: FocusEvent) => {
+            const t = e.target as HTMLTextAreaElement;
+            props.onDraftChange(t.value);
+          }}
           @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
           placeholder=${vs.sttRecording ? "Listening..." : placeholder}
           rows="1"
@@ -1289,18 +1346,84 @@ export function renderChat(props: ChatProps) {
               canAbort
                 ? nothing
                 : html`
-                    <button
-                      class="btn btn--ghost"
-                      @click=${props.onNewSession}
-                      title="New session"
-                      aria-label="New session"
-                    >
-                      ${icons.plus}
-                    </button>
+                    <div style="position: relative; display: inline-block;">
+                      <button
+                        class="btn btn--ghost"
+                        @click=${() => {
+                          vs.commandsMenuOpen = !vs.commandsMenuOpen;
+                          requestUpdate();
+                        }}
+                        title="Quick Commands"
+                        aria-label="Quick Commands"
+                      >
+                        ${icons.plus}
+                      </button>
+                      ${
+                        vs.commandsMenuOpen
+                          ? html`
+                        <div class="custom-chat-dropdown-menu" style="display: block; position: absolute; bottom: 100%; right: 0; margin-bottom: 4px; z-index: 100; min-width: 250px; background: var(--bg-surface-2, #161b22); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 8px 0;">
+                          <div style="padding: 4px 12px; font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 600;">Quick Commands</div>
+                          ${[
+                            {
+                              label: "Pause Run",
+                              text: "System: Please pause the current run and await further instructions.",
+                            },
+                            {
+                              label: "Resume Run",
+                              text: "System: Please resume the automated run now.",
+                            },
+                            {
+                              label: "Stop Project Run",
+                              text: "System: Please stop the current run and summarize your findings.",
+                            },
+                            {
+                              label: "Summarize Progress",
+                              text: "Please temporarily pause exploring and concisely summarize what you have found so far.",
+                            },
+                            {
+                              label: "Retry Last Step",
+                              text: "The last action failed. Please try that exact step again or try a workaround.",
+                            },
+                            {
+                              label: "Manual Intervention Done",
+                              text: "I have stepped in and handled the manual input in your browser. Please resume automated exploration from here.",
+                            },
+                          ].map(
+                            (cmd) => html`
+                            <div 
+                              style="padding: 8px 12px; font-size: 13px; cursor: pointer; color: inherit; text-align: left;"
+                              onmouseover="this.style.backgroundColor='rgba(255,255,255,0.05)'"
+                              onmouseout="this.style.backgroundColor='transparent'"
+                              @click=${() => {
+                                vs.commandsMenuOpen = false;
+                                props.onDraftChange(cmd.text);
+                                setTimeout(() => props.onSend(), 0);
+                              }}
+                            >
+                              ${cmd.label}
+                            </div>
+                          `,
+                          )}
+                        </div>
+                      `
+                          : nothing
+                      }
+                    </div>
                   `
             }
             <button class="btn btn--ghost" @click=${() => exportMarkdown(props)} title="Export" aria-label="Export chat" ?disabled=${props.messages.length === 0}>
               ${icons.download}
+            </button>
+
+            <button
+              class="btn btn--ghost"
+              type="button"
+              @click=${() => props.onNewSession()}
+              title="New session"
+              aria-label="New session"
+              ?disabled=${!props.connected}
+            >
+              ${icons.refresh}
             </button>
 
             ${
@@ -1378,7 +1501,8 @@ export function renderChat(props: ChatProps) {
                             error: null,
                             onClose: props.onCloseLeftSidebar,
                             title: props.leftSidebarTitle ?? "Project",
-                            autoScroll: (props.leftSidebarTitle ?? "") === "Project Run",
+                            // Project Run left panel is a static summary (not a live log tail).
+                            autoScroll: false,
                             onViewRawText: () => {
                               const c = props.leftSidebarMarkdown;
                               if (!c || !props.onOpenSidebar) {
@@ -1510,10 +1634,13 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   }
   for (let i = historyStart; i < history.length; i++) {
     const msg = history[i];
-    const normalized = normalizeMessage(msg);
     const raw = msg as Record<string, unknown>;
     const marker = raw.__openclaw as Record<string, unknown> | undefined;
     if (marker && marker.kind === "compaction") {
+      if (!messageHasRecordedTimestamp(msg)) {
+        continue;
+      }
+      const normalized = normalizeMessage(msg);
       items.push({
         kind: "divider",
         key:
@@ -1526,6 +1653,11 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       continue;
     }
 
+    if (!messageHasRecordedTimestamp(msg)) {
+      continue;
+    }
+
+    const normalized = normalizeMessage(msg);
     if (!props.showToolCalls && normalized.role.toLowerCase() === "toolresult") {
       continue;
     }
@@ -1555,7 +1687,7 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
         startedAt: segments[i].ts,
       });
     }
-    if (i < tools.length && props.showToolCalls) {
+    if (i < tools.length && props.showToolCalls && messageHasRecordedTimestamp(tools[i])) {
       items.push({
         kind: "message",
         key: messageKey(tools[i], i + history.length),
@@ -1578,7 +1710,48 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
     }
   }
 
-  return groupMessages(items);
+  const queue = Array.isArray(props.queue) ? props.queue : [];
+  for (let q = 0; q < queue.length; q++) {
+    const qItem = queue[q];
+    const attachmentCount = qItem.attachments?.length ?? 0;
+    items.push({
+      kind: "pending-user",
+      key: `pending-queue:${qItem.id}`,
+      queueId: qItem.id,
+      text: qItem.text,
+      createdAt: qItem.createdAt,
+      attachmentCount,
+    });
+  }
+
+  return mergeAdjacentToolMessageGroups(groupMessages(items));
+}
+
+/** Merge consecutive tool-only groups so multiple browser steps render as one card + thumbnail strip. */
+function mergeAdjacentToolMessageGroups(
+  grouped: Array<ChatItem | MessageGroup>,
+): Array<ChatItem | MessageGroup> {
+  const result: Array<ChatItem | MessageGroup> = [];
+  for (const item of grouped) {
+    if (item.kind !== "group") {
+      result.push(item);
+      continue;
+    }
+    if (normalizeRoleForGrouping(item.role) !== "tool") {
+      result.push(item);
+      continue;
+    }
+    const last = result[result.length - 1];
+    if (last && last.kind === "group" && normalizeRoleForGrouping(last.role) === "tool") {
+      last.messages.push(...item.messages);
+      last.timestamp = Math.min(last.timestamp, item.timestamp);
+      last.key = `${last.key}|${item.key}`;
+      last.isStreaming = Boolean(last.isStreaming || item.isStreaming);
+    } else {
+      result.push(item);
+    }
+  }
+  return result;
 }
 
 function messageKey(message: unknown, index: number): string {

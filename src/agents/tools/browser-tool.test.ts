@@ -424,12 +424,13 @@ describe("browser tool snapshot maxChars", () => {
 
     expect(gatewayMocks.callGatewayTool).toHaveBeenCalledWith(
       "node.invoke",
-      { timeoutMs: 25000 },
+      { timeoutMs: 65000 },
       expect.objectContaining({
         nodeId: "node-1",
         command: "browser.proxy",
         params: expect.objectContaining({
-          timeoutMs: 20000,
+          timeoutMs: 60000,
+          query: { headless: true },
         }),
       }),
     );
@@ -453,10 +454,11 @@ describe("browser tool snapshot maxChars", () => {
 
     expect(gatewayMocks.callGatewayTool).toHaveBeenCalledWith(
       "node.invoke",
-      { timeoutMs: 25000 },
+      { timeoutMs: 65000 },
       expect.objectContaining({
         params: expect.objectContaining({
-          timeoutMs: 20000,
+          timeoutMs: 60000,
+          query: { headless: true },
         }),
       }),
     );
@@ -560,6 +562,19 @@ describe("browser tool url alias support", () => {
     );
   });
 
+  it("defaults Project Run sessions to headless when the execution row is missing from the store", async () => {
+    // Default loadProjectsStore mock returns executions: [] — still must not fall back to headed Chrome.
+    const tool = createBrowserTool({
+      agentSessionKey: "agent:main:main:eadproj:run:missing-from-store",
+    });
+    await tool.execute?.("call-1", { action: "open", url: "https://example.com" });
+    expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
+      undefined,
+      "https://example.com",
+      expect.objectContaining({ headless: true }),
+    );
+  });
+
   it("forces headless launches for auto-start Project Runs", async () => {
     projectsStoreMocks.loadProjectsStore.mockResolvedValueOnce({
       version: 3,
@@ -592,6 +607,122 @@ describe("browser tool url alias support", () => {
       undefined,
       "https://example.com",
       expect.objectContaining({ profile: undefined, headless: true }),
+    );
+  });
+
+  it("allows explicit profile on Project Runs when auth is not reuse-session", async () => {
+    projectsStoreMocks.loadProjectsStore.mockResolvedValueOnce({
+      version: 3,
+      templates: [],
+      executions: [
+        {
+          id: "run-3",
+          linkedTemplateId: "template-1",
+          name: "Run 3",
+          description: "",
+          targetUrl: "https://example.com",
+          aiPrompt: "Explore",
+          authMode: "none",
+          runSessionKey: "agent:main:main:eadproj:run:run-3",
+          status: "running",
+          steps: [],
+          progressPercentage: 15,
+          startTime: 1,
+          durationMs: null,
+          results: [],
+        },
+      ],
+      activeTemplateId: null,
+    });
+    const tool = createBrowserTool({ agentSessionKey: "agent:main:main:eadproj:run:run-3" });
+
+    await tool.execute?.("call-1", {
+      action: "open",
+      url: "https://example.com",
+      profile: "openclaw",
+    });
+
+    expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
+      undefined,
+      "https://example.com",
+      expect.objectContaining({ profile: "openclaw", headless: true }),
+    );
+  });
+
+  it("uses headed browser when the execution row has showLocalBrowser", async () => {
+    projectsStoreMocks.loadProjectsStore.mockResolvedValueOnce({
+      version: 3,
+      templates: [],
+      executions: [
+        {
+          id: "run-headed",
+          linkedTemplateId: "template-1",
+          name: "Run headed",
+          description: "",
+          targetUrl: "https://example.com",
+          aiPrompt: "Explore",
+          authMode: "none",
+          runSessionKey: "agent:main:main:eadproj:run:run-headed",
+          status: "running",
+          steps: [],
+          progressPercentage: 15,
+          startTime: 1,
+          durationMs: null,
+          results: [],
+          showLocalBrowser: true,
+        },
+      ],
+      activeTemplateId: null,
+    });
+    const tool = createBrowserTool({
+      agentSessionKey: "agent:main:main:eadproj:run:run-headed",
+    });
+
+    await tool.execute?.("call-1", { action: "open", url: "https://example.com" });
+
+    expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
+      undefined,
+      "https://example.com",
+      expect.objectContaining({ profile: undefined, headless: false }),
+    );
+  });
+
+  it("allows headless override on Project Runs", async () => {
+    projectsStoreMocks.loadProjectsStore.mockResolvedValueOnce({
+      version: 3,
+      templates: [],
+      executions: [
+        {
+          id: "run-4",
+          linkedTemplateId: "template-1",
+          name: "Run 4",
+          description: "",
+          targetUrl: "https://example.com",
+          aiPrompt: "Explore",
+          authMode: "none",
+          runSessionKey: "agent:main:main:eadproj:run:run-4",
+          status: "running",
+          steps: [],
+          progressPercentage: 15,
+          startTime: 1,
+          durationMs: null,
+          results: [],
+        },
+      ],
+      activeTemplateId: null,
+    });
+    const tool = createBrowserTool({ agentSessionKey: "agent:main:main:eadproj:run:run-4" });
+
+    await tool.execute?.("call-1", {
+      action: "open",
+      url: "https://example.com",
+      headless: false,
+    });
+
+    expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
+      undefined,
+      "https://example.com",
+      expect.objectContaining({ profile: undefined, headless: false }),
     );
   });
 

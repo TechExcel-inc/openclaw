@@ -3,8 +3,16 @@ import {
   loadSessionEntry,
   readSessionMessages,
 } from "../gateway/session-utils.js";
+import { isTerminalProjectExecutionStatus } from "./project-run-session-guard.js";
 import { loadProjectsStore, resolveProjectsStorePath, saveProjectsStore } from "./store.js";
-import type { EadFmNodeRun, ProgressLogEntry, TestCaseRun, TestCaseStepRun } from "./types.js";
+import type {
+  EadFmNodeRun,
+  ProgressLogEntry,
+  StepArtifact,
+  StepResult,
+  TestCaseRun,
+  TestCaseStepRun,
+} from "./types.js";
 
 const executionControllers = new Map<string, AbortController>();
 
@@ -121,6 +129,12 @@ export const __internal = {
   isDangerousExploreLabel,
   normalizeExploreLabel,
   prepareExploreCandidates,
+  extractRunningSteps,
+  looksLikeProviderRateLimit,
+  looksLikeBrowserNetworkBlocker,
+  extractLatestBlockerHintFromProgressLog,
+  computeHostStallAdvisory,
+  resolveFailedRunHints,
 };
 
 async function loadExecution(
@@ -156,8 +170,36 @@ async function updateExecutionSnapshot(
   if (!snap) {
     return;
   }
+  const beforeStatus = snap.execution.status;
   update(snap.execution);
+  const afterStatus = snap.execution.status;
   await persistExecution(storePath, snap.store);
+  if (
+    isTerminalProjectExecutionStatus(afterStatus) &&
+    !isTerminalProjectExecutionStatus(beforeStatus) &&
+    snap.execution.runSessionKey?.trim()
+  ) {
+    const runKey = snap.execution.runSessionKey.trim();
+    try {
+      const { abortProjectRunTerminalChatRuns } =
+        await import("../gateway/project-run-chat-abort.js");
+      abortProjectRunTerminalChatRuns(runKey);
+    } catch {
+      // Gateway may not be initialized (tests, CLI-only paths).
+    }
+    try {
+      const { injectProjectRunTerminalStatusFromExecutor } =
+        await import("../gateway/project-run-status-inject.js");
+      const { buildProjectRunTerminalStatusInjectMessage } =
+        await import("./project-run-messages.js");
+      await injectProjectRunTerminalStatusFromExecutor({
+        sessionKey: runKey,
+        message: buildProjectRunTerminalStatusInjectMessage(snap.execution),
+      });
+    } catch {
+      // Gateway may not be initialized (tests, CLI-only paths).
+    }
+  }
 }
 
 async function sleepWithAbort(signal: AbortSignal, timeoutMs: number): Promise<void> {
@@ -219,7 +261,7 @@ function extractTranscriptText(content: unknown): string {
 }
 
 const PROGRESS_LOG_MAX = 300;
-const PROGRESS_TEXT_MAX = 200;
+const PROGRESS_TEXT_MAX = 2000;
 
 /** Truncate string for display. */
 function truncateForLog(value: string | undefined, max: number): string {
@@ -231,13 +273,37 @@ function truncateForLog(value: string | undefined, max: number): string {
 }
 
 /**
+ * Pi transcripts use `type: "toolCall"` with `arguments` (string or object).
+ * OpenClaw tool schemas use `input`. Normalize so executor + dashboard see the same fields.
+ */
+function normalizeToolCallBlock(block: Record<string, unknown>): Record<string, unknown> {
+  const rawInput = block.input;
+  if (rawInput && typeof rawInput === "object" && !Array.isArray(rawInput)) {
+    return { ...(rawInput as Record<string, unknown>) };
+  }
+  const rawArgs = block.arguments;
+  if (typeof rawArgs === "string" && rawArgs.trim()) {
+    try {
+      const parsed = JSON.parse(rawArgs) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return { ...(parsed as Record<string, unknown>) };
+      }
+    } catch {
+      return {};
+    }
+  }
+  if (rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
+    return { ...(rawArgs as Record<string, unknown>) };
+  }
+  return {};
+}
+
+/**
  * Build a natural-language description for a tool_use block.
  * Never returns undefined — always produces a description.
  */
 function describeToolAction(name: string, block: Record<string, unknown>): string {
-  const input = block.input as Record<string, unknown> | undefined;
-  const inp = input && typeof input === "object" ? input : {};
-  // Also check top-level fields as fallback
+  const inp = normalizeToolCallBlock(block);
   const src = { ...inp, ...block };
 
   // ── Browser / computer-use tools ──
@@ -379,11 +445,12 @@ function describeToolAction(name: string, block: Record<string, unknown>): strin
  * Extracts progress log entries from new transcript messages (index >= alreadyProcessed).
  * No deduplication — every action gets logged. Capped at PROGRESS_LOG_MAX total entries.
  */
-function extractProgressLogFromTranscript(
+async function extractProgressLogFromTranscript(
   sessionKey: string,
   existingLog: ProgressLogEntry[],
   alreadyProcessed: number,
-): ProgressLogEntry[] {
+  executionId: string,
+): Promise<ProgressLogEntry[]> {
   const loaded = loadSessionEntry(sessionKey);
   if (!loaded.entry?.sessionId) {
     return [];
@@ -431,7 +498,13 @@ function extractProgressLogFromTranscript(
             if (!toolName) {
               continue;
             }
-            entries.push({ ts, kind: "tool_use", text: describeToolAction(toolName, b) });
+            entries.push({
+              ts,
+              kind: "tool_use",
+              text: describeToolAction(toolName, b),
+              toolName,
+              toolInput: normalizeToolCallBlock(b),
+            });
           } else if (btype === "text" && typeof b.text === "string" && b.text.trim()) {
             const raw = b.text.trim();
             // Skip pure system/context boilerplate
@@ -451,10 +524,14 @@ function extractProgressLogFromTranscript(
       if (!hasToolUse && !content) {
         const rawName = msg.toolName ?? msg.tool_name;
         if (typeof rawName === "string" && rawName.trim()) {
+          const toolName = rawName.trim();
+          const merged = { ...msg, input: msg.toolInput ?? msg.input };
           entries.push({
             ts,
             kind: "tool_use",
-            text: describeToolAction(rawName.trim(), msg),
+            text: describeToolAction(toolName, merged as Record<string, unknown>),
+            toolName,
+            toolInput: normalizeToolCallBlock(merged as Record<string, unknown>),
           });
         } else {
           // Pure text assistant message without content array
@@ -485,8 +562,56 @@ function extractProgressLogFromTranscript(
         entries.push({
           ts,
           kind: "system",
-          text: errorText ? truncateForLog(errorText, 120) : `Error in ${toolName}`,
+          text: errorText ? truncateForLog(errorText, 400) : `Error in ${toolName}`,
         });
+      }
+
+      // Check for raw image artifacts in the tool response
+      const content = Array.isArray(msg.content) ? msg.content : [msg.content];
+      for (const block of content) {
+        if (!block || typeof block !== "object") {
+          continue;
+        }
+        const b = block as Record<string, unknown>;
+        let base64Data: string | undefined;
+
+        if (b.type === "image") {
+          if (typeof b.data === "string") {
+            base64Data = b.data;
+          } else if (
+            b.source &&
+            typeof b.source === "object" &&
+            typeof (b.source as Record<string, unknown>).data === "string"
+          ) {
+            base64Data = (b.source as Record<string, unknown>).data as string;
+          }
+        } else if (
+          typeof b.image_url === "object" &&
+          b.image_url &&
+          typeof (b.image_url as Record<string, unknown>).url === "string" &&
+          ((b.image_url as Record<string, unknown>).url as string).startsWith("data:image/")
+        ) {
+          // OpenAI style
+          base64Data = ((b.image_url as Record<string, unknown>).url as string).split(",")[1];
+        }
+
+        if (base64Data) {
+          const { uploadBrowserScreenshot } = await import("./s3-storage.js");
+          let url = await uploadBrowserScreenshot(base64Data, executionId);
+          if (!url) {
+            // Fallback to storing the image directly as a localized Data URL
+            url = `data:image/png;base64,${base64Data}`;
+          }
+          if (url) {
+            entries.push({
+              ts,
+              kind: "tool_result",
+              text: "Captured browser screenshot.",
+              imageUrl: url,
+              thumbnailUrl: url,
+            });
+          }
+        }
       }
     }
   }
@@ -496,7 +621,7 @@ function extractProgressLogFromTranscript(
 
 /** Append new progress log entries to the execution entry inside an updateExecutionSnapshot callback. */
 function appendProgressLog(
-  entry: { progressLog?: ProgressLogEntry[]; progressLogSeq?: number },
+  entry: { progressLog?: ProgressLogEntry[]; progressLogSeq?: number; steps?: StepResult[] },
   newEntries: ProgressLogEntry[],
   newSeq: number,
 ) {
@@ -513,11 +638,175 @@ function appendProgressLog(
     entry.progressLog = entry.progressLog.slice(entry.progressLog.length - PROGRESS_LOG_MAX);
   }
   entry.progressLogSeq = newSeq;
+
+  entry.steps = extractRunningSteps(entry.progressLog);
+}
+
+/** Matches report_running_step schema: agent picks the most relevant shots per milestone. */
+const MAX_THUMBNAIL_URLS_PER_STEP = 3;
+const MAX_THUMBNAIL_URL_LEN = 4096;
+
+function buildArtifactsForReportStep(
+  toolInput: Record<string, unknown>,
+  recentImage: ProgressLogEntry | undefined,
+): StepArtifact[] {
+  const urls: string[] = [];
+  const rawUrls = toolInput.thumbnailUrls;
+  if (Array.isArray(rawUrls)) {
+    for (const u of rawUrls) {
+      if (typeof u !== "string") {
+        continue;
+      }
+      const t = u.trim();
+      if (t.length > 0 && t.length <= MAX_THUMBNAIL_URL_LEN) {
+        urls.push(t);
+      }
+    }
+  }
+  if (urls.length === 0 && typeof toolInput.thumbnailUrl === "string") {
+    const t = toolInput.thumbnailUrl.trim();
+    if (t.length > 0 && t.length <= MAX_THUMBNAIL_URL_LEN) {
+      urls.push(t);
+    }
+  }
+  const capped = urls.slice(0, MAX_THUMBNAIL_URLS_PER_STEP);
+  const now = new Date().toISOString();
+  if (capped.length > 0) {
+    return capped.map((path) => ({
+      type: "screenshot" as const,
+      path,
+      thumbnailPath: path,
+      capturedAt: now,
+    }));
+  }
+  if (recentImage?.imageUrl) {
+    return [
+      {
+        type: "screenshot",
+        path: recentImage.imageUrl,
+        thumbnailPath: recentImage.thumbnailUrl ?? recentImage.imageUrl,
+        capturedAt: new Date(recentImage.ts).toISOString(),
+      },
+    ];
+  }
+  return [];
+}
+
+function extractRunningSteps(log: ProgressLogEntry[]): StepResult[] {
+  const steps: StepResult[] = [];
+  let stepIndex = 1;
+
+  for (let i = 0; i < log.length; i++) {
+    const entry = log[i];
+
+    // Fallback legacy support for existing runs that formatted XML
+    if (entry.kind === "assistant") {
+      const runningStepRegex =
+        /<RUNNING_STEP>[\s\S]*?<TITLE>(.*?)<\/TITLE>[\s\S]*?<DESCRIPTION>(.*?)<\/DESCRIPTION>[\s\S]*?<\/RUNNING_STEP>/gi;
+      let match;
+      while ((match = runningStepRegex.exec(entry.text)) !== null) {
+        const title = match[1].trim();
+        const description = match[2].trim();
+
+        let recentImage: ProgressLogEntry | undefined;
+        for (let j = i; j >= 0; j--) {
+          if (log[j].kind === "tool_result" && log[j].imageUrl) {
+            recentImage = log[j];
+            break;
+          }
+        }
+
+        steps.push({
+          stepId: `finding-${stepIndex++}`,
+          title,
+          status: "completed",
+          summary: description,
+          artifacts: recentImage
+            ? [
+                {
+                  type: "screenshot",
+                  path: recentImage.imageUrl!,
+                  thumbnailPath: recentImage.thumbnailUrl || recentImage.imageUrl!,
+                  capturedAt: new Date(recentImage.ts).toISOString(),
+                },
+              ]
+            : [],
+        });
+      }
+      continue;
+    }
+
+    // Tool-based milestones (parameters live on tool call; see normalizeToolCallBlock)
+    if (entry.kind === "tool_use" && entry.toolName === "report_running_step") {
+      const ti = entry.toolInput;
+      if (ti && typeof ti === "object") {
+        const raw = ti;
+        const title = typeof raw.title === "string" ? raw.title || "Milestone" : "Milestone";
+        const description = typeof raw.description === "string" ? raw.description : "";
+
+        let recentImage: ProgressLogEntry | undefined;
+        for (let j = i; j >= 0; j--) {
+          if (log[j].kind === "tool_result" && log[j].imageUrl) {
+            recentImage = log[j];
+            break;
+          }
+        }
+
+        steps.push({
+          stepId: `finding-${stepIndex++}`,
+          title,
+          status: "completed",
+          summary: description,
+          artifacts: buildArtifactsForReportStep(raw, recentImage),
+        });
+      }
+    }
+  }
+
+  // If the model never called report_running_step, show at least one browser milestone so the UI is not empty.
+  if (steps.length === 0) {
+    for (const entry of log) {
+      if (entry.kind !== "tool_use" || entry.toolName !== "browser") {
+        continue;
+      }
+      const inp = entry.toolInput;
+      if (!inp || typeof inp !== "object") {
+        continue;
+      }
+      const action =
+        typeof (inp as { action?: unknown }).action === "string"
+          ? String((inp as { action: string }).action).trim()
+          : "";
+      const url =
+        typeof (inp as { url?: unknown }).url === "string"
+          ? String((inp as { url: string }).url).trim()
+          : typeof (inp as { targetUrl?: unknown }).targetUrl === "string"
+            ? String((inp as { targetUrl: string }).targetUrl).trim()
+            : "";
+      if (action === "open" || action === "navigate") {
+        steps.push({
+          stepId: "auto-browser-1",
+          title: url
+            ? `Loaded ${url.length > 72 ? `${url.slice(0, 69)}...` : url}`
+            : "Browser navigation",
+          status: "completed",
+          summary:
+            "Automatic milestone from the browser tool. Call report_running_step after important findings for richer step notes.",
+          artifacts: [],
+        });
+        break;
+      }
+    }
+  }
+
+  return steps;
 }
 
 function readProjectRunTranscriptSnapshot(sessionKey: string): {
   messageCount: number;
   latestAssistantText?: string;
+  /** Recent transcript text (any roles) for classifying provider failures (e.g. rate limits). */
+  tailTextForFailureHints?: string;
 } {
   const loaded = loadSessionEntry(sessionKey);
   if (!loaded.entry?.sessionId) {
@@ -545,9 +834,79 @@ function readProjectRunTranscriptSnapshot(sessionKey: string): {
       break;
     }
   }
+
+  const tailParts: string[] = [];
+  const maxTailParts = 15;
+  for (let i = transcript.length - 1; i >= 0 && tailParts.length < maxTailParts; i -= 1) {
+    const row = transcript[i] as { message?: unknown } | undefined;
+    const maybeMessage = row?.message && typeof row.message === "object" ? row.message : row;
+    if (!maybeMessage || typeof maybeMessage !== "object") {
+      continue;
+    }
+    const message = maybeMessage as { content?: unknown };
+    const text = truncateExecutionText(extractTranscriptText(message.content), 2_000);
+    if (text) {
+      tailParts.push(text);
+    }
+  }
+  const tailTextForFailureHints = tailParts.length > 0 ? tailParts.join("\n") : undefined;
+
   return {
     messageCount: transcript.length,
     latestAssistantText,
+    tailTextForFailureHints,
+  };
+}
+
+function looksLikeProviderRateLimit(text: string): boolean {
+  const t = text.toLowerCase();
+  if (!t.trim()) {
+    return false;
+  }
+  return (
+    (t.includes("rate") && (t.includes("limit") || t.includes("limited"))) ||
+    t.includes("429") ||
+    t.includes("too many requests") ||
+    t.includes("resource exhausted") ||
+    t.includes("requests per minute") ||
+    t.includes("tokens per min") ||
+    t.includes("quota") ||
+    t.includes("rate_limit")
+  );
+}
+
+function resolveFailedRunHints(params: {
+  latestAssistantText?: string;
+  tailTextForFailureHints?: string;
+}): { executorHint: string; lastErrorMessage: string } {
+  const combined = [params.latestAssistantText ?? "", params.tailTextForFailureHints ?? ""].join(
+    "\n",
+  );
+  if (looksLikeProviderRateLimit(combined)) {
+    return {
+      executorHint:
+        "The model provider rate limit was reached before this run could finish. Wait and retry, or slow down browser screenshots (see run guidance).",
+      lastErrorMessage:
+        truncateExecutionText(params.latestAssistantText, 500) ??
+        "The provider rate limit was reached. The run stopped early.",
+    };
+  }
+  if (looksLikeBrowserNetworkBlocker(combined)) {
+    return {
+      executorHint:
+        "The browser could not load the site (network error, SSL, or certificate problem). See the run chat for the exact error and how to fix it.",
+      lastErrorMessage:
+        truncateExecutionText(params.latestAssistantText, 500) ??
+        truncateExecutionText(params.tailTextForFailureHints, 500) ??
+        "Navigation or TLS failed. Check the run chat for details.",
+    };
+  }
+  return {
+    executorHint:
+      "The OpenClaw run ended before completion. Review the run chat for the last messages or errors.",
+    lastErrorMessage:
+      truncateExecutionText(params.latestAssistantText, 500) ??
+      "The run stopped before OpenClaw could finish successfully.",
   };
 }
 
@@ -602,6 +961,135 @@ function resolveRunningHint(targetUrl?: string, paused = false, authMode?: strin
     ? `OpenClaw is exploring ${targetUrl.trim()}.`
     : "OpenClaw is exploring the target app.";
   return `${prefix} Follow the run chat for live reasoning, browser actions, and blockers.`;
+}
+
+const LIVE_BLOCKER_HINT_MAX = 220;
+
+/** After this, suggest host/browser readiness if the run still looks stuck (see HOST_STALL_MAX_TRANSCRIPT_MESSAGES). */
+const HOST_STALL_AFTER_MS = 5 * 60 * 1000;
+/** Above this transcript size, assume real progress and do not show the long-stall nudge. */
+const HOST_STALL_MAX_TRANSCRIPT_MESSAGES = 14;
+
+/** Transcript progress entries for failed browser tools use kind "system" (see extractProgressLogFromTranscript). */
+function looksLikeBrowserNetworkBlocker(text: string): boolean {
+  const t = text.toLowerCase();
+  if (!t.trim()) {
+    return false;
+  }
+  if (t.includes("net::err") || t.includes("net:: err")) {
+    return true;
+  }
+  if (
+    t.includes("err_cert") ||
+    t.includes("cert_common_name") ||
+    (t.includes("certificate") &&
+      (t.includes("invalid") || t.includes("ssl") || t.includes("error")))
+  ) {
+    return true;
+  }
+  if (
+    t.includes("your connection is not private") ||
+    t.includes("connection is not private") ||
+    t.includes("ssl_error") ||
+    t.includes("tls ")
+  ) {
+    return true;
+  }
+  if (
+    t.includes("connection refused") ||
+    t.includes("econnrefused") ||
+    t.includes("enotfound") ||
+    t.includes("name not resolved") ||
+    (t.includes("dns") && (t.includes("failed") || t.includes("error")))
+  ) {
+    return true;
+  }
+  if (t.includes("navigation") && (t.includes("timeout") || t.includes("timed out"))) {
+    return true;
+  }
+  if (t.includes("page failed to load") || t.includes("browser: page failed")) {
+    return true;
+  }
+  if (t.includes("navigation failed")) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Surfaces the latest browser/network failure in the dashboard hint while the run is still active,
+ * so operators do not need to leave and re-enter the run to see that the site is unreachable.
+ */
+function extractLatestBlockerHintFromProgressLog(
+  log: ProgressLogEntry[] | undefined,
+): string | undefined {
+  if (!log?.length) {
+    return undefined;
+  }
+  const tail = log.length > 40 ? log.slice(log.length - 40) : log;
+  for (let i = tail.length - 1; i >= 0; i -= 1) {
+    const e = tail[i];
+    if (!e || e.kind !== "system") {
+      continue;
+    }
+    const text = typeof e.text === "string" ? e.text : "";
+    if (looksLikeBrowserNetworkBlocker(text)) {
+      const oneLine = text.replace(/\s+/g, " ").trim();
+      return oneLine.length > LIVE_BLOCKER_HINT_MAX
+        ? `${oneLine.slice(0, LIVE_BLOCKER_HINT_MAX - 1)}…`
+        : oneLine;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * If the run has been up for several minutes with little transcript activity and no clear tool error,
+ * tell the operator what usually blocks host/browser startup (complements liveBlockerHint).
+ */
+function computeHostStallAdvisory(params: {
+  startTime: number | null;
+  paused: boolean;
+  hasBlockerHint: boolean;
+  messageCount: number;
+}): string | undefined {
+  if (params.paused || params.hasBlockerHint) {
+    return undefined;
+  }
+  if (params.startTime == null || !Number.isFinite(params.startTime)) {
+    return undefined;
+  }
+  if (params.messageCount > HOST_STALL_MAX_TRANSCRIPT_MESSAGES) {
+    return undefined;
+  }
+  const elapsed = Date.now() - params.startTime;
+  if (elapsed < HOST_STALL_AFTER_MS) {
+    return undefined;
+  }
+  return (
+    "This run has been active for 5+ minutes with little chat activity. " +
+    "If the browser or host app never finished starting, check: gateway and browser service are running, " +
+    "Chrome can start and attach, the target URL is reachable, HTTPS or certificate prompts, " +
+    "and firewall or VPN rules. Open the run chat for tool output and check gateway logs."
+  );
+}
+
+function resolveRunningHintWithOptionalBlocker(
+  targetUrl: string | undefined,
+  paused: boolean,
+  authMode: string | undefined,
+  blockerHint: string | undefined,
+  stallAdvisory?: string,
+): string {
+  const trimmed = blockerHint?.trim();
+  if (trimmed) {
+    return `Browser or network issue: ${trimmed} Open the run chat for the full error and suggested next steps.`;
+  }
+  const stall = stallAdvisory?.trim();
+  if (stall) {
+    return stall;
+  }
+  return resolveRunningHint(targetUrl, paused, authMode);
 }
 
 function resolveTerminalHint(status: "completed" | "cancelled" | "error"): string {
@@ -676,17 +1164,24 @@ export async function runProjectExecution(executionId: string): Promise<void> {
       }
       if (
         current.status === "completed" ||
+        current.status === "failed" ||
         current.status === "cancelled" ||
         current.status === "error"
       ) {
         return;
       }
       if (current.paused) {
+        const blockerHintPaused = extractLatestBlockerHintFromProgressLog(current.progressLog);
         await updateExecutionSnapshot(storePath, executionId, (entry) => {
           entry.status = "running";
           entry.paused = true;
           entry.progressPercentage = Math.max(entry.progressPercentage, 8);
-          entry.executorHint = resolveRunningHint(entry.targetUrl, true, entry.authMode);
+          entry.executorHint = resolveRunningHintWithOptionalBlocker(
+            entry.targetUrl,
+            true,
+            entry.authMode,
+            blockerHintPaused,
+          );
         });
         await sleepWithAbort(abortController.signal, 1_200);
         continue;
@@ -694,17 +1189,51 @@ export async function runProjectExecution(executionId: string): Promise<void> {
 
       const row = loadGatewaySessionRow(activeSessionKey);
       const transcript = readProjectRunTranscriptSnapshot(activeSessionKey);
-      const newProgressEntries = extractProgressLogFromTranscript(
+      const newProgressEntries = await extractProgressLogFromTranscript(
         activeSessionKey,
         current.progressLog ?? [],
         current.progressLogSeq ?? 0,
+        executionId,
       );
+      const candidateLogForHint = [...(current.progressLog ?? []), ...newProgressEntries];
+      const liveBlockerHint = extractLatestBlockerHintFromProgressLog(candidateLogForHint);
+      const stallAdvisory = computeHostStallAdvisory({
+        startTime: current.startTime,
+        paused: Boolean(current.paused),
+        hasBlockerHint: Boolean(liveBlockerHint),
+        messageCount: transcript.messageCount,
+      });
       const currentTokens =
         typeof row?.totalTokensFresh === "number"
           ? row.totalTokensFresh
           : typeof row?.totalTokens === "number"
             ? row.totalTokens
             : undefined;
+
+      const elapsedTimeMs = current.startTime ? Date.now() - current.startTime : 0;
+      if (current.timeBudgetMinutes && elapsedTimeMs > current.timeBudgetMinutes * 60 * 1000) {
+        await updateExecutionSnapshot(storePath, executionId, (entry) => {
+          entry.status = "error";
+          entry.lastErrorMessage = `Project Run forcibly stopped: Exceeded time budget of ${current.timeBudgetMinutes} minutes.`;
+          entry.executorHint = resolveTerminalHint("error");
+          entry.durationMs = elapsedTimeMs;
+        });
+        // Important: Stop the OpenClaw session properly? We don't have the context here, but setting status to error stops the loop.
+        // The background session might continue until the next turn, but this halts the project execution orchestrator.
+        return;
+      }
+
+      // Rough cost approximation: assume combined input/output cost averages around $3.00 per 1M tokens.
+      const calculatedCostDollars = (currentTokens || 0) * (3.0 / 1000000);
+      if (current.costBudgetDollars && calculatedCostDollars >= current.costBudgetDollars) {
+        await updateExecutionSnapshot(storePath, executionId, (entry) => {
+          entry.status = "error";
+          entry.lastErrorMessage = `Project Run forcibly stopped: Exceeded cost budget of $${current.costBudgetDollars}.`;
+          entry.executorHint = resolveTerminalHint("error");
+          entry.durationMs = elapsedTimeMs;
+        });
+        return;
+      }
 
       if (!row) {
         missingSessionRowCount += 1;
@@ -732,7 +1261,13 @@ export async function runProjectExecution(executionId: string): Promise<void> {
           entry.status = "running";
           entry.paused = Boolean(entry.paused);
           entry.progressPercentage = Math.max(entry.progressPercentage, entry.paused ? 8 : 15);
-          entry.executorHint = resolveRunningHint(entry.targetUrl, entry.paused, entry.authMode);
+          entry.executorHint = resolveRunningHintWithOptionalBlocker(
+            entry.targetUrl,
+            entry.paused,
+            entry.authMode,
+            liveBlockerHint,
+            stallAdvisory,
+          );
           appendProgressLog(entry, newProgressEntries, transcript.messageCount);
           if (typeof currentTokens === "number") {
             entry.logTokens = currentTokens;
@@ -761,7 +1296,13 @@ export async function runProjectExecution(executionId: string): Promise<void> {
             entry.progressPercentage,
             entry.paused ? 8 : resolveActiveRunProgress(transcript.messageCount),
           );
-          entry.executorHint = resolveRunningHint(entry.targetUrl, entry.paused, entry.authMode);
+          entry.executorHint = resolveRunningHintWithOptionalBlocker(
+            entry.targetUrl,
+            entry.paused,
+            entry.authMode,
+            liveBlockerHint,
+            stallAdvisory,
+          );
           appendProgressLog(entry, newProgressEntries, transcript.messageCount);
           if (typeof currentTokens === "number") {
             entry.logTokens = currentTokens;
@@ -780,12 +1321,45 @@ export async function runProjectExecution(executionId: string): Promise<void> {
         continue;
       }
 
-      const terminalStatus =
-        rowStatus === "done" ? "completed" : rowStatus === "killed" ? "cancelled" : "error";
+      if (rowStatus === "done" || rowStatus === "failed") {
+        const terminalStatus = rowStatus === "failed" ? "failed" : "completed";
+        await updateExecutionSnapshot(storePath, executionId, (entry) => {
+          entry.status = terminalStatus;
+          entry.paused = false;
+          entry.progressPercentage = rowStatus === "done" ? 100 : entry.progressPercentage;
+          if (rowStatus === "failed") {
+            const hints = resolveFailedRunHints({
+              latestAssistantText: transcript.latestAssistantText,
+              tailTextForFailureHints: transcript.tailTextForFailureHints,
+            });
+            entry.executorHint = hints.executorHint;
+            entry.lastErrorMessage = hints.lastErrorMessage;
+          } else {
+            entry.executorHint = resolveTerminalHint("completed");
+          }
+          appendProgressLog(entry, newProgressEntries, transcript.messageCount);
+          if (typeof currentTokens === "number") {
+            entry.logTokens = currentTokens;
+          }
+          if (transcript.latestAssistantText) {
+            entry.results = [
+              buildTranscriptEvidenceRun({
+                executionId,
+                latestAssistantText: transcript.latestAssistantText,
+                status: rowStatus === "failed" ? "Failed" : "Success",
+              }),
+            ];
+          }
+        });
+        // We will break out of the loop on the next iteration because current.status becomes completed/error.
+        await sleepWithAbort(abortController.signal, 1_200);
+        continue;
+      }
+
+      const terminalStatus = rowStatus === "killed" ? "cancelled" : "cancelled";
       await updateExecutionSnapshot(storePath, executionId, (entry) => {
         entry.status = terminalStatus;
         entry.paused = false;
-        entry.progressPercentage = terminalStatus === "completed" ? 100 : entry.progressPercentage;
         entry.durationMs =
           typeof row.runtimeMs === "number"
             ? row.runtimeMs
@@ -797,7 +1371,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
         if (typeof currentTokens === "number") {
           entry.logTokens = currentTokens;
         }
-        if (terminalStatus !== "completed" && !entry.lastErrorMessage) {
+        if (!entry.lastErrorMessage) {
           entry.lastErrorMessage =
             transcript.latestAssistantText ??
             (rowStatus === "killed"
@@ -808,7 +1382,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
           buildTranscriptEvidenceRun({
             executionId,
             latestAssistantText: transcript.latestAssistantText,
-            status: terminalStatus === "completed" ? "Success" : "Failed",
+            status: "Failed",
           }),
         ];
       });
@@ -839,5 +1413,27 @@ export async function cancelProjectExecution(executionId: string): Promise<void>
   if (controller) {
     controller.abort();
     executionControllers.delete(executionId);
+  }
+}
+
+/**
+ * Resumes monitoring for executions that were running or paused when the gateway was shut down.
+ * Does not restart the backend agent run if it was killed entirely, but will resume listening to its session
+ * and updating the execution UI state.
+ */
+export async function resumeActiveProjects(): Promise<void> {
+  const storePath = resolveProjectsStorePath();
+  const store = await loadProjectsStore(storePath).catch(() => null);
+  if (!store) {
+    return;
+  }
+
+  for (const execution of store.executions) {
+    if (execution.status === "running" || execution.status === "pending") {
+      // Background and don't block
+      Promise.resolve()
+        .then(() => runProjectExecution(execution.id))
+        .catch((err) => console.error(`resumeActiveProjects panic for ${execution.id}:`, err));
+    }
   }
 }

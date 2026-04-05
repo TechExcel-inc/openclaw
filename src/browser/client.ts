@@ -1,4 +1,5 @@
 import { fetchBrowserJson } from "./client-fetch.js";
+import { BROWSER_PAGE_LOAD_TIMEOUT_MS } from "./http-timeouts.js";
 
 export type BrowserTransport = "cdp" | "chrome-mcp";
 
@@ -249,7 +250,7 @@ export async function browserOpenTab(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
-    timeoutMs: 15000,
+    timeoutMs: BROWSER_PAGE_LOAD_TIMEOUT_MS,
   });
 }
 
@@ -363,7 +364,7 @@ export async function browserSnapshot(
     q.set("headless", String(opts.headless));
   }
   return await fetchBrowserJson<SnapshotResult>(withBaseUrl(baseUrl, `/snapshot?${q.toString()}`), {
-    timeoutMs: 20000,
+    timeoutMs: BROWSER_PAGE_LOAD_TIMEOUT_MS,
   });
 }
 

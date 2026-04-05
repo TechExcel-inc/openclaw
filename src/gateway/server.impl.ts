@@ -56,6 +56,7 @@ import { createEmptyPluginRegistry } from "../plugins/registry.js";
 import { createPluginRuntime } from "../plugins/runtime/index.js";
 import type { PluginServicesHandle } from "../plugins/services.js";
 import { getTotalQueueSize } from "../process/command-queue.js";
+import { resumeActiveProjects } from "../projects/executor.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { CommandSecretAssignment } from "../secrets/command-config.js";
 import {
@@ -74,6 +75,7 @@ import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { runSetupWizard } from "../wizard/setup.js";
 import { createAuthRateLimiter, type AuthRateLimiter } from "./auth-rate-limit.js";
 import { startChannelHealthMonitor } from "./channel-health-monitor.js";
+import { createChatAbortOpsFromGatewayContext } from "./chat-abort.js";
 import { startGatewayConfigReloader } from "./config-reload.js";
 import type { ControlUiRootState } from "./control-ui.js";
 import {
@@ -83,6 +85,7 @@ import {
 import { ExecApprovalManager } from "./exec-approval-manager.js";
 import { startGatewayModelPricingRefresh } from "./model-pricing-cache.js";
 import { NodeRegistry } from "./node-registry.js";
+import { setProjectRunChatAbortOpsResolver } from "./project-run-chat-abort.js";
 import type { startBrowserControlServerIfEnabled } from "./server-browser.js";
 import { createChannelManager } from "./server-channels.js";
 import {
@@ -1130,6 +1133,9 @@ export async function startGatewayServer(
   // (Telegram polling, WhatsApp, etc.) so later runtime swaps can expose the
   // current gateway context without relying on a startup snapshot.
   setFallbackGatewayContextResolver(() => gatewayRequestContext);
+  setProjectRunChatAbortOpsResolver(() =>
+    createChatAbortOpsFromGatewayContext(gatewayRequestContext),
+  );
 
   attachGatewayWsHandlers({
     wss,
@@ -1329,6 +1335,8 @@ export async function startGatewayServer(
     httpServer,
     httpServers,
   });
+
+  void resumeActiveProjects();
 
   return {
     close: async (opts) => {

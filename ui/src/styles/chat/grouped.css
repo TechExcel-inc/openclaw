@@ -184,6 +184,33 @@ img.chat-avatar {
 }
 
 /* Minimal Bubble Design - dynamic width based on content */
+/* Tool group: compact tool lines + plain thumbnail strip */
+.chat-bubble--tool-run-bundle {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-tool-run-compact {
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--secondary) 28%, transparent);
+  overflow: hidden;
+}
+
+.chat-tool-run-compact__line {
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+
+.chat-tool-run-compact__line:not(:first-child) {
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
 .chat-bubble {
   position: relative;
   display: block;
@@ -352,6 +379,73 @@ img.chat-avatar {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Queued message (in thread until sent) */
+.chat-group--pending-queue .chat-group-footer button {
+  opacity: 0.65;
+  pointer-events: auto;
+}
+
+.chat-group--pending-queue:hover .chat-group-footer button {
+  opacity: 1;
+}
+
+.chat-bubble--pending-user {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--border) 75%, var(--accent) 25%);
+  background: color-mix(in srgb, var(--secondary) 90%, transparent);
+}
+
+.chat-pending-user__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.chat-pending-user__body {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--chat-text);
+  min-width: 0;
+  word-break: break-word;
+}
+
+.chat-pending-user__pulse {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: chat-pending-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes chat-pending-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.chat-pending-user__status {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chat-pending-user__remove {
+  margin-left: 4px;
 }
 
 /* ── Message metadata (tokens, cost, model, context %) ── */

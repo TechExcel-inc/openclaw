@@ -157,7 +157,8 @@ async function sendChatMessageNow(
   return ok;
 }
 
-async function flushChatQueue(host: ChatHost) {
+/** Drains one queued user message when the chat is idle. Safe to call after clearing busy state. */
+export async function flushChatQueue(host: ChatHost) {
   if (!host.connected || isChatBusy(host)) {
     return;
   }

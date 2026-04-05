@@ -60,6 +60,11 @@ function getFallbackGatewayContext(): GatewayRequestContext | undefined {
   return resolved ?? fallbackGatewayContextState.context;
 }
 
+/** For internal callers (e.g. Project Run executor) that need the live gateway context outside RPC. */
+export function getGatewayRequestContextFromFallback(): GatewayRequestContext | undefined {
+  return getFallbackGatewayContext();
+}
+
 type PluginSubagentOverridePolicy = {
   allowModelOverride: boolean;
   allowAnyModel: boolean;

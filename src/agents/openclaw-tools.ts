@@ -12,7 +12,7 @@ import { createBrowserTool } from "./tools/browser-tool.js";
 import { createCanvasTool } from "./tools/canvas-tool.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { createCronTool } from "./tools/cron-tool.js";
-import { createEadExecutionTool } from "./tools/ead-execution-tool.js";
+import { createEadExecutionTool, createReportRunningStepTool } from "./tools/ead-execution-tool.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
@@ -235,6 +235,7 @@ export function createOpenClawTools(
       agentSessionKey: options?.agentSessionKey,
     }),
     createEadExecutionTool(),
+    createReportRunningStepTool(),
     createSessionStatusTool({
       agentSessionKey: options?.agentSessionKey,
       config: resolvedConfig,

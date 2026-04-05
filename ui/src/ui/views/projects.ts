@@ -1,6 +1,11 @@
 import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import type { EadFmNodeRun, TestCaseRun } from "../../../../src/projects/types.js";
+import type {
+  EadFmNodeRun,
+  StepArtifact,
+  StepResult,
+  TestCaseRun,
+} from "../../../../src/projects/types.js";
 import type { AppViewState } from "../app-view-state.js";
 import { icons } from "../icons.js";
 import { toSanitizedMarkdownHtml } from "../markdown.js";
@@ -96,10 +101,27 @@ function renderCustomChatHeader(state: AppViewState, chatProps?: ChatProps) {
         ? `Project Template: ${template.name}`
         : "Project Chat";
 
+  const agentWorking =
+    execution?.status === "running" &&
+    !execution.paused &&
+    Boolean(chatProps?.sending || (chatProps?.stream && chatProps.stream.trim().length > 0));
+
   return html`
     <div style="padding: 16px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
-      <div style="font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-        ${titleText}
+      <div style="min-width: 0; flex: 1;">
+        <div style="font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          ${titleText}
+        </div>
+        ${
+          agentWorking
+            ? html`
+                <div style="margin-top: 6px; font-size: 12px; color: var(--muted); line-height: 1.35">
+                  Agent is working: streaming a reply, using tools, or waiting on the model. This stops when the run
+                  is paused, finished, or failed.
+                </div>
+              `
+            : nothing
+        }
       </div>
       
       <div style="position: relative;">
@@ -268,6 +290,13 @@ function renderTemplateList(state: AppViewState) {
             state.createFormAuthSessionProfile = "";
             state.createFormAuthInstructions = "";
             state.templateModalPreviewMarkdown = false;
+            state.createFormTimeBudgetMinutes = Number(
+              localStorage.getItem("ead_defaultTimeBudget") || 30,
+            );
+            state.createFormCostBudgetDollars = Number(
+              localStorage.getItem("ead_defaultCostBudget") || 1,
+            );
+            state.createFormShowLocalBrowser = false;
             state.showCreateModal = true;
           }}
         >
@@ -295,6 +324,13 @@ function renderTemplateList(state: AppViewState) {
                 state.createFormAuthSessionProfile = "";
                 state.createFormAuthInstructions = "";
                 state.templateModalPreviewMarkdown = false;
+                state.createFormTimeBudgetMinutes = Number(
+                  localStorage.getItem("ead_defaultTimeBudget") || 30,
+                );
+                state.createFormCostBudgetDollars = Number(
+                  localStorage.getItem("ead_defaultCostBudget") || 1,
+                );
+                state.createFormShowLocalBrowser = false;
                 state.showCreateModal = true;
               }}
             >
@@ -433,6 +469,13 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                   state.createFormAuthSessionProfile = template.authSessionProfile || "";
                   state.createFormAuthInstructions = template.authInstructions || "";
                   state.templateModalPreviewMarkdown = false;
+                  state.createFormTimeBudgetMinutes =
+                    template.timeBudgetMinutes ??
+                    Number(localStorage.getItem("ead_defaultTimeBudget") || 30);
+                  state.createFormCostBudgetDollars =
+                    template.costBudgetDollars ??
+                    Number(localStorage.getItem("ead_defaultCostBudget") || 1);
+                  state.createFormShowLocalBrowser = false;
                   state.showCreateModal = true;
                 }}
               >
@@ -493,6 +536,13 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                       state.createFormAuthSessionProfile = template.authSessionProfile || "";
                       state.createFormAuthInstructions = template.authInstructions || "";
                       state.templateModalPreviewMarkdown = true;
+                      state.createFormTimeBudgetMinutes =
+                        template.timeBudgetMinutes ??
+                        Number(localStorage.getItem("ead_defaultTimeBudget") || 30);
+                      state.createFormCostBudgetDollars =
+                        template.costBudgetDollars ??
+                        Number(localStorage.getItem("ead_defaultCostBudget") || 1);
+                      state.createFormShowLocalBrowser = false;
                       state.showCreateModal = true;
                     }}
                   >
@@ -569,7 +619,7 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                                       ${run.name}
                                     </td>
                                     <td style="padding: 16px 24px;">
-                                      <span class="pill ${run.status === "completed" ? "success" : run.status === "running" ? "primary" : "danger"}" style="font-size: 12px;">
+                                      <span class="pill ${run.status === "completed" ? "success" : run.status === "running" ? "primary" : run.status === "failed" ? "warning" : "danger"}" style="font-size: 12px;">
                                         ${run.status.toUpperCase()}
                                       </span>
                                     </td>
@@ -645,9 +695,161 @@ function renderCreateModal(state: AppViewState) {
         class="project-create-modal__dialog project-create-modal__dialog--wide" 
         style="max-width: 800px; width: 90vw; max-height: 90vh; display: flex; flex-direction: column;"
       >
-        <h2 class="project-create-modal__title">${title}</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.6); padding: 16px 20px; border-radius: 8px; margin-bottom: 24px;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600; color: var(--fg-default);">${title}</h2>
+          <div class="project-create-modal__actions" style="margin-top: 0; padding-top: 0; border-top: none; display: flex; gap: 8px;">
+            <button
+              class="project-create-modal__btn"
+              ?disabled=${state.templateCreating}
+              @click=${() => {
+                state.showCreateModal = false;
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              class="project-create-modal__btn project-create-modal__btn--primary"
+              ?disabled=${submitBlocked}
+              @click=${async () => {
+                if (isRun && state.templateDetail) {
+                  state.templateCreating = true;
+                  try {
+                    const res = await state.handleExecutionRun(state.templateDetail.id, {
+                      targetUrl: state.createFormTargetUrl.trim(),
+                      aiPrompt: state.createFormAiPrompt.trim(),
+                      authMode: state.createFormAuthMode,
+                      authLoginUrl: state.createFormAuthLoginUrl.trim(),
+                      authSessionProfile: state.createFormAuthSessionProfile.trim(),
+                      authInstructions: state.createFormAuthInstructions.trim(),
+                      timeBudgetMinutes: state.createFormTimeBudgetMinutes,
+                      costBudgetDollars: state.createFormCostBudgetDollars,
+                      ...(state.createFormShowLocalBrowser ? { showLocalBrowser: true } : {}),
+                    });
+                    state.showCreateModal = false;
+                    if (res) {
+                      state.handleExecutionSetActive(res.id);
+                    }
+                  } finally {
+                    state.templateCreating = false;
+                  }
+                } else if (isEdit && state.templateDetail) {
+                  await state.handleTemplateUpdate(state.templateDetail.id, {
+                    name: state.createFormName.trim(),
+                    description: state.createFormDescription.trim(),
+                    targetUrl: state.createFormTargetUrl.trim(),
+                    aiPrompt: state.createFormAiPrompt.trim(),
+                    authMode: state.createFormAuthMode,
+                    authLoginUrl: state.createFormAuthLoginUrl.trim(),
+                    authSessionProfile: state.createFormAuthSessionProfile.trim(),
+                    authInstructions: state.createFormAuthInstructions.trim(),
+                    timeBudgetMinutes: state.createFormTimeBudgetMinutes,
+                    costBudgetDollars: state.createFormCostBudgetDollars,
+                  });
+                  state.showCreateModal = false;
+                } else {
+                  void state.handleTemplateCreate(
+                    state.createFormName.trim(),
+                    state.createFormDescription.trim(),
+                    state.createFormTargetUrl.trim(),
+                    state.createFormAiPrompt.trim(),
+                    {
+                      authMode: state.createFormAuthMode,
+                      authLoginUrl: state.createFormAuthLoginUrl.trim(),
+                      authSessionProfile: state.createFormAuthSessionProfile.trim(),
+                      authInstructions: state.createFormAuthInstructions.trim(),
+                      timeBudgetMinutes: state.createFormTimeBudgetMinutes,
+                      costBudgetDollars: state.createFormCostBudgetDollars,
+                    },
+                  );
+                }
+              }}
+            >
+              ${submitText}
+            </button>
+          </div>
+        </div>
 
         <div style="overflow-y: auto; flex: 1; padding-right: 8px;">
+          <div class="project-create-modal__field" style="display: flex; gap: 16px;">
+            <div style="flex: 1;">
+              <label class="project-create-modal__label">Maximum Duration</label>
+              <select
+                class="project-create-modal__input"
+                .value=${String(state.createFormTimeBudgetMinutes ?? 30)}
+                @change=${(e: Event) => {
+                  const val = Number((e.target as HTMLSelectElement).value);
+                  state.createFormTimeBudgetMinutes = val;
+                  localStorage.setItem("ead_defaultTimeBudget", String(val));
+                }}
+              >
+                <option value="5">5 min</option>
+                <option value="15">15 min</option>
+                <option value="30">30 min</option>
+                <option value="60">1 hour</option>
+                <option value="120">2 hour</option>
+                <option value="240">4 hour</option>
+                <option value="480">8 hour</option>
+                <option value="1440">1 day</option>
+                <option value="2880">2 day</option>
+                <option value="7200">5 days</option>
+                <option value="14400">10 days</option>
+              </select>
+            </div>
+            <div style="flex: 1;">
+              <label class="project-create-modal__label">Budget Under</label>
+              <select
+                class="project-create-modal__input"
+                .value=${String(state.createFormCostBudgetDollars ?? 1)}
+                @change=${(e: Event) => {
+                  const val = Number((e.target as HTMLSelectElement).value);
+                  state.createFormCostBudgetDollars = val;
+                  localStorage.setItem("ead_defaultCostBudget", String(val));
+                }}
+              >
+                <option value="0.1">$0.1</option>
+                <option value="0.2">$0.2</option>
+                <option value="0.5">$0.5</option>
+                <option value="1">$1</option>
+                <option value="2">$2</option>
+                <option value="5">$5</option>
+                <option value="10">$10</option>
+                <option value="50">$50</option>
+                <option value="100">$100</option>
+                <option value="500">$500</option>
+                <option value="1000">$1000</option>
+                <option value="10000">$10,000</option>
+              </select>
+            </div>
+          </div>
+          ${
+            isRun
+              ? html`
+                  <div class="project-create-modal__field" style="margin-top: 4px;">
+                    <label
+                      style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 14px; color: var(--fg-default);"
+                    >
+                      <input
+                        type="checkbox"
+                        style="margin-top: 2px;"
+                        .checked=${state.createFormShowLocalBrowser}
+                        @change=${(e: Event) => {
+                          state.createFormShowLocalBrowser = (e.target as HTMLInputElement).checked;
+                        }}
+                      />
+                      <span>
+                        Show local browser for this run
+                        <span
+                          style="display: block; font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 4px;"
+                        >
+                          Opens a visible browser window on this machine (headed). Leave off for
+                          background headless automation.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                `
+              : nothing
+          }
           ${
             showTemplateFields
               ? html`
@@ -930,69 +1132,7 @@ function renderCreateModal(state: AppViewState) {
           </div>
         </div>
 
-        <div class="project-create-modal__actions" style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color); flex-shrink: 0;">
-          <button
-            class="project-create-modal__btn"
-            ?disabled=${state.templateCreating}
-            @click=${() => {
-              state.showCreateModal = false;
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            class="project-create-modal__btn project-create-modal__btn--primary"
-            ?disabled=${submitBlocked}
-            @click=${async () => {
-              if (isRun && state.templateDetail) {
-                state.templateCreating = true;
-                try {
-                  const res = await state.handleExecutionRun(state.templateDetail.id, {
-                    targetUrl: state.createFormTargetUrl.trim(),
-                    aiPrompt: state.createFormAiPrompt.trim(),
-                    authMode: state.createFormAuthMode,
-                    authLoginUrl: state.createFormAuthLoginUrl.trim(),
-                    authSessionProfile: state.createFormAuthSessionProfile.trim(),
-                    authInstructions: state.createFormAuthInstructions.trim(),
-                  });
-                  state.showCreateModal = false;
-                  if (res) {
-                    state.handleExecutionSetActive(res.id);
-                  }
-                } finally {
-                  state.templateCreating = false;
-                }
-              } else if (isEdit && state.templateDetail) {
-                await state.handleTemplateUpdate(state.templateDetail.id, {
-                  name: state.createFormName.trim(),
-                  description: state.createFormDescription.trim(),
-                  targetUrl: state.createFormTargetUrl.trim(),
-                  aiPrompt: state.createFormAiPrompt.trim(),
-                  authMode: state.createFormAuthMode,
-                  authLoginUrl: state.createFormAuthLoginUrl.trim(),
-                  authSessionProfile: state.createFormAuthSessionProfile.trim(),
-                  authInstructions: state.createFormAuthInstructions.trim(),
-                });
-                state.showCreateModal = false;
-              } else {
-                void state.handleTemplateCreate(
-                  state.createFormName.trim(),
-                  state.createFormDescription.trim(),
-                  state.createFormTargetUrl.trim(),
-                  state.createFormAiPrompt.trim(),
-                  {
-                    authMode: state.createFormAuthMode,
-                    authLoginUrl: state.createFormAuthLoginUrl.trim(),
-                    authSessionProfile: state.createFormAuthSessionProfile.trim(),
-                    authInstructions: state.createFormAuthInstructions.trim(),
-                  },
-                );
-              }
-            }}
-          >
-            ${submitText}
-          </button>
-        </div>
+
       </div>
     </div>
   `;
@@ -1044,7 +1184,9 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
         ? execution.paused
           ? "warning"
           : "primary"
-        : "danger";
+        : execution.status === "failed"
+          ? "warning"
+          : "danger";
   const shouldShowActiveRunFooter = execution.status === "running" && !execution.paused;
 
   return html`
@@ -1105,35 +1247,50 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
            </div>
            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
              ${
-               execution.status === "running"
+               execution.status === "running" || execution.status === "pending"
                  ? html`
                      ${
-                       execution.paused
-                         ? html`
-                             <button
-                               class="project-create-modal__btn project-create-modal__btn--primary"
-                               style="padding: 8px 16px;"
-                               @click=${() => void state.handleExecutionResume(execution.id)}
-                             >
-                               ${
-                                 execution.authMode === "manual-bootstrap"
-                                   ? "Login complete, continue run"
-                                   : "Resume Execution"
-                               }
-                             </button>
-                           `
-                         : html`
-                             <button
-                               class="project-create-modal__btn"
-                               style="padding: 8px 16px;"
-                               @click=${() => void state.handleExecutionPause(execution.id)}
-                             >
-                               Pause Execution
-                             </button>
-                           `
+                       execution.status === "running"
+                         ? execution.paused
+                           ? html`
+                               <button
+                                 class="project-create-modal__btn project-create-modal__btn--primary"
+                                 style="padding: 8px 16px;"
+                                 @click=${() => void state.handleExecutionResume(execution.id)}
+                               >
+                                 ${
+                                   execution.authMode === "manual-bootstrap"
+                                     ? "Login complete, continue run"
+                                     : "Resume Execution"
+                                 }
+                               </button>
+                             `
+                           : html`
+                               <button
+                                 class="project-create-modal__btn"
+                                 style="padding: 8px 16px;"
+                                 @click=${() => void state.handleExecutionPause(execution.id)}
+                               >
+                                 Pause Execution
+                               </button>
+                             `
+                         : nothing
                      }
-                     <button class="project-create-modal__btn project-create-modal__btn--danger" style="padding: 8px 16px;" @click=${() => void state.handleExecutionCancel(execution.id)}>
-                       Cancel Execution
+                     <button
+                       class="project-create-modal__btn project-create-modal__btn--accent-outline"
+                       style="padding: 8px 16px;"
+                       @click=${() =>
+                         void state.handleExecutionCancel(execution.id, undefined, "finish")}
+                     >
+                       Finish run
+                     </button>
+                     <button
+                       class="project-create-modal__btn project-create-modal__btn--danger"
+                       style="padding: 8px 16px;"
+                       @click=${() =>
+                         void state.handleExecutionCancel(execution.id, undefined, "cancel")}
+                     >
+                       Cancel run
                      </button>
                    `
                  : nothing
@@ -1156,62 +1313,31 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
           <h2 class="project-detail__section-title" style="margin-bottom: 16px;">📍 Discovered Feature Map (EAD-FM)</h2>
           
           <div style="display: flex; flex-direction: column; gap: 16px;">
-            ${(execution.results || []).map(
-              (node: EadFmNodeRun) => html`
-              <details class="test-case-accordion" style="background: var(--bg-surface-2, #21262d); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden;" open>
-                <summary style="padding: 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-weight: 500; outline: none; user-select: none;">
-                  <div style="display: flex; align-items: center; gap: 12px;">
-                    <span style="font-size: 16px;">▾ 🧩 ${node.title}</span>
-                  </div>
-                  <span style="opacity: 0.5;">${icons.chevronDown}</span>
-                </summary>
-
-                <div style="border-top: 1px solid var(--border-color); padding: 16px;">
-                  <!-- List the Test Cases generated for this Node -->
-                  <h4 style="margin: 0 0 12px; font-size: 13px; color: var(--muted); text-transform: uppercase;">Generated Test Cases</h4>
-                  ${(node.testCaseRuns || []).map(
-                    (tc: TestCaseRun) => html`
-                    <div style="margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 6px; border: 1px solid var(--border-color);">
-                      <div style="display: flex; align-items: center; gap: 8px; font-weight: 500; margin-bottom: 8px;">
-                        <span class="pill ${tc.status === "Success" ? "success" : tc.status === "Failed" ? "danger" : ""}">${tc.status}</span>
-                        ${tc.title}
-                      </div>
-                      ${
-                        tc.testCaseStepRuns && tc.testCaseStepRuns.length > 0
-                          ? html`
-                            <ul style="margin: 0; padding-left: 20px; color: var(--text-color); font-size: 13px; line-height: 1.6;">
-                              ${tc.testCaseStepRuns.map(
-                                (step) => html`
-                                <li>
-                                  <div>Found: <strong>${step.procedureText}</strong></div>
-                                  ${step.screenshotUrl ? html`<img src=${step.screenshotUrl} style="max-width: 100%; max-height: 200px; display: block; margin-top: 8px; border: 1px solid var(--border-color); border-radius: 4px;" alt="Evidence" />` : nothing}
-                                </li>
-                              `,
-                              )}
-                            </ul>
-                          `
-                          : html`
-                              <div style="color: var(--muted); font-size: 13px">Scanning steps...</div>
-                            `
-                      }
-                    </div>
-                  `,
-                  )}
-                  ${
-                    !node.testCaseRuns || node.testCaseRuns.length === 0
-                      ? html`
-                          <div style="color: var(--muted); font-size: 13px">No test cases drafted yet...</div>
-                        `
-                      : nothing
-                  }
-                </div>
-              </details>
-            `,
-            )}
-            
             ${
-              !execution.results || execution.results.length === 0
-                ? html`
+              execution.steps && execution.steps.length > 0
+                ? execution.steps.map(
+                    (step: StepResult) => html`
+                      <div style="margin-bottom: 16px; padding: 16px; background: rgba(0,0,0,0.1); border-radius: 6px; border: 1px solid var(--border-color);">
+                        <div style="display: flex; align-items: center; gap: 8px; font-weight: 500; margin-bottom: 8px;">
+                          <span class="pill ${step.status === "completed" ? "success" : step.status === "failed" ? "danger" : "primary"}">${step.status}</span>
+                          ${step.title}
+                        </div>
+                        <div style="color: var(--text-color); font-size: 13px; line-height: 1.6;">
+                          ${step.summary ? html`<div>${step.summary}</div>` : nothing}
+                          ${
+                            step.artifacts && step.artifacts.length > 0
+                              ? step.artifacts.slice(0, 3).map(
+                                  (art: StepArtifact) => html`
+                                  <img src=${art.thumbnailPath || art.path} style="max-width: 100%; max-height: 200px; display: block; margin-top: 8px; border: 1px solid var(--border-color); border-radius: 4px;" alt="Evidence" />
+                                `,
+                                )
+                              : nothing
+                          }
+                        </div>
+                      </div>
+                    `,
+                  )
+                : html`
                     <div
                       style="
                         padding: 24px;
@@ -1224,7 +1350,6 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
                       Waiting for AI to discover feature nodes...
                     </div>
                   `
-                : nothing
             }
             </div>
             
@@ -1309,7 +1434,7 @@ function renderExecutionSummary(state: AppViewState, chatProps?: ChatProps) {
         <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: var(--fg-default);">
           Execution: ${execution.name || execution.targetUrl}
         </h2>
-        <span class="pill ${execution.status === "completed" ? "success" : execution.status === "running" ? "primary" : "danger"}">
+        <span class="pill ${execution.status === "completed" ? "success" : execution.status === "running" ? "primary" : execution.status === "failed" ? "warning" : "danger"}">
           ${execution.status.toUpperCase()}
         </span>
       </div>
@@ -1349,57 +1474,28 @@ function renderExecutionSummary(state: AppViewState, chatProps?: ChatProps) {
         </h3>
         <div style="display: flex; flex-direction: column; gap: 16px;">
           ${
-            execution.results && execution.results.length > 0
-              ? execution.results.map(
-                  (node) => html`
-                <details class="test-case-accordion" style="background: var(--bg-surface-2, #21262d); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden;" open>
-                  <summary style="padding: 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-weight: 500; outline: none; user-select: none;">
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                      <span style="font-size: 16px;">▾ 🧩 ${node.title}</span>
-                    </div>
-                    <span style="opacity: 0.5;"><div style="width: 16px; height: 16px; display: inline-flex; justify-content: center; align-items: center;">${icons.chevronDown}</div></span>
-                  </summary>
-
-                  <div style="border-top: 1px solid var(--border-color); padding: 16px;">
-                    <h4 style="margin: 0 0 12px; font-size: 13px; color: var(--muted); text-transform: uppercase;">Generated Test Cases</h4>
-                    ${(node.testCaseRuns || []).map(
-                      (tc) => html`
-                      <div style="margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 6px; border: 1px solid var(--border-color);">
-                        <div style="display: flex; align-items: center; gap: 8px; font-weight: 500; margin-bottom: 8px;">
-                          <span class="pill ${tc.status === "Success" ? "success" : tc.status === "Failed" ? "danger" : ""}">${tc.status}</span>
-                          ${tc.title}
-                        </div>
+            execution.steps && execution.steps.length > 0
+              ? execution.steps.map(
+                  (step) => html`
+                    <div style="margin-bottom: 16px; padding: 16px; background: rgba(0,0,0,0.1); border-radius: 6px; border: 1px solid var(--border-color);">
+                      <div style="display: flex; align-items: center; gap: 8px; font-weight: 500; margin-bottom: 8px;">
+                        <span class="pill ${step.status === "completed" ? "success" : step.status === "failed" ? "danger" : "primary"}">${step.status}</span>
+                        ${step.title}
+                      </div>
+                      <div style="color: var(--text-color); font-size: 13px; line-height: 1.6;">
+                        ${step.summary ? html`<div>${step.summary}</div>` : nothing}
                         ${
-                          tc.testCaseStepRuns && tc.testCaseStepRuns.length > 0
-                            ? html`
-                              <ul style="margin: 0; padding-left: 20px; color: var(--text-color); font-size: 13px; line-height: 1.6;">
-                                ${tc.testCaseStepRuns.map(
-                                  (step) => html`
-                                  <li>
-                                    <div>Found: <strong>${step.procedureText}</strong></div>
-                                    ${step.screenshotUrl ? html`<img src=${step.screenshotUrl} style="max-width: 100%; max-height: 200px; display: block; margin-top: 8px; border: 1px solid var(--border-color); border-radius: 4px;" alt="Evidence" />` : nothing}
-                                  </li>
-                                `,
-                                )}
-                              </ul>
-                            `
-                            : html`
-                                <div style="color: var(--muted); font-size: 13px">Scanning steps...</div>
-                              `
+                          step.artifacts && step.artifacts.length > 0
+                            ? step.artifacts.slice(0, 3).map(
+                                (art) => html`
+                                <img src=${art.thumbnailPath || art.path} style="max-width: 100%; max-height: 200px; display: block; margin-top: 8px; border: 1px solid var(--border-color); border-radius: 4px;" alt="Evidence" />
+                              `,
+                              )
+                            : nothing
                         }
                       </div>
-                    `,
-                    )}
-                    ${
-                      !node.testCaseRuns || node.testCaseRuns.length === 0
-                        ? html`
-                            <div style="color: var(--muted); font-size: 13px">No test cases drafted yet...</div>
-                          `
-                        : nothing
-                    }
-                  </div>
-                </details>
-              `,
+                    </div>
+                  `,
                 )
               : html`
                   <div
@@ -1572,18 +1668,36 @@ export function renderAutoTestRunView(state: AppViewState, chatProps?: ChatProps
                                 </div>
                               </td>
                               <td style="padding: 16px 24px; text-align: right;">
-                                <span class="pill ${execution.status === "completed" ? "success" : execution.status === "running" ? "primary" : "danger"}">
+                                <span class="pill ${execution.status === "completed" ? "success" : execution.status === "running" ? "primary" : execution.status === "failed" ? "warning" : "danger"}">
                                   ${execution.status.toUpperCase()}
                                 </span>
                                 ${
-                                  execution.status === "running"
+                                  execution.status === "running" || execution.status === "pending"
                                     ? html`
-                                      <button 
-                                        class="btn btn--danger" 
+                                      <button
+                                        class="btn btn--sm btn--project-run-finish"
                                         style="margin-left: 12px; padding: 4px 10px; font-size: 12px; border-radius: 4px;"
                                         @click=${(e: Event) => {
                                           e.stopPropagation();
-                                          void state.handleExecutionCancel(execution.id);
+                                          void state.handleExecutionCancel(
+                                            execution.id,
+                                            undefined,
+                                            "finish",
+                                          );
+                                        }}
+                                      >
+                                        Finish
+                                      </button>
+                                      <button
+                                        class="btn btn--danger"
+                                        style="margin-left: 8px; padding: 4px 10px; font-size: 12px; border-radius: 4px;"
+                                        @click=${(e: Event) => {
+                                          e.stopPropagation();
+                                          void state.handleExecutionCancel(
+                                            execution.id,
+                                            undefined,
+                                            "cancel",
+                                          );
                                         }}
                                       >
                                         Cancel

@@ -23,6 +23,8 @@ export const TemplatesCreateParamsSchema = Type.Object(
     authLoginUrl: Type.Optional(Type.String()),
     authSessionProfile: Type.Optional(Type.String()),
     authInstructions: Type.Optional(Type.String()),
+    timeBudgetMinutes: Type.Optional(Type.Number()),
+    costBudgetDollars: Type.Optional(Type.Number()),
   },
   { additionalProperties: false },
 );
@@ -38,6 +40,8 @@ export const TemplatesUpdateParamsSchema = Type.Object(
     authLoginUrl: Type.Optional(Type.String()),
     authSessionProfile: Type.Optional(Type.String()),
     authInstructions: Type.Optional(Type.String()),
+    timeBudgetMinutes: Type.Optional(Type.Number()),
+    costBudgetDollars: Type.Optional(Type.Number()),
   },
   { additionalProperties: false },
 );
@@ -72,6 +76,10 @@ export const ExecutionsRunParamsSchema = Type.Object(
     authLoginUrl: Type.Optional(Type.String()),
     authSessionProfile: Type.Optional(Type.String()),
     authInstructions: Type.Optional(Type.String()),
+    timeBudgetMinutes: Type.Optional(Type.Number()),
+    costBudgetDollars: Type.Optional(Type.Number()),
+    /** When true, open a visible local browser for this run; default is headless. */
+    showLocalBrowser: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -80,6 +88,8 @@ export const ExecutionsCancelParamsSchema = Type.Object(
   {
     id: NonEmptyString,
     reason: Type.Optional(Type.String({ maxLength: 2000 })),
+    /** `finish` ends the run as completed (operator success). `cancel` ends as cancelled. Default: cancel. */
+    mode: Type.Optional(Type.String({ enum: ["finish", "cancel"] })),
   },
   { additionalProperties: false },
 );

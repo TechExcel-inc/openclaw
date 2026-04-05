@@ -5,6 +5,8 @@ export const TAB_GROUPS = [
   { label: "projectTemplates", tabs: ["projects"] },
   { label: "projectExecute", tabs: ["autoTestRun"] },
   { label: "chat", tabs: ["chatGeneral", "chatProject"] },
+  /** Dynamic execution links (recent runs); no static tabs — see `renderProjectRunNavItems`. */
+  { label: "projectRun", tabs: [] },
   { label: "agent", tabs: ["agents", "skills", "nodes"] },
   {
     label: "control",

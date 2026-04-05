@@ -73,4 +73,28 @@ describe("resolveEadProjectContextFromState", () => {
     });
     expect(ctx).toEqual({ mode: "run", id: "run1" });
   });
+
+  it("uses Project Run URL id when globalExecutionsList is empty (not loaded yet)", () => {
+    const ctx = resolveEadProjectContextFromState({
+      chatShowNoneProjectChat: false,
+      chatActiveTemplateId: "run-uuid",
+      chatProjectRunExecutionId: "run-uuid",
+      tab: "chatProjectRun",
+      templatesList: [],
+      globalExecutionsList: [],
+    });
+    expect(ctx).toEqual({ mode: "run", id: "run-uuid" });
+  });
+
+  it("does not force run mode on non–Project Run tabs when chatProjectRunExecutionId is stale", () => {
+    const ctx = resolveEadProjectContextFromState({
+      chatShowNoneProjectChat: false,
+      chatActiveTemplateId: "run-uuid",
+      chatProjectRunExecutionId: "run-uuid",
+      tab: "projects",
+      templatesList: [],
+      globalExecutionsList: [],
+    });
+    expect(ctx).toEqual({ mode: "none" });
+  });
 });

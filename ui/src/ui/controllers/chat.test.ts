@@ -62,6 +62,27 @@ describe("handleChatEvent", () => {
     expect(state.chatStream).toBe("Hello");
   });
 
+  it("applies delta from another run when tab is chatProjectRun", () => {
+    const state = createState({
+      sessionKey: "main",
+      tab: "chatProjectRun",
+      chatRunId: "run-user-followup",
+      chatStream: "",
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-bootstrap",
+      sessionKey: "main",
+      state: "delta",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Exploring the target site…" }],
+      },
+    };
+    expect(handleChatEvent(state, payload)).toBe(null);
+    expect(state.chatRunId).toBe("run-user-followup");
+    expect(state.chatStream).toBe("Exploring the target site…");
+  });
+
   it("ignores NO_REPLY delta updates", () => {
     const state = createState({
       sessionKey: "main",
@@ -142,6 +163,127 @@ describe("handleChatEvent", () => {
     expect(handleChatEvent(state, payload)).toBe("final");
     expect(state.chatRunId).toBe("run-user");
     expect(state.chatMessages).toEqual([]);
+  });
+
+  it("shows inter-turn working placeholder after final when project run execution is still running", () => {
+    const state = createState({
+      sessionKey: "main",
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: "exec-1",
+      chatRunId: "run-1",
+      globalExecutionsList: [
+        {
+          id: "exec-1",
+          linkedTemplateId: "t",
+          name: "n",
+          description: "",
+          targetUrl: "",
+          aiPrompt: "",
+          status: "running",
+          paused: false,
+          steps: [],
+          progressPercentage: 10,
+          startTime: Date.now(),
+          durationMs: null,
+          results: [],
+        },
+      ],
+      executionDetail: null,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "final",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Turn one done" }],
+        timestamp: Date.now(),
+      },
+    };
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatRunId).toBe(null);
+    expect(state.chatStream).toBe("");
+    expect(state.chatStreamStartedAt).not.toBe(null);
+  });
+
+  it("shows inter-turn working placeholder after final when project run execution is pending", () => {
+    const state = createState({
+      sessionKey: "main",
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: "exec-pend",
+      chatRunId: "run-1",
+      globalExecutionsList: [
+        {
+          id: "exec-pend",
+          linkedTemplateId: "t",
+          name: "n",
+          description: "",
+          targetUrl: "",
+          aiPrompt: "",
+          status: "pending",
+          paused: false,
+          steps: [],
+          progressPercentage: 5,
+          startTime: Date.now(),
+          durationMs: null,
+          results: [],
+        },
+      ],
+      executionDetail: null,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "final",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "First output" }],
+        timestamp: Date.now(),
+      },
+    };
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatStream).toBe("");
+    expect(state.chatStreamStartedAt).not.toBe(null);
+  });
+
+  it("does not show inter-turn placeholder after final when project run execution is completed", () => {
+    const state = createState({
+      sessionKey: "main",
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: "exec-1",
+      chatRunId: "run-1",
+      globalExecutionsList: [
+        {
+          id: "exec-1",
+          linkedTemplateId: "t",
+          name: "n",
+          description: "",
+          targetUrl: "",
+          aiPrompt: "",
+          status: "completed",
+          paused: false,
+          steps: [],
+          progressPercentage: 100,
+          startTime: Date.now(),
+          durationMs: 1000,
+          results: [],
+        },
+      ],
+      executionDetail: null,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "final",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Done" }],
+        timestamp: Date.now(),
+      },
+    };
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatStream).toBe(null);
+    expect(state.chatStreamStartedAt).toBe(null);
   });
 
   it("persists streamed text when final event carries no message", () => {
@@ -504,6 +646,8 @@ describe("handleChatEvent", () => {
 });
 
 describe("project run session bootstrap", () => {
+  const chatQueueEmpty = { chatQueue: [] as unknown[] };
+
   it("creates the run session and bootstraps the first Project Run turn", async () => {
     const request = vi.fn(async (method: string) => {
       if (method === "sessions.create") {
@@ -527,6 +671,7 @@ describe("project run session bootstrap", () => {
           aiPrompt: "Map major product areas",
           authMode: "reuse-session",
           authSessionProfile: "qa-admin-session",
+          status: "running",
         };
       }
       return undefined;
@@ -551,6 +696,7 @@ describe("project run session bootstrap", () => {
       createFormAuthLoginUrl: "",
       createFormAuthSessionProfile: "",
       createFormAuthInstructions: "",
+      createFormShowLocalBrowser: false,
       projectAuthProfilesLoading: false,
       projectAuthProfilesError: null,
       projectAuthProfiles: [],
@@ -563,6 +709,9 @@ describe("project run session bootstrap", () => {
       globalExecutionsLoading: false,
       globalExecutionsList: [],
       sessionKey: "agent:main:main:eadproj:run:run-123",
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: "run-123",
+      ...chatQueueEmpty,
     };
 
     await setActiveExecution(state as Parameters<typeof setActiveExecution>[0], "run-123");
@@ -581,13 +730,13 @@ describe("project run session bootstrap", () => {
     });
     expect(request).toHaveBeenCalledWith("chat.history", {
       sessionKey: "agent:main:main:eadproj:run:run-123",
-      limit: 20,
+      limit: 200,
     });
     expect(request).toHaveBeenCalledWith("executions.get", { id: "run-123" });
     expect(request).toHaveBeenCalledWith("chat.inject", {
       sessionKey: "agent:main:main:eadproj:run:run-123",
       label: "Project Run Context",
-      message: expect.stringContaining("Execution Run ID: run-123."),
+      message: expect.stringContaining("Execution id: run-123."),
     });
     expect(request).toHaveBeenCalledWith("chat.send", {
       sessionKey: "agent:main:main:eadproj:run:run-123",
@@ -595,6 +744,313 @@ describe("project run session bootstrap", () => {
       idempotencyKey: "project-run-bootstrap:run-123",
       message: expect.stringContaining("Session reuse hint: qa-admin-session."),
     });
+  });
+
+  it("sends Project Run bootstrap at most once per execution when setActiveExecution runs twice", async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.create") {
+        return { key: "agent:main:main:eadproj:run:run-dup-1" };
+      }
+      if (method === "chat.inject") {
+        return { ok: true };
+      }
+      if (method === "chat.history") {
+        return { messages: [] };
+      }
+      if (method === "chat.send") {
+        return { runId: "bootstrap-run", status: "started" };
+      }
+      if (method === "executions.get") {
+        return {
+          id: "run-dup-1",
+          name: "P",
+          description: "d",
+          targetUrl: "https://example.com",
+          aiPrompt: "x",
+          authMode: "none" as const,
+          status: "running",
+        };
+      }
+      return undefined;
+    });
+
+    const state = {
+      client: { request },
+      connected: true,
+      templatesLoading: false,
+      templatesError: null,
+      templatesList: [],
+      activeTemplateId: null,
+      templateDetail: null,
+      templateDetailLoading: false,
+      templateCreating: false,
+      showCreateModal: false,
+      createFormName: "",
+      createFormDescription: "",
+      createFormTargetUrl: "",
+      createFormAiPrompt: "",
+      createFormAuthMode: "none" as const,
+      createFormAuthLoginUrl: "",
+      createFormAuthSessionProfile: "",
+      createFormAuthInstructions: "",
+      createFormShowLocalBrowser: false,
+      projectAuthProfilesLoading: false,
+      projectAuthProfilesError: null,
+      projectAuthProfiles: [],
+      executionsLoading: false,
+      executionsError: null,
+      executionsList: [],
+      activeExecutionId: null as string | null,
+      executionDetail: null,
+      executionDetailLoading: false,
+      globalExecutionsLoading: false,
+      globalExecutionsList: [],
+      sessionKey: "agent:main:main:eadproj:run:run-dup-1",
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: "run-dup-1",
+      ...chatQueueEmpty,
+    };
+
+    await setActiveExecution(state as Parameters<typeof setActiveExecution>[0], "run-dup-1");
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await setActiveExecution(state as Parameters<typeof setActiveExecution>[0], "run-dup-1");
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const sends = request.mock.calls.filter((c) => c[0] === "chat.send");
+    expect(sends).toHaveLength(1);
+  });
+
+  it("does not chat.inject Project Run context when history already has messages", async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.create") {
+        return { key: "agent:main:main:eadproj:run:run-789" };
+      }
+      if (method === "chat.history") {
+        return {
+          messages: [{ role: "user", content: [{ type: "text", text: "prior" }] }],
+        };
+      }
+      if (method === "executions.get") {
+        return {
+          id: "run-789",
+          name: "Project One Test",
+          description: "Explore the host app",
+          targetUrl: "https://example.com",
+          aiPrompt: "Map major product areas",
+          authMode: "reuse-session",
+          authSessionProfile: "qa-admin-session",
+          status: "running",
+        };
+      }
+      return undefined;
+    });
+
+    const state = {
+      client: { request },
+      connected: true,
+      templatesLoading: false,
+      templatesError: null,
+      templatesList: [],
+      activeTemplateId: null,
+      templateDetail: null,
+      templateDetailLoading: false,
+      templateCreating: false,
+      showCreateModal: false,
+      createFormName: "",
+      createFormDescription: "",
+      createFormTargetUrl: "",
+      createFormAiPrompt: "",
+      createFormAuthMode: "none" as const,
+      createFormAuthLoginUrl: "",
+      createFormAuthSessionProfile: "",
+      createFormAuthInstructions: "",
+      createFormShowLocalBrowser: false,
+      projectAuthProfilesLoading: false,
+      projectAuthProfilesError: null,
+      projectAuthProfiles: [],
+      executionsLoading: false,
+      executionsError: null,
+      executionsList: [],
+      activeExecutionId: null as string | null,
+      executionDetail: null,
+      executionDetailLoading: false,
+      globalExecutionsLoading: false,
+      globalExecutionsList: [],
+      sessionKey: "agent:main:main:eadproj:run:run-789",
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: "run-789",
+      ...chatQueueEmpty,
+    };
+
+    await setActiveExecution(state as Parameters<typeof setActiveExecution>[0], "run-789");
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(request).not.toHaveBeenCalledWith(
+      "chat.inject",
+      expect.objectContaining({
+        sessionKey: "agent:main:main:eadproj:run:run-789",
+      }),
+    );
+  });
+
+  it("does not chat.inject Project Run context when history is empty but execution is completed", async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.create") {
+        return { key: "agent:main:main:eadproj:run:run-done" };
+      }
+      if (method === "chat.history") {
+        return { messages: [] };
+      }
+      if (method === "executions.get") {
+        return {
+          id: "run-done",
+          name: "Project One Test",
+          description: "Explore the host app",
+          targetUrl: "https://example.com",
+          aiPrompt: "Map major product areas",
+          authMode: "reuse-session",
+          authSessionProfile: "qa-admin-session",
+          status: "completed",
+          durationMs: 5000,
+        };
+      }
+      return undefined;
+    });
+
+    const state = {
+      client: { request },
+      connected: true,
+      templatesLoading: false,
+      templatesError: null,
+      templatesList: [],
+      activeTemplateId: null,
+      templateDetail: null,
+      templateDetailLoading: false,
+      templateCreating: false,
+      showCreateModal: false,
+      createFormName: "",
+      createFormDescription: "",
+      createFormTargetUrl: "",
+      createFormAiPrompt: "",
+      createFormAuthMode: "none" as const,
+      createFormAuthLoginUrl: "",
+      createFormAuthSessionProfile: "",
+      createFormAuthInstructions: "",
+      createFormShowLocalBrowser: false,
+      projectAuthProfilesLoading: false,
+      projectAuthProfilesError: null,
+      projectAuthProfiles: [],
+      executionsLoading: false,
+      executionsError: null,
+      executionsList: [],
+      activeExecutionId: null as string | null,
+      executionDetail: null,
+      executionDetailLoading: false,
+      globalExecutionsLoading: false,
+      globalExecutionsList: [],
+      sessionKey: "agent:main:main:eadproj:run:run-done",
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: "run-done",
+      ...chatQueueEmpty,
+    };
+
+    await setActiveExecution(state as Parameters<typeof setActiveExecution>[0], "run-done");
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(request).not.toHaveBeenCalledWith(
+      "chat.inject",
+      expect.objectContaining({
+        sessionKey: "agent:main:main:eadproj:run:run-done",
+      }),
+    );
+  });
+
+  it("does not inject context or bootstrap when runSessionKey is set (server kickoff already ran)", async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.create") {
+        return { key: "agent:main:main:eadproj:run:run-srv" };
+      }
+      if (method === "chat.history") {
+        return { messages: [] };
+      }
+      if (method === "executions.get") {
+        return {
+          id: "run-srv",
+          name: "Project One Test",
+          description: "Explore the host app",
+          targetUrl: "https://example.com",
+          aiPrompt: "Map major product areas",
+          authMode: "reuse-session",
+          authSessionProfile: "qa-admin-session",
+          status: "running",
+          runSessionKey: "agent:main:main:eadproj:run:run-srv",
+        };
+      }
+      return undefined;
+    });
+
+    const state = {
+      client: { request },
+      connected: true,
+      templatesLoading: false,
+      templatesError: null,
+      templatesList: [],
+      activeTemplateId: null,
+      templateDetail: null,
+      templateDetailLoading: false,
+      templateCreating: false,
+      showCreateModal: false,
+      createFormName: "",
+      createFormDescription: "",
+      createFormTargetUrl: "",
+      createFormAiPrompt: "",
+      createFormAuthMode: "none" as const,
+      createFormAuthLoginUrl: "",
+      createFormAuthSessionProfile: "",
+      createFormAuthInstructions: "",
+      createFormShowLocalBrowser: false,
+      projectAuthProfilesLoading: false,
+      projectAuthProfilesError: null,
+      projectAuthProfiles: [],
+      executionsLoading: false,
+      executionsError: null,
+      executionsList: [],
+      activeExecutionId: null as string | null,
+      executionDetail: null,
+      executionDetailLoading: false,
+      globalExecutionsLoading: false,
+      globalExecutionsList: [],
+      sessionKey: "agent:main:main:eadproj:run:run-srv",
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: "run-srv",
+      ...chatQueueEmpty,
+    };
+
+    await setActiveExecution(state as Parameters<typeof setActiveExecution>[0], "run-srv");
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(request).not.toHaveBeenCalledWith(
+      "chat.inject",
+      expect.objectContaining({
+        sessionKey: "agent:main:main:eadproj:run:run-srv",
+      }),
+    );
+    expect(request).not.toHaveBeenCalledWith(
+      "chat.send",
+      expect.objectContaining({
+        idempotencyKey: "project-run-bootstrap:run-srv",
+      }),
+    );
   });
 
   it("does not auto-bootstrap manual-bootstrap runs before resume", async () => {
@@ -638,6 +1094,7 @@ describe("project run session bootstrap", () => {
       createFormAuthLoginUrl: "",
       createFormAuthSessionProfile: "",
       createFormAuthInstructions: "",
+      createFormShowLocalBrowser: false,
       projectAuthProfilesLoading: false,
       projectAuthProfilesError: null,
       projectAuthProfiles: [],
@@ -650,6 +1107,9 @@ describe("project run session bootstrap", () => {
       globalExecutionsLoading: false,
       globalExecutionsList: [],
       sessionKey: "agent:main:main:eadproj:run:run-456",
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: "run-456",
+      ...chatQueueEmpty,
     };
 
     await setActiveExecution(state as Parameters<typeof setActiveExecution>[0], "run-456");
@@ -667,6 +1127,84 @@ describe("project run session bootstrap", () => {
       "chat.send",
       expect.objectContaining({
         sessionKey: "agent:main:main:eadproj:run:run-456",
+      }),
+    );
+  });
+
+  it("does not inject context or bootstrap when dashboard selects another run than the open Project Run chat", async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.create") {
+        return { key: "agent:main:main:eadproj:run:run-b" };
+      }
+      if (method === "chat.history") {
+        return { messages: [] };
+      }
+      if (method === "executions.get") {
+        return {
+          id: "run-b",
+          name: "Other template run",
+          description: "Other plan",
+          targetUrl: "https://other.example",
+          aiPrompt: "Different instructions from another test plan",
+          authMode: "none",
+          status: "running",
+        };
+      }
+      return undefined;
+    });
+
+    const state = {
+      client: { request },
+      connected: true,
+      templatesLoading: false,
+      templatesError: null,
+      templatesList: [],
+      activeTemplateId: null,
+      templateDetail: null,
+      templateDetailLoading: false,
+      templateCreating: false,
+      showCreateModal: false,
+      createFormName: "",
+      createFormDescription: "",
+      createFormTargetUrl: "",
+      createFormAiPrompt: "",
+      createFormAuthMode: "none" as const,
+      createFormAuthLoginUrl: "",
+      createFormAuthSessionProfile: "",
+      createFormAuthInstructions: "",
+      createFormShowLocalBrowser: false,
+      projectAuthProfilesLoading: false,
+      projectAuthProfilesError: null,
+      projectAuthProfiles: [],
+      executionsLoading: false,
+      executionsError: null,
+      executionsList: [],
+      activeExecutionId: null as string | null,
+      executionDetail: null,
+      executionDetailLoading: false,
+      globalExecutionsLoading: false,
+      globalExecutionsList: [],
+      sessionKey: "agent:main:main:eadproj:run:run-a",
+      tab: "chatProjectRun",
+      chatProjectRunExecutionId: "run-a",
+      ...chatQueueEmpty,
+    };
+
+    await setActiveExecution(state as Parameters<typeof setActiveExecution>[0], "run-b");
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(request).not.toHaveBeenCalledWith(
+      "chat.send",
+      expect.objectContaining({
+        idempotencyKey: "project-run-bootstrap:run-b",
+      }),
+    );
+    expect(request).not.toHaveBeenCalledWith(
+      "chat.inject",
+      expect.objectContaining({
+        sessionKey: "agent:main:main:eadproj:run:run-b",
       }),
     );
   });
@@ -799,6 +1337,77 @@ describe("loadChatHistory", () => {
     expect(state.chatThinkingLevel).toBe("low");
     expect(state.chatLoading).toBe(false);
     expect(state.lastError).toBeNull();
+  });
+
+  it("preserves trailing user messages not yet returned by chat.history", async () => {
+    const serverMsgs = [
+      { role: "user", content: [{ type: "text", text: "start" }] },
+      { role: "assistant", content: [{ type: "text", text: "working" }] },
+    ];
+    const pendingUser = {
+      role: "user",
+      content: [{ type: "text", text: "Operator follow-up question" }],
+      timestamp: Date.now(),
+    };
+    const request = vi.fn().mockResolvedValue({ messages: serverMsgs });
+    const state = createState({
+      connected: true,
+      client: { request } as unknown as ChatState["client"],
+      chatMessages: [...serverMsgs, pendingUser],
+    });
+
+    await loadChatHistory(state);
+
+    expect(state.chatMessages).toEqual([...serverMsgs, pendingUser]);
+  });
+
+  it("preserves image-only user messages not yet returned by chat.history", async () => {
+    const serverMsgs = [
+      { role: "user", content: [{ type: "text", text: "start" }] },
+      { role: "assistant", content: [{ type: "text", text: "working" }] },
+    ];
+    const imgOnlyUser = {
+      role: "user",
+      content: [{ type: "image", url: "https://example.com/x.png" }],
+      timestamp: 1_700_000_000_000,
+    };
+    const request = vi.fn().mockResolvedValue({ messages: serverMsgs });
+    const state = createState({
+      connected: true,
+      client: { request } as unknown as ChatState["client"],
+      chatMessages: [...serverMsgs, imgOnlyUser],
+    });
+
+    await loadChatHistory(state);
+
+    expect(state.chatMessages).toEqual([...serverMsgs, imgOnlyUser]);
+  });
+
+  it("preserves a user message when an assistant message already follows it locally (stale history reload)", async () => {
+    const serverMsgs = [
+      { role: "user", content: [{ type: "text", text: "bootstrap" }] },
+      { role: "assistant", content: [{ type: "text", text: "ok" }] },
+    ];
+    const followUpUser = {
+      role: "user",
+      content: [{ type: "text", text: "Please explain your steps" }],
+      timestamp: 1,
+    };
+    const draftAssistant = {
+      role: "assistant",
+      content: [{ type: "text", text: "draft reply not on server yet" }],
+      timestamp: 2,
+    };
+    const request = vi.fn().mockResolvedValue({ messages: serverMsgs });
+    const state = createState({
+      connected: true,
+      client: { request } as unknown as ChatState["client"],
+      chatMessages: [...serverMsgs, followUpUser, draftAssistant],
+    });
+
+    await loadChatHistory(state);
+
+    expect(state.chatMessages).toEqual([...serverMsgs, followUpUser]);
   });
 
   it("shows a targeted message when chat history is unauthorized", async () => {

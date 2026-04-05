@@ -81,9 +81,16 @@ export default definePluginEntry({
             };
           }
 
+          // No Ollama opt-in (env/config) and no `models.providers.ollama` stanza: skip probing
+          // localhost entirely (typical cloud-only setups should not hit Ollama or log failures).
+          if (!ollamaKey && explicit === undefined) {
+            return null;
+          }
+
           const providerSetup = await loadProviderSetup();
           const provider = await providerSetup.buildOllamaProvider(explicit?.baseUrl, {
-            quiet: !ollamaKey && !explicit,
+            // Discovery is optional for most installs; avoid noisy warnings when Ollama is not running.
+            quiet: true,
           });
           if (provider.models.length === 0 && !ollamaKey && !explicit?.apiKey) {
             return null;

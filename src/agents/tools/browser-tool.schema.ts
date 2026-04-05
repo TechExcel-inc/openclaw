@@ -89,6 +89,8 @@ export const BrowserToolSchema = Type.Object({
   action: stringEnum(BROWSER_TOOL_ACTIONS),
   target: optionalStringEnum(BROWSER_TARGETS),
   node: Type.Optional(Type.String()),
+  /** When false, uses a visible browser. When omitted, defaults to true (headless) so Chrome does not pop up a window. */
+  headless: Type.Optional(Type.Boolean()),
   profile: Type.Optional(Type.String()),
   targetUrl: Type.Optional(Type.String()),
   url: Type.Optional(Type.String()),

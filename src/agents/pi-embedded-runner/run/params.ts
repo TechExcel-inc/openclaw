@@ -129,4 +129,9 @@ export type RunEmbeddedPiAgentParams = {
    * where transient service pressure is often model-scoped.
    */
   allowTransientCooldownProbe?: boolean;
+  /**
+   * When set (Project Run sessions only), registers an extension that waits at least this many
+   * milliseconds between successive LLM turns inside one invocation (browser/tool loops).
+   */
+  projectRunMinLlmIntervalMs?: number;
 };

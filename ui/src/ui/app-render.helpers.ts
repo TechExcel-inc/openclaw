@@ -1,5 +1,7 @@
-import { html, nothing, type TemplateResult } from "lit";
+import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
+import { SUPERSEDED_EXECUTION_REASON } from "../../../src/projects/execution-constants.js";
+import { countScreenshotsInProgressLog } from "../../../src/projects/progress-log.js";
 import type {
   ExecutionStatus,
   ProjectExecute,
@@ -56,7 +58,8 @@ function resolveSidebarChatSessionKey(state: AppViewState): string {
 }
 
 /**
- * Template id used to list "Project Run 1…N" under Chat.
+ * Resolves the active test plan id for Project Chat and related UI (not the global
+ * project-run sidebar, which lists the most recent runs across all test plans).
  * Prefer Project Chat selection; fall back to Test Plan page (active / detail) so runs show
  * without opening Project Chat first.
  */
@@ -97,11 +100,46 @@ export function templateExecutionsOrdered(
 ): ProjectExecute[] {
   return (state.globalExecutionsList ?? [])
     .filter((e) => e.linkedTemplateId === templateId)
-    .toSorted((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0));
+    .toSorted((a, b) => {
+      const ta = a.startTime ?? 0;
+      const tb = b.startTime ?? 0;
+      if (ta !== tb) {
+        return ta - tb;
+      }
+      return a.id.localeCompare(b.id);
+    });
 }
 
-/** Runs for this template excluding those the user removed from the sidebar. */
-export function visibleTemplateExecutionsForNav(
+/** Max project runs listed under CHAT across all test plans (newest first). */
+export const PROJECT_RUN_NAV_MAX = 8;
+
+function globalExecutionsOrdered(state: AppViewState): ProjectExecute[] {
+  return (state.globalExecutionsList ?? [])
+    .filter((e) => Boolean(e.linkedTemplateId?.trim()))
+    .toSorted((a, b) => {
+      const ta = a.startTime ?? 0;
+      const tb = b.startTime ?? 0;
+      if (ta !== tb) {
+        return ta - tb;
+      }
+      return a.id.localeCompare(b.id);
+    });
+}
+
+/** All runs (any test plan), oldest → newest, excluding hidden. Used for nav adjacency. */
+export function visibleGlobalExecutionsChronological(state: AppViewState): ProjectExecute[] {
+  const hidden = new Set(state.hiddenProjectRunNavIds ?? []);
+  return globalExecutionsOrdered(state).filter((e) => !hidden.has(e.id));
+}
+
+/** Up to {@link PROJECT_RUN_NAV_MAX} most recent visible runs across all test plans (newest first). */
+export function visibleGlobalExecutionsForNav(state: AppViewState): ProjectExecute[] {
+  const chron = visibleGlobalExecutionsChronological(state);
+  return chron.toReversed().slice(0, PROJECT_RUN_NAV_MAX);
+}
+
+/** Runs for this template excluding those the user removed from the sidebar (oldest → newest). */
+export function visibleTemplateExecutionsChronological(
   state: AppViewState,
   templateId: string,
 ): ProjectExecute[] {
@@ -110,19 +148,15 @@ export function visibleTemplateExecutionsForNav(
 }
 
 /**
- * Before hiding a run from the sidebar, pick another visible run for the same template:
- * prefer the next run below in start-time order, else the run above. Returns null if there
+ * Before hiding a run from the sidebar, pick another visible run:
+ * prefer the next run below in global start-time order, else the run above. Returns null if there
  * is no sibling (caller should fall back to Project Chat).
  */
 export function pickAdjacentProjectRunIdForNav(
   state: AppViewState,
   removedExecutionId: string,
 ): string | null {
-  const templateId = resolveActiveTemplateIdForProjectNav(state);
-  if (!templateId) {
-    return null;
-  }
-  const visible = visibleTemplateExecutionsForNav(state, templateId);
+  const visible = visibleGlobalExecutionsChronological(state);
   const idx = visible.findIndex((e) => e.id === removedExecutionId);
   if (idx === -1) {
     return null;
@@ -136,37 +170,174 @@ export function pickAdjacentProjectRunIdForNav(
   return null;
 }
 
-export function projectRunOrdinalLabel(state: AppViewState, executionId: string): string {
-  const templateId = resolveActiveTemplateIdForProjectNav(state);
-  if (!templateId) {
-    return "Running Project";
+/** When two rows exist for the same id, prefer the one with more step / progress data. */
+function pickRicherProjectExecution(a: ProjectExecute, b: ProjectExecute): ProjectExecute {
+  const score = (e: ProjectExecute) =>
+    (e.steps?.length ?? 0) * 10_000 + (e.progressLog?.length ?? 0);
+  const sa = score(a);
+  const sb = score(b);
+  if (sb > sa) {
+    return b;
   }
-  const list = visibleTemplateExecutionsForNav(state, templateId);
+  if (sa > sb) {
+    return a;
+  }
+  const pa = a.progressPercentage ?? 0;
+  const pb = b.progressPercentage ?? 0;
+  if (pb !== pa) {
+    return pb > pa ? b : a;
+  }
+  return a;
+}
+
+/** Prefer global list while executions.get is loading so status is not a stale row from another run. */
+function isTerminalExecutionStatusForProjectRun(status: ExecutionStatus | undefined): boolean {
+  return (
+    status === "completed" || status === "failed" || status === "cancelled" || status === "error"
+  );
+}
+
+function projectRunClientAgentBusy(state: AppViewState): boolean {
+  return (
+    Boolean(state.chatRunId?.trim()) ||
+    Boolean(state.chatStream?.trim()) ||
+    Boolean(state.chatSending)
+  );
+}
+
+export function resolveExecutionForProjectRun(
+  state: AppViewState,
+  runId: string,
+): ProjectExecute | undefined {
+  const id = runId.trim();
+  if (!id) {
+    return undefined;
+  }
+  const fromList = state.globalExecutionsList?.find((e) => e.id === id);
+  const detail = state.executionDetail?.id === id ? state.executionDetail : undefined;
+  if (state.executionDetailLoading && detail?.id === id) {
+    return fromList ?? detail;
+  }
+  if (detail && fromList) {
+    return pickRicherProjectExecution(detail, fromList);
+  }
+  return detail ?? fromList;
+}
+
+/** Per–test-plan run index for labels (1-based), or null if the template cannot be resolved. */
+export function projectRunNavOrdinalNumber(
+  state: AppViewState,
+  executionId: string,
+): number | null {
+  const ex =
+    resolveExecutionForProjectRun(state, executionId) ??
+    state.globalExecutionsList?.find((e) => e.id === executionId);
+  const templateId = ex?.linkedTemplateId?.trim();
+  if (!templateId) {
+    return null;
+  }
+  const list = visibleTemplateExecutionsChronological(state, templateId);
   const idx = list.findIndex((e) => e.id === executionId);
   const n = idx === -1 ? list.length + 1 : idx + 1;
-  return `Running Project ${n}`;
+  return n;
+}
+
+export function projectRunOrdinalLabel(state: AppViewState, executionId: string): string {
+  const n = projectRunNavOrdinalNumber(state, executionId);
+  if (n == null) {
+    return t("chat.projectRunNavUnknown");
+  }
+  return t("chat.projectRunNavOrdinal", { n: String(n) });
+}
+
+export type ProjectRunStatusBannerView = {
+  headline: string;
+  sub?: string;
+  tone: "neutral" | "active" | "paused" | "success" | "danger";
+};
+
+/** Compact banner above Project Run chat: same execution truth as the dashboard (per run). */
+export function buildProjectRunStatusBanner(
+  state: AppViewState,
+): ProjectRunStatusBannerView | null {
+  if (state.tab !== "chatProjectRun") {
+    return null;
+  }
+  const id = state.chatProjectRunExecutionId?.trim();
+  if (!id) {
+    return null;
+  }
+  const title = projectRunOrdinalLabel(state, id);
+  const ex = resolveExecutionForProjectRun(state, id);
+  if (!ex) {
+    return {
+      headline: `${title}: ${t("chat.projectRunStatusLoading")}`,
+      tone: "neutral",
+    };
+  }
+  const statusLabel = formatExecutionStatusForUi(ex.status, ex.paused, {
+    operatorStopKind: ex.operatorStopKind,
+    cancelReason: ex.cancelReason,
+  });
+  const finishingUi =
+    isTerminalExecutionStatusForProjectRun(ex.status) && projectRunClientAgentBusy(state);
+  const labelForHeadline = finishingUi ? t("chat.projectRunStatusFinishing") : statusLabel;
+  const headline =
+    ex.paused && ex.status === "running"
+      ? `${title}: ${statusLabel} — ${t("chat.projectRunStatusPaused")}`
+      : `${title}: ${labelForHeadline}`;
+  const sub = ex.executorHint?.trim() || undefined;
+  let tone: ProjectRunStatusBannerView["tone"];
+  if (finishingUi) {
+    tone = "active";
+  } else if (ex.status === "pending") {
+    tone = "neutral";
+  } else if (ex.status === "running") {
+    tone = ex.paused ? "paused" : "active";
+  } else if (ex.status === "completed") {
+    tone = "success";
+  } else {
+    tone = "danger";
+  }
+  return { headline, sub, tone };
 }
 
 /** User-facing run status for toolbar and summary (maps `completed` → Finished, etc.). */
 export function formatExecutionStatusForUi(
   status: ExecutionStatus | undefined,
-  paused: boolean | undefined,
+  _paused: boolean | undefined,
+  meta?: {
+    operatorStopKind?: ProjectExecute["operatorStopKind"];
+    cancelReason?: string | null;
+  },
 ): string {
   if (!status) {
     return t("chat.projectRunStatusLoading");
   }
-  if (status === "running" && paused) {
-    return t("chat.projectRunStatusPaused");
+  if (status === "completed" && meta?.operatorStopKind === "finish") {
+    return t("chat.projectRunStatusStopFinish");
   }
+  if (status === "cancelled" && meta?.operatorStopKind === "cancel") {
+    return t("chat.projectRunStatusStopCancel");
+  }
+  if (status === "cancelled" && meta?.cancelReason === SUPERSEDED_EXECUTION_REASON) {
+    return t("chat.projectRunStatusSuperseded");
+  }
+  // Cancelled without operator stop: agent/executor ended the run (not sidebar supersede).
+  if (status === "cancelled") {
+    return t("chat.projectRunStatusAiCanceled");
+  }
+  // We no longer display "Paused" when the agent is waiting.
+  // The system considers the agent continuously active (waiting for input).
   switch (status) {
     case "pending":
       return t("chat.projectRunStatusPending");
     case "running":
       return t("chat.projectRunStatusRunning");
     case "completed":
-      return t("chat.projectRunStatusFinished");
-    case "cancelled":
-      return t("chat.projectRunStatusCancelled");
+      return t("chat.projectRunStatusAiFinished");
+    case "failed":
+      return t("chat.projectRunStatusAiFailed");
     case "error":
       return t("chat.projectRunStatusError");
     default:
@@ -174,20 +345,44 @@ export function formatExecutionStatusForUi(
   }
 }
 
-function projectRunToolbarStatusDataState(
-  status: ExecutionStatus | undefined,
-  paused: boolean,
-): string {
-  if (!status) {
-    return "loading";
+/** First line of the project-run sidebar row: "Test Run {n} - {status}". */
+export function formatProjectRunNavLine1(state: AppViewState, ex: ProjectExecute): string {
+  const n = projectRunNavOrdinalNumber(state, ex.id);
+  const statusLabel = formatExecutionStatusForUi(ex.status, ex.paused, {
+    operatorStopKind: ex.operatorStopKind,
+    cancelReason: ex.cancelReason,
+  });
+  return t("chat.projectRunNavLine1", {
+    n: n == null ? "?" : String(n),
+    status: statusLabel,
+  });
+}
+
+/** Second line: run display name, for smaller nav text. */
+export function formatProjectRunNavLine2(ex: ProjectExecute): string {
+  const name = ex.name?.trim();
+  return name ? name : t("chat.projectRunNavNoName");
+}
+
+/** Flatten nested EAD-FM results into screenshot rows for thumbnails or lists. */
+export function projectRunScreenshotSteps(
+  ex: ProjectExecute,
+): Array<{ label: string; url: string }> {
+  const out: Array<{ label: string; url: string }> = [];
+  for (const node of ex.results ?? []) {
+    for (const tc of node.testCaseRuns ?? []) {
+      for (const step of tc.testCaseStepRuns ?? []) {
+        const url = step.screenshotUrl?.trim();
+        if (url) {
+          out.push({
+            label: step.procedureText?.trim() || `Step ${step.sortOrder}`,
+            url,
+          });
+        }
+      }
+    }
   }
-  if (status === "running" && paused) {
-    return "paused";
-  }
-  if (status === "completed") {
-    return "finished";
-  }
-  return status;
+  return out;
 }
 
 export function formatProjectRunSimpleMarkdown(state: AppViewState): string {
@@ -195,14 +390,14 @@ export function formatProjectRunSimpleMarkdown(state: AppViewState): string {
   if (!id) {
     return "## Project Run\n\nNo execution selected.";
   }
-  const ex =
-    state.executionDetail?.id === id
-      ? state.executionDetail
-      : state.globalExecutionsList?.find((e) => e.id === id);
+  const ex = resolveExecutionForProjectRun(state, id);
   if (!ex) {
     return ["## Project Run & Chat", "", "Loading execution…", "", `\`id\`: \`${id}\``].join("\n");
   }
-  const statusLabel = formatExecutionStatusForUi(ex.status, ex.paused);
+  const statusLabel = formatExecutionStatusForUi(ex.status, ex.paused, {
+    operatorStopKind: ex.operatorStopKind,
+    cancelReason: ex.cancelReason,
+  });
   const prog = ex.progressPercentage ?? 0;
   const started = new Date(ex.startTime ?? Date.now()).toLocaleString();
   const duration =
@@ -234,138 +429,291 @@ export function formatProjectRunSimpleMarkdown(state: AppViewState): string {
     lines.push(`**Stop reason:** ${cancelR.replace(/`/g, "'")}`, "");
   }
   lines.push(`**Execution id:** \`${ex.id}\``, "");
-  if (ex.progressLog && ex.progressLog.length > 0) {
-    lines.push("---");
-    lines.push("### Progress Log");
-    lines.push("");
-    for (const entry of ex.progressLog) {
-      const time = new Date(entry.ts).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
-      if (entry.kind === "tool_use") {
-        lines.push(`- **${time}** ${entry.text}`);
-      } else if (entry.kind === "system") {
-        lines.push(`- **${time}** ⚠️ ${entry.text}`);
-      } else {
-        lines.push(`- *${time}* ${entry.text}`);
+  lines.push("---");
+  lines.push("### Running Step Log");
+  lines.push("");
+  lines.push(
+    "_Updates when the executor syncs from OpenClaw (may trail live chat by a few seconds)._",
+    "",
+  );
+
+  if (ex.steps && ex.steps.length > 0) {
+    ex.steps.forEach((step, i) => {
+      lines.push(`#### Step ${i + 1}: ${step.title}`);
+      lines.push(`_${step.summary}_`);
+      lines.push("");
+      if (step.artifacts && step.artifacts.length > 0) {
+        for (const art of step.artifacts.slice(0, 3)) {
+          if (art.type === "screenshot" && art.path) {
+            lines.push(
+              `<img src="${art.thumbnailPath || art.path}" alt="${step.title}" style="max-width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border-color); background: var(--surface); margin-top: 10px; margin-bottom: 4px;" />`,
+            );
+          }
+        }
       }
-    }
-    lines.push("");
+      lines.push("");
+    });
   } else {
-    lines.push("_Step captures render in the gallery below when the gateway returns them._");
+    lines.push("*Waiting for the AI to make its first discovery...*");
+    lines.push("");
   }
+
   return lines.join("\n");
 }
 
-/** Flatten screenshot steps from execution results (same shape as Test Run Project). */
-export function projectRunScreenshotSteps(
-  ex: ProjectExecute,
-): Array<{ label: string; url: string }> {
-  const out: Array<{ label: string; url: string }> = [];
+function escapeProjectRunMd(text: string): string {
+  return text.replace(/\|/g, "\\|").replace(/`/g, "'");
+}
+
+/** Keeps the left sidebar readable when the split view is narrow. */
+function truncateProjectRunSidebarText(text: string, max: number): string {
+  const t = text.trim();
+  if (t.length <= max) {
+    return t;
+  }
+  return `${t.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function formatDurationMs(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms)) {
+    return "—";
+  }
+  const s = Math.round(ms / 1000);
+  if (s < 60) {
+    return `${s}s`;
+  }
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 60) {
+    return `${m}m ${rs}s`;
+  }
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return `${h}h ${rm}m`;
+}
+
+function aggregateExecutorStepStats(ex: ProjectExecute): {
+  total: number;
+  completed: number;
+  failed: number;
+  skipped: number;
+  pendingOrRunning: number;
+} {
+  const steps = ex.steps ?? [];
+  let completed = 0;
+  let failed = 0;
+  let skipped = 0;
+  let pendingOrRunning = 0;
+  for (const s of steps) {
+    if (s.status === "completed") {
+      completed++;
+    } else if (s.status === "failed") {
+      failed++;
+    } else if (s.status === "skipped") {
+      skipped++;
+    } else {
+      pendingOrRunning++;
+    }
+  }
+  return {
+    total: steps.length,
+    completed,
+    failed,
+    skipped,
+    pendingOrRunning,
+  };
+}
+
+function aggregateTestCaseStepStats(ex: ProjectExecute): {
+  total: number;
+  success: number;
+  failed: number;
+  noRun: number;
+} {
+  let total = 0;
+  let success = 0;
+  let failed = 0;
+  let noRun = 0;
   for (const node of ex.results ?? []) {
     for (const tc of node.testCaseRuns ?? []) {
       for (const step of tc.testCaseStepRuns ?? []) {
-        const url = step.screenshotUrl?.trim();
-        if (url) {
-          out.push({
-            label: (step.procedureText ?? "Capture").trim() || "Capture",
-            url,
-          });
+        total++;
+        if (step.status === "Success") {
+          success++;
+        } else if (step.status === "Failed") {
+          failed++;
+        } else {
+          noRun++;
         }
       }
     }
   }
+  return { total, success, failed, noRun };
+}
+
+function buildProjectRunFindingsSection(ex: ProjectExecute): string[] {
+  const out: string[] = [];
+  const hint = ex.executorHint?.trim();
+  if (hint) {
+    out.push(`**Latest hint:** ${escapeProjectRunMd(hint)}`);
+  }
+  const summaries = (ex.steps ?? [])
+    .filter((s) => s.summary?.trim() && (s.status === "completed" || s.status === "failed"))
+    .slice(-4)
+    .map((s) => {
+      const title = escapeProjectRunMd(s.title);
+      const body = escapeProjectRunMd(s.summary!.trim());
+      return `- **${title}**  \n  ${body}`;
+    });
+  if (summaries.length > 0) {
+    out.push("", "**Recent step notes:**", ...summaries);
+  }
+  const log = ex.progressLog ?? [];
+  const tail = log
+    .filter((e) => e.text?.trim() && (e.kind === "assistant" || e.kind === "tool_result"))
+    .slice(-3);
+  if (tail.length > 0) {
+    out.push("", "**Activity (from run log):**");
+    for (const e of tail) {
+      const line = e.text.trim().replace(/\s+/g, " ");
+      const clipped = line.length > 160 ? `${line.slice(0, 157)}…` : line;
+      out.push(`- _${e.kind}_ — ${escapeProjectRunMd(clipped)}`);
+    }
+  }
+  if (out.length === 0) {
+    out.push(
+      "_Findings will appear here as the run progresses (executor hints, step notes, and log excerpts)._",
+    );
+  }
   return out;
 }
 
-export function hasProjectRunCaptures(state: AppViewState): boolean {
-  const id = state.chatProjectRunExecutionId?.trim();
-  if (!id) {
-    return false;
-  }
-  const ex =
-    state.executionDetail?.id === id
-      ? state.executionDetail
-      : state.globalExecutionsList?.find((e) => e.id === id);
-  return Boolean(ex && projectRunScreenshotSteps(ex).length > 0);
-}
-
 /**
- * Renders capture thumbnails beside the Project Run markdown summary. Base64 screenshots are
- * not embedded in markdown (size limit breaks the markdown pipeline).
+ * Left panel only: run metadata + stats + findings. Does not repeat the Running Step Log (that stays above the chat).
  */
-export function renderProjectRunCaptureGallery(state: AppViewState): TemplateResult | undefined {
-  const id = state.chatProjectRunExecutionId?.trim();
-  if (!id) {
-    return undefined;
+export function formatProjectRunLeftPanelMarkdown(
+  ex: ProjectExecute,
+  ctx: { ordinalTitle: string },
+): string {
+  const statusLabel = formatExecutionStatusForUi(ex.status, ex.paused, {
+    operatorStopKind: ex.operatorStopKind,
+    cancelReason: ex.cancelReason,
+  });
+  const started = ex.startTime != null ? new Date(ex.startTime).toLocaleString() : "—";
+  const duration =
+    ex.status === "running" || ex.status === "pending"
+      ? ex.startTime
+        ? formatDurationMs(Date.now() - ex.startTime)
+        : "…"
+      : formatDurationMs(ex.durationMs);
+  const st = aggregateExecutorStepStats(ex);
+  const tc = aggregateTestCaseStepStats(ex);
+  const finishedSteps = st.completed + st.failed + st.skipped;
+  const stepSuccessPct = st.total > 0 ? Math.round((st.completed / st.total) * 100) : null;
+  const tcSuccessPct = tc.total > 0 ? Math.round((tc.success / tc.total) * 100) : null;
+
+  const titleLine = `${ctx.ordinalTitle} — ${ex.name || "Untitled run"}`;
+  const descRaw = ex.description?.trim();
+  const descBlock = descRaw
+    ? escapeProjectRunMd(truncateProjectRunSidebarText(descRaw, 420))
+    : "_No description._";
+
+  const lines: string[] = [
+    `## ${escapeProjectRunMd(titleLine)}`,
+    "",
+    descBlock,
+    "",
+    "---",
+    "",
+    "### Run overview",
+    "",
+    `- **Status:** ${escapeProjectRunMd(statusLabel)}`,
+    `- **Progress:** ${ex.progressPercentage ?? 0}%`,
+    `- **Started:** ${escapeProjectRunMd(started)}`,
+    `- **Duration:** ${escapeProjectRunMd(duration)}`,
+  ];
+
+  if (ex.targetUrl?.trim()) {
+    lines.push(`- **Target:** ${escapeProjectRunMd(ex.targetUrl.trim())}`);
   }
-  const ex =
-    state.executionDetail?.id === id
-      ? state.executionDetail
-      : state.globalExecutionsList?.find((e) => e.id === id);
-  if (!ex) {
-    return undefined;
+  lines.push("", "**Run id**", "", "```", ex.id, "```", "");
+
+  lines.push("### Automation steps (executor)", "");
+  lines.push(
+    `- **Total:** ${st.total}`,
+    `- **Succeeded:** ${st.completed}`,
+    `- **Failed:** ${st.failed}`,
+    `- **Skipped:** ${st.skipped}`,
+    `- **Screenshots recorded:** ${countScreenshotsInProgressLog(ex.progressLog)}`,
+  );
+  if (st.pendingOrRunning > 0) {
+    lines.push(`- **In progress:** ${st.pendingOrRunning}`);
   }
-  const steps = projectRunScreenshotSteps(ex);
-  if (steps.length === 0) {
-    return undefined;
+  if (stepSuccessPct != null) {
+    lines.push(`- **Step completion:** ${stepSuccessPct}% (${st.completed}/${st.total})`);
   }
-  return html`
-    <div
-      class="project-run-capture-gallery"
-      style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); max-height: min(70vh, 720px); overflow-y: auto;"
-    >
-      <div
-        style="font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px;"
-      >
-        ${t("chat.projectRunCaptureGalleryTitle")}
-      </div>
-      ${repeat(
-        steps,
-        (s) => s.url,
-        (s, i) => html`
-          <div style="margin-bottom: 14px;">
-            <div style="font-size: 12px; color: var(--muted); margin-bottom: 6px;">${i + 1}. ${s.label}</div>
-            <img
-              src=${s.url}
-              alt=""
-              style="max-width: 100%; max-height: 220px; object-fit: contain; display: block; border: 1px solid var(--border-color); border-radius: 6px; background: var(--surface);"
-            />
-          </div>
-        `,
-      )}
-    </div>
-  `;
+  if (finishedSteps > 0 && st.failed > 0) {
+    const sr = Math.round((st.completed / (st.completed + st.failed)) * 100);
+    lines.push(`- **Finished ok vs failed:** ${sr}% (${st.completed}/${st.completed + st.failed})`);
+  }
+  lines.push("");
+
+  if (tc.total > 0) {
+    lines.push("### Test case steps (plan)", "");
+    lines.push(
+      `- **Total:** ${tc.total}`,
+      `- **Passed:** ${tc.success}`,
+      `- **Failed:** ${tc.failed}`,
+      `- **Not run:** ${tc.noRun}`,
+    );
+    if (tcSuccessPct != null) {
+      lines.push(`- **Pass rate:** ${tcSuccessPct}%`);
+    }
+    lines.push("");
+  }
+
+  if (typeof ex.logTokens === "number" && Number.isFinite(ex.logTokens)) {
+    lines.push(`_Approx. transcript tokens (hint):_ **${ex.logTokens.toLocaleString()}**`, "");
+  }
+
+  const err = ex.lastErrorMessage?.trim();
+  if (err) {
+    lines.push("### Error", "", `\`\`\``, escapeProjectRunMd(err), `\`\`\``, "");
+  }
+  const cancelR = ex.cancelReason?.trim();
+  if (cancelR) {
+    lines.push("### Stop / operator note", "", escapeProjectRunMd(cancelR), "");
+  }
+
+  lines.push("---", "", "### Findings & recap", "");
+  lines.push(...buildProjectRunFindingsSection(ex));
+  lines.push("");
+
+  return lines.join("\n").trim();
 }
 
 export function renderProjectRunNavItems(state: AppViewState, opts?: { collapsed?: boolean }) {
-  const templateId = resolveActiveTemplateIdForProjectNav(state);
-  if (!templateId) {
-    return nothing;
-  }
-  const runs = visibleTemplateExecutionsForNav(state, templateId);
+  const runs = visibleGlobalExecutionsForNav(state);
   if (runs.length === 0) {
     return nothing;
   }
   const collapsed = opts?.collapsed ?? state.settings.navCollapsed;
-  const reversedRuns = runs.toReversed();
 
   return html`
     ${repeat(
-      reversedRuns,
+      runs,
       (e) => e.id,
       (e) => {
-        // Find original chronological index from the start
-        const chronIdx = runs.findIndex((r) => r.id === e.id);
         const href = pathForProjectRunTab(e.id, state.basePath ?? "");
-        const label = `Running Project ${chronIdx + 1}`;
+        const ex = resolveExecutionForProjectRun(state, e.id) ?? e;
+        const line1 = formatProjectRunNavLine1(state, ex);
+        const line2 = formatProjectRunNavLine2(ex);
+        const title = `${line1}\n${line2}`;
         const isActive = state.tab === "chatProjectRun" && state.chatProjectRunExecutionId === e.id;
         return html`
           <a
             href=${href}
-            class="nav-item ${isActive ? "nav-item--active" : ""}"
+            class="nav-item nav-item--project-run ${isActive ? "nav-item--active" : ""}"
             @click=${(event: MouseEvent) => {
               if (
                 event.defaultPrevented ||
@@ -380,10 +728,17 @@ export function renderProjectRunNavItems(state: AppViewState, opts?: { collapsed
               event.preventDefault();
               state.setProjectRunTab(e.id);
             }}
-            title=${label}
+            title=${title}
           >
             <span class="nav-item__icon" aria-hidden="true">${icons.messageSquare}</span>
-            ${!collapsed ? html`<span class="nav-item__text">${label}</span>` : nothing}
+            ${
+              !collapsed
+                ? html`<span class="nav-item__stack">
+                  <span class="nav-item__line1">${line1}</span>
+                  <span class="nav-item__line2">${line2}</span>
+                </span>`
+                : nothing
+            }
           </a>
         `;
       },
@@ -956,82 +1311,89 @@ export function renderChatControls(state: AppViewState) {
 /** Toolbar for Project Run chat only (not General Chat or Project Chat). */
 export function renderProjectRunToolbar(state: AppViewState) {
   const runId = state.chatProjectRunExecutionId?.trim();
-  const runExec = runId
-    ? state.executionDetail?.id === runId
-      ? state.executionDetail
-      : state.globalExecutionsList?.find((e) => e.id === runId)
-    : undefined;
+  const runExec = runId ? resolveExecutionForProjectRun(state, runId) : undefined;
   const status = runExec?.status;
-  const paused = Boolean(runExec?.paused);
   const canStop = Boolean(runId && (status === "pending" || status === "running"));
-  const canPauseResume = Boolean(runId && status === "running");
-  const statusText = runId
-    ? formatExecutionStatusForUi(status, runExec?.paused)
+
+  const finishingUi =
+    Boolean(runExec && isTerminalExecutionStatusForProjectRun(status)) &&
+    projectRunClientAgentBusy(state);
+
+  let elapsedMs =
+    status === "running" || status === "pending"
+      ? runExec?.startTime
+        ? Date.now() - runExec.startTime
+        : 0
+      : (runExec?.durationMs ?? 0);
+  if (finishingUi && runExec?.startTime) {
+    elapsedMs = Date.now() - runExec.startTime;
+  }
+  const mins = Math.floor(elapsedMs / 60000);
+  const secs = Math.floor((elapsedMs % 60000) / 1000);
+  const timerText = runExec
+    ? `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+    : "";
+
+  const statusFromServer = runId
+    ? formatExecutionStatusForUi(status, runExec?.paused, {
+        operatorStopKind: runExec?.operatorStopKind,
+        cancelReason: runExec?.cancelReason,
+      })
     : t("chat.projectRunStatusLoading");
-  const statusDataState = projectRunToolbarStatusDataState(status, Boolean(runExec?.paused));
+  const statusText = finishingUi ? t("chat.projectRunStatusFinishing") : statusFromServer;
+
+  let statusDataState = "loading";
+  if (finishingUi) {
+    statusDataState = "running";
+  } else if (status === "completed") {
+    statusDataState = "finished";
+  } else if (status === "failed") {
+    statusDataState = "failed";
+  } else if (status === "cancelled") {
+    statusDataState = "cancelled";
+  } else if (status === "error") {
+    statusDataState = "error";
+  } else if (status === "running" || status === "pending") {
+    statusDataState = "running";
+  }
+
   return html`
-    <div class="chat-controls chat-controls--project-run">
+    <div class="chat-controls chat-controls--project-run" style="align-items: center; gap: 12px;">
+      ${
+        timerText
+          ? html`
+        <div style="font-family: monospace; font-size: 14px; font-weight: 500; color: var(--text-muted); background: var(--bg-surface-3); padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border-color);">
+          ⏱️ ${timerText}
+        </div>
+      `
+          : nothing
+      }
+      
       <span
         class="chat-controls__project-run-status"
         data-status=${statusDataState}
         aria-live="polite"
-        >${statusText}</span
-      >
+      >${statusText}</span>
+
       ${
         canStop
           ? html`
-              <button
-                type="button"
-                class="btn btn--sm"
-                @click=${() => state.openProjectRunConfirm("stop")}
-              >
-                ${t("chat.projectRunStop")}
-              </button>
-            `
-          : nothing
-      }
-      ${
-        canPauseResume
-          ? paused
-            ? html`
-                <button
-                  type="button"
-                  class="btn btn--sm btn--primary"
-                  @click=${() => {
-                    if (runId) {
-                      void state.handleExecutionResume(runId);
-                    }
-                  }}
-                >
-                  ${t("chat.projectRunResume")}
-                </button>
-              `
-            : html`
-                <button
-                  type="button"
-                  class="btn btn--sm"
-                  @click=${() => {
-                    if (runId) {
-                      void state.handleExecutionPause(runId);
-                    }
-                  }}
-                >
-                  ${t("chat.projectRunPause")}
-                </button>
-              `
-          : nothing
-      }
-      ${
-        runId
-          ? html`
-              <button
-                type="button"
-                class="btn btn--sm btn--ghost"
-                @click=${() => state.openProjectRunConfirm("remove")}
-              >
-                ${t("chat.projectRunRemove")}
-              </button>
-            `
+            <button
+              type="button"
+              class="btn btn--sm btn--project-run-finish"
+              @click=${() => state.openProjectRunConfirm("stop_finish")}
+            >
+              ${t("chat.projectRunFinish")}
+            </button>
+            <button
+              type="button"
+              class="btn btn--sm btn--ghost"
+              style="color: var(--muted);"
+              @click=${() => state.openProjectRunConfirm("stop_cancel")}
+            >
+              ${t("chat.projectRunCancelRunAction")}
+            </button>
+          `
           : nothing
       }
     </div>
@@ -1044,7 +1406,21 @@ export function renderProjectRunConfirmDialog(state: AppViewState) {
     return nothing;
   }
   const body =
-    kind === "stop" ? t("chat.projectRunConfirmStop") : t("chat.projectRunConfirmRemove");
+    kind === "stop_finish"
+      ? t("chat.projectRunConfirmStopFinish")
+      : kind === "stop_cancel"
+        ? t("chat.projectRunConfirmStopCancel")
+        : kind === "stop_analyze"
+          ? t("chat.projectRunConfirmStopAnalyze")
+          : t("chat.projectRunConfirmRemove");
+  const showStopReason =
+    kind === "stop_finish" || kind === "stop_cancel" || kind === "stop_analyze";
+  const confirmIsDanger = kind === "stop_cancel" || kind === "stop_analyze";
+  const confirmBtnClass = confirmIsDanger
+    ? "project-create-modal__btn--danger"
+    : kind === "stop_finish"
+      ? "project-create-modal__btn--accent-outline"
+      : "project-create-modal__btn--primary";
   return html`
     <div
       class="project-create-modal"
@@ -1062,7 +1438,7 @@ export function renderProjectRunConfirmDialog(state: AppViewState) {
       >
         <p style="margin: 0 0 16px; line-height: 1.5;">${body}</p>
         ${
-          kind === "stop"
+          showStopReason
             ? html`
                 <label class="project-create-modal__label" style="display: block; margin-bottom: 8px; font-size: 13px; color: var(--muted);"
                   >${t("chat.projectRunStopReasonOptional")}</label
@@ -1086,7 +1462,7 @@ export function renderProjectRunConfirmDialog(state: AppViewState) {
           </button>
           <button
             type="button"
-            class="project-create-modal__btn ${kind === "stop" ? "project-create-modal__btn--danger" : "project-create-modal__btn--primary"}"
+            class="project-create-modal__btn ${confirmBtnClass}"
             @click=${() => state.confirmProjectRunConfirm()}
           >
             ${t("chat.projectRunConfirm")}

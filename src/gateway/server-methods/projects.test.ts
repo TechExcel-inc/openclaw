@@ -6,6 +6,9 @@ const saveProjectsStore = vi.hoisted(() => vi.fn());
 const runProjectExecution = vi.hoisted(() => vi.fn());
 const cancelProjectExecution = vi.hoisted(() => vi.fn());
 const chatAbort = vi.hoisted(() => vi.fn());
+const abortChatSessionRunsForOperatorStop = vi.hoisted(() =>
+  vi.fn(() => ({ aborted: true, runIds: ["old-run"], unauthorized: false })),
+);
 const chatInject = vi.hoisted(() => vi.fn());
 const chatSend = vi.hoisted(() => vi.fn());
 const sessionsCreate = vi.hoisted(() => vi.fn());
@@ -28,6 +31,7 @@ vi.mock("./chat.js", () => ({
     "chat.inject": chatInject,
     "chat.send": chatSend,
   },
+  abortChatSessionRunsForOperatorStop,
 }));
 
 vi.mock("./sessions.js", () => ({
@@ -143,6 +147,7 @@ describe("projectsHandlers executions.run", () => {
     runProjectExecution.mockReset();
     cancelProjectExecution.mockReset();
     chatAbort.mockReset();
+    abortChatSessionRunsForOperatorStop.mockReset();
     chatInject.mockReset();
     chatSend.mockReset();
     sessionsCreate.mockReset();
@@ -154,6 +159,11 @@ describe("projectsHandlers executions.run", () => {
     chatAbort.mockImplementation(async ({ respond }: { respond: Function }) => {
       respond(true, { ok: true, aborted: true, runIds: ["old-run"] });
     });
+    abortChatSessionRunsForOperatorStop.mockImplementation(() => ({
+      aborted: true,
+      runIds: ["old-run"],
+      unauthorized: false,
+    }));
     chatInject.mockImplementation(async ({ respond }: { respond: Function }) => {
       respond(true, { ok: true });
     });
@@ -210,13 +220,12 @@ describe("projectsHandlers executions.run", () => {
     expect(cancelProjectExecution).toHaveBeenCalledTimes(2);
     expect(cancelProjectExecution).toHaveBeenCalledWith("run-1");
     expect(cancelProjectExecution).toHaveBeenCalledWith("run-2");
-    expect(chatAbort).toHaveBeenCalledTimes(1);
-    expect(chatAbort.mock.calls[0]?.[0]).toMatchObject({
-      params: {
-        sessionKey: "agent:main:main:eadproj:run:run-1",
-        runId: "agent-old-1",
-      },
-    });
+    expect(abortChatSessionRunsForOperatorStop).toHaveBeenCalledTimes(1);
+    expect(abortChatSessionRunsForOperatorStop).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      "agent:main:main:eadproj:run:run-1",
+    );
 
     expect(sessionsCreate).toHaveBeenCalledTimes(1);
     expect(browserRequest).toHaveBeenCalledTimes(1);
@@ -238,14 +247,14 @@ describe("projectsHandlers executions.run", () => {
       params: {
         sessionKey: `agent:main:main:eadproj:run:${newRunId}`,
         label: "Project Run Context",
-        message: expect.stringContaining(`Execution Run ID: ${newRunId}.`),
+        message: expect.stringContaining("Dashboard execution status: pending"),
       },
     });
     expect(chatSend).toHaveBeenCalledTimes(1);
     expect(chatSend.mock.calls[0]?.[0]).toMatchObject({
       params: {
         sessionKey: `agent:main:main:eadproj:run:${newRunId}`,
-        deliver: false,
+        deliver: true,
         idempotencyKey: `project-run-bootstrap:${newRunId}`,
         message: expect.stringContaining("Session reuse hint: qa-admin-session."),
       },
@@ -448,12 +457,22 @@ describe("projectsHandlers executions.resume", () => {
     saveProjectsStore.mockReset();
     chatSend.mockReset();
     chatAbort.mockReset();
+    abortChatSessionRunsForOperatorStop.mockReset();
+    chatInject.mockReset();
     saveProjectsStore.mockResolvedValue(undefined);
     chatSend.mockImplementation(async ({ respond }: { respond: Function }) => {
       respond(true, { runId: "agent-run-123", status: "started" });
     });
     chatAbort.mockImplementation(async ({ respond }: { respond: Function }) => {
       respond(true, { ok: true, aborted: true, runIds: ["old-run"] });
+    });
+    abortChatSessionRunsForOperatorStop.mockImplementation(() => ({
+      aborted: true,
+      runIds: ["old-run"],
+      unauthorized: false,
+    }));
+    chatInject.mockImplementation(async ({ respond }: { respond: Function }) => {
+      respond(true, { ok: true });
     });
   });
 
@@ -489,10 +508,8 @@ describe("projectsHandlers executions.resume", () => {
     expect(chatSend.mock.calls[0]?.[0]).toMatchObject({
       params: {
         sessionKey: "agent:main:main:eadproj:run:run-manual",
-        deliver: false,
-        message: expect.stringContaining(
-          "The operator already confirmed that login/bootstrap is complete.",
-        ),
+        deliver: true,
+        message: expect.stringContaining("Operator confirmed bootstrap done"),
         idempotencyKey: "project-run-bootstrap:run-manual",
       },
     });
@@ -532,11 +549,18 @@ describe("projectsHandlers executions.resume", () => {
       isWebchatConnect: () => false,
     });
 
-    expect(chatAbort).toHaveBeenCalledTimes(1);
-    expect(chatAbort.mock.calls[0]?.[0]).toMatchObject({
+    expect(abortChatSessionRunsForOperatorStop).toHaveBeenCalledTimes(1);
+    expect(abortChatSessionRunsForOperatorStop).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      "agent:main:main:eadproj:run:run-active",
+    );
+    expect(chatInject).toHaveBeenCalledTimes(1);
+    expect(chatInject.mock.calls[0]?.[0]).toMatchObject({
       params: {
         sessionKey: "agent:main:main:eadproj:run:run-active",
-        runId: "agent-old-7",
+        label: "Project Run status",
+        message: expect.stringContaining("paused"),
       },
     });
     expect(saveProjectsStore).toHaveBeenCalledTimes(1);
@@ -564,11 +588,19 @@ describe("projectsHandlers executions.resume", () => {
 
     await invokeExecutionsResume("run-active", resumeRespond);
 
+    expect(chatInject).toHaveBeenCalledTimes(2);
+    expect(chatInject.mock.calls[1]?.[0]).toMatchObject({
+      params: {
+        sessionKey: "agent:main:main:eadproj:run:run-active",
+        label: "Project Run status",
+        message: expect.stringContaining("active again"),
+      },
+    });
     expect(chatSend).toHaveBeenCalledTimes(1);
     expect(chatSend.mock.calls[0]?.[0]).toMatchObject({
       params: {
         sessionKey: "agent:main:main:eadproj:run:run-active",
-        deliver: false,
+        deliver: true,
         message: expect.stringContaining("The operator resumed Project Run run-active."),
       },
     });

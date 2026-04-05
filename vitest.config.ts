@@ -70,7 +70,9 @@ export default defineConfig({
       "test/**/*.test.ts",
       "ui/src/ui/app-chat.test.ts",
       "ui/src/ui/app-render.helpers.node.test.ts",
+      "ui/src/ui/chat/ead-chat-sync.test.ts",
       "ui/src/ui/chat/ead-project-session-key.test.ts",
+      "ui/src/ui/chat/message-normalizer.test.ts",
       "ui/src/ui/views/agents-utils.test.ts",
       "ui/src/ui/views/chat.test.ts",
       "ui/src/ui/views/nodes.devices.test.ts",
@@ -80,6 +82,7 @@ export default defineConfig({
       "ui/src/ui/controllers/sessions.test.ts",
       "ui/src/ui/views/sessions.test.ts",
       "ui/src/ui/app-gateway.sessions.node.test.ts",
+      "ui/src/ui/gateway.node.test.ts",
     ],
     setupFiles: ["test/setup.ts"],
     exclude: [

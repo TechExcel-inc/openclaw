@@ -35,6 +35,8 @@ export type ProjectTemplate = {
   authLoginUrl?: string;
   authSessionProfile?: string;
   authInstructions?: string;
+  timeBudgetMinutes?: number;
+  costBudgetDollars?: number;
   totalTestSteps: number;
   failedTestSteps: number;
   pfmNodes: EadFmNode[];
@@ -75,7 +77,13 @@ export type EadFmNodeRun = {
   testCaseRuns: TestCaseRun[];
 };
 
-export type ExecutionStatus = "pending" | "running" | "completed" | "cancelled" | "error";
+export type ExecutionStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "error";
 
 export type StepStatus =
   | "pending" // Step not yet started
@@ -112,6 +120,10 @@ export type ProgressLogEntry = {
   ts: number;
   kind: "tool_use" | "tool_result" | "assistant" | "system";
   text: string;
+  thumbnailUrl?: string; // S3 URL snippet
+  imageUrl?: string; // S3 full image URL
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
 };
 
 export type ProjectExecute = {
@@ -125,9 +137,15 @@ export type ProjectExecute = {
   authLoginUrl?: string;
   authSessionProfile?: string;
   authInstructions?: string;
+  timeBudgetMinutes?: number;
+  costBudgetDollars?: number;
+  /**
+   * When true, the Project Run browser uses a visible local window (headed). When false or
+   * omitted, defaults to headless background automation.
+   */
+  showLocalBrowser?: boolean;
   /** Run-scoped OpenClaw session key that owns the chat/browser work for this execution. */
   runSessionKey?: string;
-  /** Gateway chat run id for the primary OpenClaw turn that powers this execution. */
   /** Gateway chat run id for the primary OpenClaw turn that powers this execution. */
   agentRunId?: string;
   status: ExecutionStatus;
@@ -149,6 +167,11 @@ export type ProjectExecute = {
   lastErrorMessage?: string;
   /** Optional note from the operator when stopping the run. */
   cancelReason?: string;
+  /**
+   * When the operator stops the run via the control UI: `finish` → status `completed`,
+   * `cancel` → status `cancelled`. Omitted for natural completion or superseded runs.
+   */
+  operatorStopKind?: "finish" | "cancel";
   results: EadFmNodeRun[];
   /** Accumulated progress log entries extracted from the run transcript. */
   progressLog?: ProgressLogEntry[];

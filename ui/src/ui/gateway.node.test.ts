@@ -1,3 +1,5 @@
+/* @vitest-environment jsdom */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth.ts";
 import type { DeviceIdentity } from "./device-identity.ts";
@@ -414,6 +416,74 @@ describe("GatewayBrowserClient", () => {
 
     client.stop();
     vi.useRealTimers();
+  });
+
+  it("does not fire onGap when only one websocket seq is missing", async () => {
+    const onGap = vi.fn();
+    const client = new GatewayBrowserClient({
+      url: "ws://127.0.0.1:18789",
+      token: "shared-auth-token",
+      onGap,
+    });
+    const { ws, connectFrame } = await startConnect(client);
+    ws.emitMessage({
+      type: "res",
+      id: connectFrame.id,
+      ok: true,
+      payload: {
+        type: "hello-ok",
+        protocol: 3,
+        snapshot: {},
+      },
+    });
+    ws.emitMessage({
+      type: "event",
+      event: "presence",
+      payload: {},
+      seq: 1,
+    });
+    ws.emitMessage({
+      type: "event",
+      event: "presence",
+      payload: {},
+      seq: 3,
+    });
+    expect(onGap).not.toHaveBeenCalled();
+    client.stop();
+  });
+
+  it("fires onGap when more than one websocket seq is missing", async () => {
+    const onGap = vi.fn();
+    const client = new GatewayBrowserClient({
+      url: "ws://127.0.0.1:18789",
+      token: "shared-auth-token",
+      onGap,
+    });
+    const { ws, connectFrame } = await startConnect(client);
+    ws.emitMessage({
+      type: "res",
+      id: connectFrame.id,
+      ok: true,
+      payload: {
+        type: "hello-ok",
+        protocol: 3,
+        snapshot: {},
+      },
+    });
+    ws.emitMessage({
+      type: "event",
+      event: "presence",
+      payload: {},
+      seq: 1,
+    });
+    ws.emitMessage({
+      type: "event",
+      event: "presence",
+      payload: {},
+      seq: 5,
+    });
+    expect(onGap).toHaveBeenCalledWith({ expected: 2, received: 5 });
+    client.stop();
   });
 
   it("does not auto-reconnect on AUTH_TOKEN_MISSING", async () => {

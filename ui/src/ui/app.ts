@@ -444,6 +444,10 @@ export class OpenClawApp extends LitElement {
   @state() createFormAuthLoginUrl = "";
   @state() createFormAuthSessionProfile = "";
   @state() createFormAuthInstructions = "";
+  @state() createFormTimeBudgetMinutes: number = 60;
+  @state() createFormCostBudgetDollars: number = 2.0;
+  /** Run modal: open a visible local browser window for this Project Run (headed). */
+  @state() createFormShowLocalBrowser = false;
   @state() projectAuthProfilesLoading = false;
   @state() projectAuthProfilesError: string | null = null;
   @state() projectAuthProfiles: ProfileStatus[] = [];
@@ -456,7 +460,8 @@ export class OpenClawApp extends LitElement {
   @state() projectLeftPanelDismissed = false;
   @state() projectLeftSplitRatio = 0.26;
   @state() hiddenProjectRunNavIds: string[] = [];
-  @state() projectRunConfirmKind: "stop" | "remove" | null = null;
+  @state() projectRunConfirmKind: "stop_finish" | "stop_cancel" | "stop_analyze" | "remove" | null =
+    null;
   @state() projectRunStopReasonDraft = "";
 
   // Executions state
@@ -669,9 +674,9 @@ export class OpenClawApp extends LitElement {
     }
   }
 
-  openProjectRunConfirm(kind: "stop" | "remove") {
+  openProjectRunConfirm(kind: "stop_finish" | "stop_cancel" | "stop_analyze" | "remove") {
     this.projectRunConfirmKind = kind;
-    if (kind === "stop") {
+    if (kind === "stop_finish" || kind === "stop_cancel" || kind === "stop_analyze") {
       this.projectRunStopReasonDraft = "";
     }
   }
@@ -688,10 +693,12 @@ export class OpenClawApp extends LitElement {
     if (!id) {
       return;
     }
-    if (kind === "stop") {
-      const reason = this.projectRunStopReasonDraft.trim();
+    if (kind === "stop_finish" || kind === "stop_cancel" || kind === "stop_analyze") {
+      const prefix = kind === "stop_analyze" ? "[Analyze Requested] " : "";
+      const reason = prefix + this.projectRunStopReasonDraft.trim();
       this.projectRunStopReasonDraft = "";
-      void this.handleExecutionCancel(id, reason || undefined);
+      const mode: "finish" | "cancel" = kind === "stop_finish" ? "finish" : "cancel";
+      void this.handleExecutionCancel(id, reason.trim() || undefined, mode);
     } else if (kind === "remove") {
       this.exitProjectRunRemoveFromNav();
     }
@@ -744,6 +751,11 @@ export class OpenClawApp extends LitElement {
     this.chatActiveTemplateId = id;
     this.chatShowNoneProjectChat = false;
     writePersistedProjectChatId(id);
+    // Open the Project Run tab first, then attach the chat to this run. Otherwise the chat can
+    // open on the wrong thread and you see duplicate prompts or missing messages.
+    setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], "chatProjectRun");
+    this.navDrawerOpen = false;
+    this.showExecutionChat = false;
     if (this.connected) {
       switchChatSession(this as unknown as AppViewState, stripEadProjectSuffix(this.sessionKey));
     }
@@ -755,9 +767,6 @@ export class OpenClawApp extends LitElement {
       );
       m.attachExecutionWatch(this as unknown as Parameters<typeof m.attachExecutionWatch>[0], id);
     });
-    setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], "chatProjectRun");
-    this.navDrawerOpen = false;
-    this.showExecutionChat = false;
   }
 
   setTheme(next: ThemeName, context?: Parameters<typeof setThemeInternal>[2]) {
@@ -958,6 +967,8 @@ export class OpenClawApp extends LitElement {
       authLoginUrl?: string;
       authSessionProfile?: string;
       authInstructions?: string;
+      timeBudgetMinutes?: number;
+      costBudgetDollars?: number;
     },
   ) {
     const { createTemplate } = await import("./controllers/projects.js");
@@ -986,6 +997,8 @@ export class OpenClawApp extends LitElement {
       authLoginUrl?: string;
       authSessionProfile?: string;
       authInstructions?: string;
+      timeBudgetMinutes?: number;
+      costBudgetDollars?: number;
     },
   ) {
     const { updateTemplate } = await import("./controllers/projects.js");
@@ -1001,6 +1014,9 @@ export class OpenClawApp extends LitElement {
       authLoginUrl?: string;
       authSessionProfile?: string;
       authInstructions?: string;
+      timeBudgetMinutes?: number;
+      costBudgetDollars?: number;
+      showLocalBrowser?: boolean;
     },
   ) {
     const { runExecution, loadGlobalExecutions } = await import("./controllers/projects.js");
@@ -1022,9 +1038,9 @@ export class OpenClawApp extends LitElement {
     await loadProjectBrowserProfiles(this as never, force);
   }
 
-  async handleExecutionCancel(executionId: string, reason?: string) {
+  async handleExecutionCancel(executionId: string, reason?: string, mode?: "finish" | "cancel") {
     const { cancelExecution } = await import("./controllers/projects.js");
-    await cancelExecution(this as never, executionId, reason);
+    await cancelExecution(this as never, executionId, reason, mode);
   }
 
   async handleExecutionSetActive(id: string | null) {

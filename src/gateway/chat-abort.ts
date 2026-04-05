@@ -1,4 +1,5 @@
 import { isAbortRequestText } from "../auto-reply/reply/abort-primitives.js";
+import type { GatewayRequestContext } from "./server-methods/types.js";
 
 export type ChatAbortControllerEntry = {
   controller: AbortController;
@@ -44,6 +45,21 @@ export type ChatAbortOps = {
   broadcast: (event: string, payload: unknown, opts?: { dropIfSlow?: boolean }) => void;
   nodeSendToSession: (sessionKey: string, event: string, payload: unknown) => void;
 };
+
+/** Shared helper so gateway startup can register abort ops without importing chat.ts internals. */
+export function createChatAbortOpsFromGatewayContext(context: GatewayRequestContext): ChatAbortOps {
+  return {
+    chatAbortControllers: context.chatAbortControllers,
+    chatRunBuffers: context.chatRunBuffers,
+    chatDeltaSentAt: context.chatDeltaSentAt,
+    chatDeltaLastBroadcastLen: context.chatDeltaLastBroadcastLen,
+    chatAbortedRuns: context.chatAbortedRuns,
+    removeChatRun: context.removeChatRun,
+    agentRunSeq: context.agentRunSeq,
+    broadcast: context.broadcast,
+    nodeSendToSession: context.nodeSendToSession,
+  };
+}
 
 function broadcastChatAborted(
   ops: ChatAbortOps,

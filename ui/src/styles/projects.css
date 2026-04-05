@@ -354,6 +354,19 @@
   cursor: not-allowed;
 }
 
+.project-create-modal__btn--accent-outline {
+  background: transparent;
+  border: 1px solid
+    color-mix(in srgb, var(--accent, #ff5c5c) 45%, var(--border-strong, rgba(255, 255, 255, 0.15)));
+  color: var(--accent, #ff5c5c);
+  font-weight: 600;
+}
+
+.project-create-modal__btn--accent-outline:hover {
+  background: color-mix(in srgb, var(--accent, #ff5c5c) 8%, transparent);
+  border-color: var(--accent, #ff5c5c);
+}
+
 /* Project detail view */
 .project-detail {
   padding: 24px;

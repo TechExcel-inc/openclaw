@@ -1,4 +1,7 @@
+import type { ProjectExecute } from "../../../../src/projects/types.js";
+import { resolveExecutionForProjectRun } from "../app-render.helpers.ts";
 import { resetToolStream } from "../app-tool-stream.ts";
+import type { AppViewState } from "../app-view-state.ts";
 import { extractText } from "../chat/message-extract.ts";
 import { formatConnectError } from "../connect-error.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
@@ -46,6 +49,13 @@ export type ChatState = {
   chatStream: string | null;
   chatStreamStartedAt: number | null;
   lastError: string | null;
+  /** When `chatProjectRun` (control UI), allow streaming deltas from the active agent run even if the user sent a follow-up (different idempotency run id). */
+  tab?: string;
+  /** Project Run tab: active execution id (mirrors OpenClawApp). Used to show inter-turn “working” UI. */
+  chatProjectRunExecutionId?: string | null;
+  globalExecutionsList?: ProjectExecute[];
+  executionDetail?: ProjectExecute | null;
+  executionDetailLoading?: boolean;
 };
 
 export type ChatEventPayload = {
@@ -55,6 +65,60 @@ export type ChatEventPayload = {
   message?: unknown;
   errorMessage?: string;
 };
+
+function isTerminalProjectExecutionStatus(status: ProjectExecute["status"] | undefined): boolean {
+  if (!status) {
+    return false;
+  }
+  return (
+    status === "completed" || status === "failed" || status === "cancelled" || status === "error"
+  );
+}
+
+/** After a chat `final`, the embedded agent may continue (tools, project-run pace). Show reading dots until the next delta. */
+function projectRunShouldShowInterTurnWorking(state: ChatState): boolean {
+  if (state.tab !== "chatProjectRun") {
+    return false;
+  }
+  const id = state.chatProjectRunExecutionId?.trim();
+  if (!id) {
+    return false;
+  }
+  const ex = resolveExecutionForProjectRun(state as unknown as AppViewState, id);
+  return Boolean(ex && (ex.status === "running" || ex.status === "pending") && !ex.paused);
+}
+
+/**
+ * Clear synthetic `chatStream === ""` inter-turn placeholder when the execution row becomes terminal.
+ * Called after executions.get / list merges so the thread does not show “working” after the run ends.
+ */
+export function clearProjectRunInterTurnPlaceholderIfTerminal(host: {
+  /** Inter-turn placeholder uses `""`; omit or null when not used (Project Run host may omit these). */
+  chatStream?: string | null;
+  chatStreamStartedAt?: number | null;
+  tab?: string;
+  chatProjectRunExecutionId?: string | null;
+  globalExecutionsList?: ProjectExecute[];
+  executionDetail?: ProjectExecute | null;
+  executionDetailLoading?: boolean;
+}): void {
+  if (host.tab !== "chatProjectRun") {
+    return;
+  }
+  if (host.chatStream !== "") {
+    return;
+  }
+  const id = host.chatProjectRunExecutionId?.trim();
+  if (!id) {
+    return;
+  }
+  const ex = resolveExecutionForProjectRun(host as unknown as AppViewState, id);
+  if (!ex || !isTerminalProjectExecutionStatus(ex.status)) {
+    return;
+  }
+  host.chatStream = null;
+  host.chatStreamStartedAt = null;
+}
 
 function maybeResetToolStream(state: ChatState) {
   const toolHost = state as ChatState & Partial<Parameters<typeof resetToolStream>[0]>;
@@ -66,6 +130,89 @@ function maybeResetToolStream(state: ChatState) {
   ) {
     resetToolStream(toolHost as Parameters<typeof resetToolStream>[0]);
   }
+}
+
+function messageRoleLower(message: unknown): string {
+  if (!message || typeof message !== "object") {
+    return "";
+  }
+  const role = (message as { role?: unknown }).role;
+  return typeof role === "string" ? role.toLowerCase() : "";
+}
+
+function countUserImageBlocks(message: unknown): number {
+  const m = message as { content?: unknown };
+  if (!Array.isArray(m.content)) {
+    return 0;
+  }
+  return m.content.filter((p) => {
+    const item = p as { type?: unknown };
+    return item.type === "image";
+  }).length;
+}
+
+/**
+ * Stable key for matching user rows across chat.history reloads (text, timestamp, or image-only).
+ * Skips rows with no key (should not happen for user).
+ */
+function userMessageMergeKey(message: unknown): string | null {
+  if (messageRoleLower(message) !== "user") {
+    return null;
+  }
+  const text = extractText(message)?.trim();
+  if (text) {
+    return `text:${text}`;
+  }
+  const ts = (message as { timestamp?: unknown }).timestamp;
+  if (typeof ts === "number" && Number.isFinite(ts)) {
+    return `ts:${ts}`;
+  }
+  const imgs = countUserImageBlocks(message);
+  if (imgs > 0) {
+    return `img:${imgs}`;
+  }
+  return "empty";
+}
+
+function countUserMergeKeys(messages: unknown[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const m of messages) {
+    const key = userMessageMergeKey(m);
+    if (!key) {
+      continue;
+    }
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * After `chat.history`, the server can lag the UI (reload after tool completion, etc.). Preserve
+ * **user** messages from the previous local view that are not yet in the server batch. Uses
+ * per-text occurrence counts so we still preserve a user message when a **non-user** message
+ * (e.g. assistant) was appended after it locally.
+ */
+function mergeMissingUserMessagesFromHistory(server: unknown[], previous: unknown[]): unknown[] {
+  if (previous.length === 0) {
+    return server;
+  }
+  const serverCounts = countUserMergeKeys(server);
+  const missing: unknown[] = [];
+  const seenInPrevious = new Map<string, number>();
+  for (const m of previous) {
+    const key = userMessageMergeKey(m);
+    if (!key) {
+      continue;
+    }
+    const n = (seenInPrevious.get(key) ?? 0) + 1;
+    seenInPrevious.set(key, n);
+    const serverN = serverCounts.get(key) ?? 0;
+    if (n > serverN) {
+      missing.push(m);
+      serverCounts.set(key, (serverCounts.get(key) ?? 0) + 1);
+    }
+  }
+  return missing.length > 0 ? [...server, ...missing] : server;
 }
 
 export async function loadChatHistory(state: ChatState) {
@@ -83,7 +230,9 @@ export async function loadChatHistory(state: ChatState) {
       },
     );
     const messages = Array.isArray(res.messages) ? res.messages : [];
-    state.chatMessages = messages.filter((message) => !isAssistantSilentReply(message));
+    const previousLocal = state.chatMessages;
+    const merged = mergeMissingUserMessagesFromHistory(messages, previousLocal);
+    state.chatMessages = merged.filter((message) => !isAssistantSilentReply(message));
     state.chatThinkingLevel = res.thinkingLevel ?? null;
     // Clear all streaming state — history includes tool results and text
     // inline, so keeping streaming artifacts would cause duplicates.
@@ -289,6 +438,18 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       }
       return "final";
     }
+    // Project Run: bootstrap uses one idempotency run id; a user follow-up uses another. Still
+    // show the primary run's streaming deltas so the thread does not look frozen.
+    if (payload.state === "delta" && state.tab === "chatProjectRun") {
+      const next = extractText(payload.message);
+      if (typeof next === "string" && !isSilentReplyStream(next)) {
+        const current = state.chatStream ?? "";
+        if (!current || next.length >= current.length) {
+          state.chatStream = next;
+        }
+      }
+      return null;
+    }
     return null;
   }
 
@@ -317,6 +478,10 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
+    if (projectRunShouldShowInterTurnWorking(state)) {
+      state.chatStream = "";
+      state.chatStreamStartedAt = Date.now();
+    }
   } else if (payload.state === "aborted") {
     const normalizedMessage = normalizeAbortedAssistantMessage(payload.message);
     if (normalizedMessage && !isAssistantSilentReply(normalizedMessage)) {

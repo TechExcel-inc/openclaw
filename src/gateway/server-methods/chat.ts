@@ -14,6 +14,7 @@ import { resolveSessionFilePath } from "../../config/sessions.js";
 import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
 import { type SavedMedia, saveMediaBuffer } from "../../media/store.js";
 import { createChannelReplyPipeline } from "../../plugin-sdk/channel-reply-pipeline.js";
+import { evaluateProjectRunChatGate } from "../../projects/project-run-session-guard.js";
 import { normalizeInputProvenance, type InputProvenance } from "../../sessions/input-provenance.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
@@ -30,6 +31,7 @@ import {
 } from "../../utils/message-channel.js";
 import {
   abortChatRunById,
+  createChatAbortOpsFromGatewayContext,
   type ChatAbortControllerEntry,
   type ChatAbortOps,
   isChatStopCommandText,
@@ -351,6 +353,48 @@ function extractTranscriptUserText(content: unknown): string | undefined {
     )
     .filter((text): text is string => typeof text === "string");
   return textBlocks.length > 0 ? textBlocks.join("") : undefined;
+}
+
+function persistedUserMessagePlainText(message: unknown): string | undefined {
+  if (!message || typeof message !== "object") {
+    return undefined;
+  }
+  const m = message as { role?: unknown; content?: unknown; text?: unknown };
+  if (typeof m.role === "string" && m.role.toLowerCase() !== "user") {
+    return undefined;
+  }
+  if (typeof m.text === "string") {
+    return m.text;
+  }
+  return extractTranscriptUserText(m.content);
+}
+
+/** Detect prior Project Run bootstrap user row (same execution id) when idempotency is not on disk. */
+function transcriptHasProjectRunBootstrapUserMessage(params: {
+  sessionId: string;
+  storePath: string | undefined;
+  sessionFile: string | undefined;
+  idempotencyKey: string;
+}): boolean {
+  if (!params.idempotencyKey.startsWith("project-run-bootstrap:")) {
+    return false;
+  }
+  const execId = params.idempotencyKey.slice("project-run-bootstrap:".length).trim();
+  if (!execId) {
+    return false;
+  }
+  const marker = `Execution id: ${execId}.`;
+  const messages = readSessionMessages(params.sessionId, params.storePath, params.sessionFile);
+  for (const m of messages) {
+    const text = persistedUserMessagePlainText(m);
+    if (!text || !text.includes("OpenClaw Project Run")) {
+      continue;
+    }
+    if (text.includes(marker)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function rewriteChatSendUserTurnMediaPaths(params: {
@@ -761,8 +805,18 @@ function transcriptHasIdempotencyKey(transcriptPath: string, idempotencyKey: str
       if (!line.trim()) {
         continue;
       }
-      const parsed = JSON.parse(line) as { message?: { idempotencyKey?: unknown } };
-      if (parsed?.message?.idempotencyKey === idempotencyKey) {
+      const parsed = JSON.parse(line) as {
+        message?: { idempotencyKey?: unknown; MessageSid?: unknown };
+      };
+      const msg = parsed?.message;
+      if (!msg) {
+        continue;
+      }
+      if (msg.idempotencyKey === idempotencyKey) {
+        return true;
+      }
+      // chat.send uses idempotencyKey as the client run id; inbound user rows may store MessageSid.
+      if (msg.MessageSid === idempotencyKey) {
         return true;
       }
     }
@@ -881,17 +935,7 @@ function persistAbortedPartials(params: {
 }
 
 function createChatAbortOps(context: GatewayRequestContext): ChatAbortOps {
-  return {
-    chatAbortControllers: context.chatAbortControllers,
-    chatRunBuffers: context.chatRunBuffers,
-    chatDeltaSentAt: context.chatDeltaSentAt,
-    chatDeltaLastBroadcastLen: context.chatDeltaLastBroadcastLen,
-    chatAbortedRuns: context.chatAbortedRuns,
-    removeChatRun: context.removeChatRun,
-    agentRunSeq: context.agentRunSeq,
-    broadcast: context.broadcast,
-    nodeSendToSession: context.nodeSendToSession,
-  };
+  return createChatAbortOpsFromGatewayContext(context);
 }
 
 function normalizeOptionalText(value?: string | null): string | undefined {
@@ -1000,6 +1044,28 @@ function abortChatRunsForSessionKeyWithPartials(params: {
     });
   }
   return res;
+}
+
+/**
+ * Abort every in-flight chat run for a session using gateway-trusted authorization.
+ * Used when the operator stops a Project Run via `executions.cancel` / pause / supersede so we do
+ * not depend on the RPC client matching the chat run owner (device/conn), which could leave the
+ * agent running after the dashboard already shows a terminal status.
+ */
+export function abortChatSessionRunsForOperatorStop(
+  context: GatewayRequestContext,
+  sessionKey: string,
+): { aborted: boolean; runIds: string[]; unauthorized: boolean } {
+  const ops = createChatAbortOps(context);
+  const requester: ChatAbortRequester = { isAdmin: true };
+  return abortChatRunsForSessionKeyWithPartials({
+    context,
+    ops,
+    sessionKey,
+    abortOrigin: "rpc",
+    stopReason: "operator_stop",
+    requester,
+  });
 }
 
 function nextChatSeq(context: { agentRunSeq: Map<string, number> }, runId: string) {
@@ -1305,7 +1371,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       }
     }
     const rawSessionKey = p.sessionKey;
-    const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
+    const { cfg, entry, canonicalKey: sessionKey, storePath } = loadSessionEntry(rawSessionKey);
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
       overrideMs: p.timeoutMs,
@@ -1344,6 +1410,45 @@ export const chatHandlers: GatewayRequestHandlers = {
       }
       respond(true, { ok: true, aborted: res.aborted, runIds: res.runIds });
       return;
+    }
+
+    const projectRunGate = await evaluateProjectRunChatGate(rawSessionKey);
+    if (!projectRunGate.ok) {
+      context.dedupe.delete(`chat:${clientRunId}`);
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, projectRunGate.message));
+      return;
+    }
+
+    if (p.idempotencyKey.startsWith("project-run-bootstrap:") && entry?.sessionId && storePath) {
+      const agentId = resolveSessionAgentId({ sessionKey, config: cfg });
+      const transcriptPath = resolveTranscriptPath({
+        sessionId: entry.sessionId,
+        storePath,
+        sessionFile: entry.sessionFile,
+        agentId,
+      });
+      const idemOnDisk =
+        transcriptPath !== null &&
+        fs.existsSync(transcriptPath) &&
+        transcriptHasIdempotencyKey(transcriptPath, p.idempotencyKey);
+      const priorBootstrap = transcriptHasProjectRunBootstrapUserMessage({
+        sessionId: entry.sessionId,
+        storePath,
+        sessionFile: entry.sessionFile,
+        idempotencyKey: p.idempotencyKey,
+      });
+      if (idemOnDisk || priorBootstrap) {
+        respond(
+          true,
+          { runId: p.idempotencyKey, status: "skipped_duplicate" as const },
+          undefined,
+          {
+            cached: true,
+            runId: p.idempotencyKey,
+          },
+        );
+        return;
+      }
     }
 
     const cached = context.dedupe.get(`chat:${clientRunId}`);

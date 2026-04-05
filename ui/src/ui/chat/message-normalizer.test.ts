@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
+  messageHasRecordedTimestamp,
   normalizeMessage,
   normalizeRoleForGrouping,
   isToolResultMessage,
@@ -120,6 +121,26 @@ describe("message-normalizer", () => {
       });
 
       expect(result.senderLabel).toBe("Iris");
+    });
+  });
+
+  describe("messageHasRecordedTimestamp", () => {
+    it("returns true for finite numeric timestamps", () => {
+      expect(messageHasRecordedTimestamp({ role: "user", timestamp: 1, content: "x" })).toBe(true);
+      expect(messageHasRecordedTimestamp({ role: "user", timestamp: 0, content: "x" })).toBe(true);
+    });
+
+    it("returns false when timestamp is missing or not a finite number", () => {
+      expect(messageHasRecordedTimestamp({ role: "user", content: "x" })).toBe(false);
+      expect(messageHasRecordedTimestamp({ role: "user", timestamp: NaN, content: "x" })).toBe(
+        false,
+      );
+      expect(messageHasRecordedTimestamp({ role: "user", timestamp: Infinity, content: "x" })).toBe(
+        false,
+      );
+      expect(
+        messageHasRecordedTimestamp({ role: "user", timestamp: "1" as unknown as number }),
+      ).toBe(false);
     });
   });
 

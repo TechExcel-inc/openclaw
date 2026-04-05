@@ -9,6 +9,7 @@ import contextPruningExtension from "../pi-extensions/context-pruning.js";
 import { setContextPruningRuntime } from "../pi-extensions/context-pruning/runtime.js";
 import { computeEffectiveSettings } from "../pi-extensions/context-pruning/settings.js";
 import { makeToolPrunablePredicate } from "../pi-extensions/context-pruning/tools.js";
+import { createProjectRunPaceExtension } from "../pi-extensions/project-run-pace.js";
 import { ensurePiCompactionReserveTokens } from "../pi-settings.js";
 import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "./cache-ttl.js";
 
@@ -67,6 +68,8 @@ export function buildEmbeddedExtensionFactories(params: {
   provider: string;
   modelId: string;
   model: Model<Api> | undefined;
+  /** When set, pace successive LLM turns (Project Run only; see `createProjectRunPaceExtension`). */
+  projectRunPace?: { minIntervalMs: number; abortSignal?: AbortSignal };
 }): ExtensionFactory[] {
   const factories: ExtensionFactory[] = [];
   if (resolveCompactionMode(params.cfg) === "safeguard") {
@@ -95,6 +98,15 @@ export function buildEmbeddedExtensionFactories(params: {
   const pruningFactory = buildContextPruningFactory(params);
   if (pruningFactory) {
     factories.push(pruningFactory);
+  }
+  const pace = params.projectRunPace;
+  if (pace && pace.minIntervalMs > 0) {
+    factories.push(
+      createProjectRunPaceExtension({
+        minIntervalMs: pace.minIntervalMs,
+        abortSignal: pace.abortSignal,
+      }),
+    );
   }
   return factories;
 }

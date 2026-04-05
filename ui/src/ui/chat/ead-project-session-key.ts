@@ -14,6 +14,13 @@ export type EadProjectStateSlice = {
   chatActiveTemplateId: string | null;
   templatesList: Array<{ id: string }>;
   globalExecutionsList: Array<{ id: string }> | null | undefined;
+  /**
+   * When the Project Run chat tab is open, this is the execution id from the URL.
+   * It must not depend on `globalExecutionsList` (list can be empty or stale while loading).
+   */
+  chatProjectRunExecutionId?: string | null;
+  /** Use with `chatProjectRunExecutionId` so a stale run id does not apply on other tabs. */
+  tab?: string;
 };
 
 export function stripEadProjectSuffix(sessionKey: string): string {
@@ -46,6 +53,10 @@ export function buildEadProjectChatSessionKey(
 export function resolveEadProjectContextFromState(state: EadProjectStateSlice): EadProjectContext {
   if (state.chatShowNoneProjectChat) {
     return { mode: "none" };
+  }
+  const runId = state.chatProjectRunExecutionId?.trim();
+  if (runId && state.tab === "chatProjectRun") {
+    return { mode: "run", id: runId };
   }
   const tid = state.chatActiveTemplateId?.trim();
   if (!tid) {

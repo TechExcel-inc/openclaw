@@ -5,6 +5,12 @@
 import { stripInboundMetadata } from "../../../../src/auto-reply/reply/strip-inbound-meta.js";
 import type { NormalizedMessage, MessageContentItem } from "../types/chat-types.ts";
 
+/** True when the message has a persisted numeric timestamp (not inferred at display time). */
+export function messageHasRecordedTimestamp(message: unknown): boolean {
+  const m = message as Record<string, unknown>;
+  return typeof m.timestamp === "number" && Number.isFinite(m.timestamp);
+}
+
 /**
  * Normalize a raw message object into a consistent structure.
  */

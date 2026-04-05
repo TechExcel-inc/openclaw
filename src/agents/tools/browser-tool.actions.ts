@@ -175,6 +175,8 @@ export async function executeSnapshotAction(params: {
   profile?: string;
   headless?: boolean;
   proxyRequest: BrowserProxyRequest | null;
+  /** Project Run sessions use smaller snapshots so 128k models do not overflow from a few browser calls. */
+  snapshotPolicy?: "project_run" | "default";
 }): Promise<AgentToolResult<unknown>> {
   const { input, baseUrl, profile, headless, proxyRequest } = params;
   const snapshotDefaults = browserToolActionDeps.loadConfig().browser?.snapshotDefaults;
@@ -182,16 +184,22 @@ export async function executeSnapshotAction(params: {
     input.snapshotFormat === "ai" || input.snapshotFormat === "aria"
       ? input.snapshotFormat
       : undefined;
-  const mode: "efficient" | undefined =
+  const hasMaxChars = Object.hasOwn(input, "maxChars");
+  const effectiveFormat =
+    format ??
+    (params.snapshotPolicy === "project_run" && !hasMaxChars ? ("ai" as const) : undefined);
+  let mode: "efficient" | undefined =
     input.mode === "efficient"
       ? "efficient"
       : format !== "aria" && snapshotDefaults?.mode === "efficient"
         ? "efficient"
         : undefined;
+  if (params.snapshotPolicy === "project_run" && !hasMaxChars && effectiveFormat !== "aria") {
+    mode = "efficient";
+  }
   const labels = typeof input.labels === "boolean" ? input.labels : undefined;
   const refs: "aria" | "role" | undefined =
     input.refs === "aria" || input.refs === "role" ? input.refs : undefined;
-  const hasMaxChars = Object.hasOwn(input, "maxChars");
   const targetId = typeof input.targetId === "string" ? input.targetId.trim() : undefined;
   const limit =
     typeof input.limit === "number" && Number.isFinite(input.limit) ? input.limit : undefined;
@@ -206,7 +214,7 @@ export async function executeSnapshotAction(params: {
   const selector = typeof input.selector === "string" ? input.selector.trim() : undefined;
   const frame = typeof input.frame === "string" ? input.frame.trim() : undefined;
   const resolvedMaxChars =
-    format === "ai"
+    effectiveFormat === "ai"
       ? hasMaxChars
         ? maxChars
         : mode === "efficient"
@@ -216,7 +224,7 @@ export async function executeSnapshotAction(params: {
         ? maxChars
         : undefined;
   const snapshotQuery = {
-    ...(format ? { format } : {}),
+    ...(effectiveFormat ? { format: effectiveFormat } : {}),
     targetId,
     limit,
     ...(typeof resolvedMaxChars === "number" ? { maxChars: resolvedMaxChars } : {}),

@@ -30,6 +30,10 @@ export function switchChatSession(state: AppViewState, nextSessionKey: string) {
   }
   const host = state as unknown as SessionSwitchHost;
   state.sessionKey = resolved;
+  // Drop prior thread so loadChatHistory does not merge user rows from another session/run.
+  // Otherwise switching Project Run nav (different eadproj:run:<id>) re-appends the previous
+  // run's bootstrap user message — same merge logic that preserves optimistic sends within one session.
+  state.chatMessages = [];
   state.chatMessage = "";
   state.chatStream = null;
   state.chatQueue = [];

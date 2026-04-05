@@ -5,9 +5,13 @@ import {
   isCronSessionKey,
   parseSessionKey,
   pickAdjacentProjectRunIdForNav,
+  PROJECT_RUN_NAV_MAX,
   projectRunScreenshotSteps,
   resolveActiveTemplateIdForProjectNav,
+  resolveExecutionForProjectRun,
   resolveSessionDisplayName,
+  visibleGlobalExecutionsForNav,
+  visibleTemplateExecutionsChronological,
 } from "./app-render.helpers.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import type { SessionsListResult } from "./types.ts";
@@ -304,6 +308,75 @@ describe("isCronSessionKey", () => {
   });
 });
 
+describe("resolveExecutionForProjectRun", () => {
+  const base = (id: string): ProjectExecute => ({
+    id,
+    linkedTemplateId: "t",
+    name: "n",
+    description: "",
+    targetUrl: "",
+    aiPrompt: "",
+    status: "running",
+    steps: [],
+    progressPercentage: 10,
+    startTime: Date.now(),
+    durationMs: null,
+    results: [],
+  });
+
+  it("prefers the row with more steps when both executionDetail and globalExecutionsList match", () => {
+    const id = "00000000-0000-4000-8000-0000000000e1";
+    const stale = base(id);
+    const fresh = {
+      ...base(id),
+      steps: [
+        {
+          stepId: "s1",
+          title: "Milestone",
+          status: "completed" as const,
+          summary: "Done",
+          artifacts: [],
+        },
+      ],
+      progressPercentage: 50,
+    };
+    expect(
+      resolveExecutionForProjectRun(
+        projectNavState({
+          globalExecutionsList: [fresh],
+          executionDetail: stale,
+        }),
+        id,
+      ),
+    ).toEqual(fresh);
+  });
+
+  it("prefers executionDetail when it has richer progressLog than the list row", () => {
+    const id = "00000000-0000-4000-8000-0000000000e2";
+    const listRow = base(id);
+    const detailRow = {
+      ...base(id),
+      progressLog: [
+        {
+          ts: Date.now(),
+          kind: "tool_use" as const,
+          text: "",
+          toolName: "browser",
+        },
+      ],
+    };
+    expect(
+      resolveExecutionForProjectRun(
+        projectNavState({
+          globalExecutionsList: [listRow],
+          executionDetail: detailRow,
+        }),
+        id,
+      ),
+    ).toEqual(detailRow);
+  });
+});
+
 describe("resolveActiveTemplateIdForProjectNav", () => {
   it("resolves linkedTemplateId when chat id is an execution id and templatesList is empty", () => {
     const execId = "00000000-0000-4000-8000-000000000001";
@@ -362,12 +435,28 @@ describe("resolveActiveTemplateIdForProjectNav", () => {
 });
 
 describe("formatExecutionStatusForUi", () => {
-  it("maps completed to Finished", () => {
-    expect(formatExecutionStatusForUi("completed", false)).toBe("Finished");
+  it("maps natural completed to AI Finished", () => {
+    expect(formatExecutionStatusForUi("completed", false)).toBe("AI Finished");
   });
 
-  it("shows Paused when running and paused", () => {
-    expect(formatExecutionStatusForUi("running", true)).toBe("Paused");
+  it("maps operator finish stop to Stop — Finish", () => {
+    expect(formatExecutionStatusForUi("completed", false, { operatorStopKind: "finish" })).toBe(
+      "Stop — Finish",
+    );
+  });
+
+  it("maps operator cancel stop to Stop — Cancel", () => {
+    expect(formatExecutionStatusForUi("cancelled", false, { operatorStopKind: "cancel" })).toBe(
+      "Stop — Cancel",
+    );
+  });
+
+  it("maps non-operator cancelled to AI Canceled", () => {
+    expect(formatExecutionStatusForUi("cancelled", false, {})).toBe("AI Canceled");
+  });
+
+  it("shows Running when running even if paused (paused is not a separate label)", () => {
+    expect(formatExecutionStatusForUi("running", true)).toBe("Running");
   });
 
   it("shows Running when running and not paused", () => {
@@ -376,6 +465,10 @@ describe("formatExecutionStatusForUi", () => {
 
   it("returns Loading when status is undefined", () => {
     expect(formatExecutionStatusForUi(undefined, false)).toBe("Loading…");
+  });
+
+  it("maps failed to AI Failed", () => {
+    expect(formatExecutionStatusForUi("failed", false)).toBe("AI Failed");
   });
 });
 
@@ -436,6 +529,80 @@ describe("pickAdjacentProjectRunIdForNav", () => {
         "b",
       ),
     ).toBeNull();
+  });
+
+  it("prefers the next run in global time order across templates", () => {
+    const tplA = "aaaaaaaa-aaaa-4000-8000-0000000000aa";
+    const tplB = "bbbbbbbb-bbbb-4000-8000-0000000000bb";
+    const mkTpl = (id: string, start: number, linked: string): ProjectExecute => ({
+      id,
+      linkedTemplateId: linked,
+      name: "p",
+      description: "",
+      targetUrl: "",
+      aiPrompt: "",
+      status: "completed",
+      steps: [],
+      progressPercentage: 100,
+      startTime: start,
+      durationMs: 1,
+      results: [],
+    });
+    const a = mkTpl("a", 1, tplA);
+    const b = mkTpl("b", 2, tplB);
+    const c = mkTpl("c", 3, tplA);
+    expect(
+      pickAdjacentProjectRunIdForNav(
+        projectNavState({
+          chatActiveTemplateId: tplA,
+          globalExecutionsList: [a, b, c],
+        }),
+        "b",
+      ),
+    ).toBe("c");
+  });
+});
+
+describe("visibleGlobalExecutionsForNav", () => {
+  const tpl = "00000000-0000-4000-8000-0000000000aa";
+  const tplB = "11111111-1111-4000-8000-0000000000bb";
+  const mkRun = (id: string, start: number, linked: string): ProjectExecute => ({
+    id,
+    linkedTemplateId: linked,
+    name: "p",
+    description: "",
+    targetUrl: "",
+    aiPrompt: "",
+    status: "completed",
+    steps: [],
+    progressPercentage: 100,
+    startTime: start,
+    durationMs: 1,
+    results: [],
+  });
+
+  it(`lists at most ${PROJECT_RUN_NAV_MAX} runs across all test plans, newest first`, () => {
+    const runs = [
+      ...Array.from({ length: 12 }, (_, i) => mkRun(`a-${i}`, i + 1, tpl)),
+      mkRun("other", 99, tplB),
+    ];
+    const state = projectNavState({
+      chatActiveTemplateId: tpl,
+      globalExecutionsList: runs,
+    });
+    const nav = visibleGlobalExecutionsForNav(state);
+    expect(nav).toHaveLength(PROJECT_RUN_NAV_MAX);
+    expect(nav[0]?.id).toBe("other");
+    expect(nav[1]?.id).toBe("a-11");
+  });
+
+  it("keeps per-template chronological list for ordinals", () => {
+    const runs = Array.from({ length: 12 }, (_, i) => mkRun(`run-${i}`, i + 1, tpl));
+    const state = projectNavState({
+      chatActiveTemplateId: tpl,
+      globalExecutionsList: runs,
+    });
+    expect(visibleTemplateExecutionsChronological(state, tpl)).toHaveLength(12);
   });
 });
 
