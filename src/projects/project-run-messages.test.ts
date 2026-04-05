@@ -17,6 +17,7 @@ describe("project-run-messages", () => {
     expect(text).toContain("exec-1");
     expect(text).toContain("authoritative");
     expect(text).toContain("plan to do next");
+    expect(text).toContain("Task checkpoints:");
     expect(text).toContain("Visibility is part of job quality");
     expect(text).toContain("Cadence:");
     expect(text).toContain("sign-in or account access");

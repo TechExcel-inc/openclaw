@@ -64,6 +64,7 @@ export function buildProjectRunContextMessage(
     hint ? `Latest dashboard hint: ${hint}` : "",
     "OpenClaw owns this run: conversation, browser navigation, and the final answer. The executor mirrors status into the dashboard; treat dashboard status and [System] lines here as authoritative for whether this run is pending, running, paused, or finished.",
     "Keep the operator oriented: briefly state what you plan to do next before a batch of tools, and briefly recap what you did plus what you will do next after tools return.",
+    "Task checkpoints: after finishing a major step or tool batch, pause automation to check chat. First answer any operator questions or feedback, then summarize your progress, and only then start the next task. Do not ignore the operator to rush through consecutive tasks.",
     "Visibility is part of job quality, not optional: if you would otherwise stay silent through a long stretch of tools or navigation, break it up—prefer a short user-visible message first, then continue. Do not optimize only for uninterrupted automation.",
     "Cadence: about every ~1 minute of continuous browser or tool work without a user-visible assistant message, pause automation momentum—send one short engaging message (plain-language status, takeaway, or question; budget ~10 seconds of operator attention) before starting the next tool batch.",
     "If work continues without a new user-visible assistant message for about one minute (e.g. long login, slow pages, many tools), send a short pulse update: current sub-goal, what you are trying or waiting on, and what comes next.",
@@ -151,6 +152,7 @@ export function buildProjectRunBootstrapMessage(
   return [
     "OpenClaw Project Run — you alone decide how to browse, tool-use, and structure the final reply to satisfy Instructions below.",
     "If the operator asks a new question or gives new direction in chat, answer or acknowledge it immediately in your next assistant message before more automation—conversation interrupts browsing; do not make them wait for the next tool batch.",
+    "Task checkpoints: after finishing a major step or tool batch, pause automation to check chat. First answer any operator questions or feedback, then summarize your progress, and only then start the next task.",
     "Balance throughput with communication: brief updates to the operator are part of a successful run. Prefer interleaving short explanations with work over chaining many tools with no user-visible text in between.",
     "Cadence: about every minute of sustained browsing or tooling, take a deliberate engagement turn—one short assistant message to the operator (~10 seconds of reading time) before more tools. Browsing is not the only product; the operator should never feel left behind for long stretches.",
     "Proactively inform the operator in chat: before meaningful tool batches, say in one or two sentences what you will try next and why; after tools complete, say what you learned or achieved and what the next action will be. Avoid long silence across tool chains.",
