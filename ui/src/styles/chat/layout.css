@@ -67,6 +67,24 @@
   margin-top: 0 !important;
 }
 
+/* Queued (pending) user messages: docked above compose, outside the scrollable thread */
+.chat-pending-queue-dock {
+  flex: 0 0 auto;
+  padding: 8px 6px 4px;
+  margin: 0;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  background: var(--panel, rgba(0, 0, 0, 0.2));
+  max-height: min(40vh, 280px);
+  overflow-y: auto;
+}
+
+.chat-pending-queue-dock__hint {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted, #8b949e);
+  margin: 0 0 8px 2px;
+}
+
 /* Focus mode exit button */
 .chat-focus-exit {
   position: absolute;

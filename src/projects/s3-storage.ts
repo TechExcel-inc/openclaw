@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { generateBrowserThumbnail } from "../browser/screenshot.js";
 
 export type S3Config = {
   region: string;
@@ -43,7 +44,7 @@ export async function uploadDocumentToS3(
 export async function uploadBrowserScreenshot(
   base64Data: string,
   executionId: string,
-): Promise<string | undefined> {
+): Promise<{ imageUrl: string; thumbnailUrl: string } | undefined> {
   const region = process.env.S3_REGION;
   const bucket = process.env.S3_BUCKET;
   const accessKeyId = process.env.S3_ACCESS_KEY || process.env.S3_KEY_ID;
@@ -65,28 +66,52 @@ export async function uploadBrowserScreenshot(
   });
 
   const buffer = Buffer.from(base64Data, "base64");
-  const fileName = `screenshots/${executionId}/${Date.now()}-${Math.random().toString(36).substring(7)}.png`;
+  const now = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(7);
+  const fileName = `screenshots/${executionId}/${now}-${randomSuffix}.png`;
 
-  const command = new PutObjectCommand({
-    Bucket: bucket,
-    Key: fileName,
-    Body: buffer,
-    ContentType: "image/png",
-    ACL: "public-read", // Attempt to make it publicly readable so the UI can just link it
-  });
+  // Base URL for links
+  const baseUrl = endpoint
+    ? endpoint.includes(".amazonaws.com") && !endpoint.includes(bucket)
+      ? `https://${bucket}.s3.${region}.amazonaws.com/`
+      : `${endpoint.replace(/\/$/, "")}/${bucket}/`
+    : `https://${bucket}.s3.${region}.amazonaws.com/`;
+
+  const imageUrl = `${baseUrl}${fileName}`;
 
   try {
-    await client.send(command);
-    // Generate the public HTTPS URL for the frontend
-    if (endpoint) {
-      // If endpoint is custom/provided, we'll try to build a path-style URL or substitute
-      if (endpoint.includes(".amazonaws.com") && !endpoint.includes(bucket)) {
-        return `https://${bucket}.s3.${region}.amazonaws.com/${fileName}`;
-      }
-      // For generic endpoints (e.g., Minio or Cloudflare R2), path style usually works
-      return `${endpoint.replace(/\/$/, "")}/${bucket}/${fileName}`;
+    // 1. Upload main screenshot
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: fileName,
+        Body: buffer,
+        ContentType: "image/png",
+        ACL: "public-read",
+      }),
+    );
+
+    // 2. Upload thumbnail
+    let thumbnailUrl = imageUrl;
+    try {
+      const thumb = await generateBrowserThumbnail(buffer);
+      const thumbExt = thumb.contentType === "image/webp" ? "webp" : "jpg";
+      const thumbName = `thumbnails/${executionId}/${now}-${randomSuffix}.${thumbExt}`;
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: thumbName,
+          Body: thumb.buffer,
+          ContentType: thumb.contentType,
+          ACL: "public-read",
+        }),
+      );
+      thumbnailUrl = `${baseUrl}${thumbName}`;
+    } catch (err) {
+      console.warn("Failed to generate/upload thumbnail to S3:", err);
     }
-    return `https://${bucket}.s3.${region}.amazonaws.com/${fileName}`;
+
+    return { imageUrl, thumbnailUrl };
   } catch (error) {
     console.error("Failed to upload screenshot to S3:", error);
     return undefined;

@@ -8,7 +8,9 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
-- Project Run: default pacing between successive model turns after tool rounds is 40s, and browser screenshot preflight waits 8–16s (was 5–10s), to reduce provider rate-limit pressure on heavy runs.
+- Project Run: remove cost budget enforcement and the Budget control UI; only the time budget limits runs. Bootstrap reminds the agent that ending the assistant turn marks the run finished—avoid stopping after only asking to confirm credentials already stated in Instructions.
+- Project Run: when the OpenClaw session reports `done` but the execution is still within its time budget, the gateway automatically sends a continuation user message so the run stays active instead of showing finished with zero steps.
+- Project Run: default pacing between successive model turns after tool rounds is 30s, and browser screenshot preflight waits 8–16s (was 5–10s), to reduce provider rate-limit pressure on heavy runs.
 - Project Run: bootstrap reminds the agent to use credentials from Instructions or Authentication notes when present, otherwise ask the operator in chat (no invented secrets).
 - Project Run: bootstrap and context messages ask the agent to state planned next steps before tool batches and brief recaps plus next intent after tools.
 - Project Run: context/bootstrap ask for ~1-minute pulse updates during long steps and to surface essential reasoning in visible assistant text.
@@ -36,10 +38,18 @@ Docs: https://docs.openclaw.ai
 - Discord/auto threads: add optional `autoThreadName: "generated"` naming so new auto-created threads can be renamed asynchronously with concise LLM-generated titles while keeping the existing message-based naming as the default. (#43366) Thanks @davidguttman.
 - Slack/interactive replies: restore rich reply parity for direct deliveries, auto-render simple trailing `Options:` lines as buttons/selects, improve Slack interactive setup defaults, and isolate reply controls from plugin interactive handlers. (#53389) Thanks @vincentkoc.
 - Gateway/OpenAI compatibility: add `/v1/models` and `/v1/embeddings`, and forward explicit model overrides through `/v1/chat/completions` and `/v1/responses` for broader client and RAG compatibility. Thanks @vincentkoc.
+- Project Run: default EAD template and gateway bootstrap/context require a structured introductory message (goal, auth assessment, ordered plan) before exploration or PFM work; clarify operator Q&A as answer after the current task or tool batch, oldest pending question first.
+- Project Run: template and bootstrap/context require explicit operator confirmation of username and password before the first login attempt (no guessing); on failure, report and ask for credentials again before retry.
+- Gateway logs: for Project Run browser sessions, emit `project-run-activity` lines when a screenshot is saved and when `report_running_step` runs (title, thumbnail count, description preview).
 
 ### Fixes
 
+- Control UI/Project Run: keep **Finish run** / **Cancel run** visible when the status banner shows **Finishing…** (server run already terminal but chat still streaming); confirm runs `syncProjectRunChatIfTerminal` after cancel so the UI can recover from a stuck finishing state.
+- Control UI/chat: sort merged `chat.history` rows by `timestamp` when present so locally preserved user messages are not stuck below newer server messages; show queued messages in a dock above the composer (outside the scroll thread) with a short FIFO hint when multiple are queued.
+- Control UI/Project Run chat: when the gateway finishes a turn with a different `runId` than the client idempotency key (normal for Project Run), treat the event as terminal — clear `chatRunId` and drain the outbound message queue so queued operator messages are actually sent to the agent.
 - Project Run/browser: ignore the agent's `headless` tool argument so headed vs headless follows only the run's `showLocalBrowser` flag (models often passed `headless: false` for login, which incorrectly opened visible Chrome on headless runs).
+- Project Run/browser: reduce default screenshot resolution from 2000px to 1024px to lower vision token costs and reduce rate-limit pressure, and implement real 250px WebP thumbnails for faster Dashboard step-log loading.
+- Project Run: implement 10-minute recovery window for failed runs, prevent AI auto-termination without reaching completion or budget, and ensure "AI terminated the running due to the time limit reached" or "AI - Fail Stop" are recorded as outcome reasons.
 - Memory/builtin sqlite: cut redundant sync and status query churn by snapshotting file state once per source, reusing sync statements, and consolidating status aggregation reads, which reduces builtin memory overhead on sync/status/doctor-style paths. Thanks @vincentkoc.
 - ACP/direct chats: always deliver a terminal ACP result when final TTS does not yield audio, even if block text already streamed earlier, and skip redundant empty-text final synthesis. (#53692) Thanks @w-sss.
 - Doctor/image generation: seed migrated legacy Nano Banana Google provider config with the `/v1beta` API root and an empty model list so `openclaw doctor --fix` completes and the migrated native Google image path keeps hitting the correct endpoint. (#53757) Thanks @mahopan.

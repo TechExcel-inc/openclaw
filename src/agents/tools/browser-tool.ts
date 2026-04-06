@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import {
   browserAct,
@@ -27,6 +28,7 @@ import {
 } from "../../browser/session-tab-registry.js";
 import { loadConfig } from "../../config/config.js";
 import { resolveSessionStoreKey } from "../../gateway/session-utils.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { loadProjectsStore, resolveProjectsStorePath } from "../../projects/store.js";
 import { formatBrowserToolUserMessage } from "./browser-tool-user-errors.js";
 import {
@@ -44,6 +46,12 @@ import {
   selectDefaultNodeFromList,
   type NodeListNode,
 } from "./nodes-utils.js";
+
+const projectRunActivityLog = createSubsystemLogger("project-run-activity");
+
+function isProjectRunBrowserSession(sessionKey?: string): boolean {
+  return Boolean(sessionKey?.includes(":eadproj:"));
+}
 
 /** Wait before each screenshot capture: page settle + spacing between heavy tool/vision turns. */
 const SCREENSHOT_PREFLIGHT_MIN_MS = 8000;
@@ -733,6 +741,12 @@ async function executeBrowserToolBody(
             profile,
             headless,
           });
+      if (isProjectRunBrowserSession(opts?.agentSessionKey)) {
+        const fileLabel = result.path ? path.basename(result.path) : "?";
+        projectRunActivityLog.info(
+          `screenshot saved file=${fileLabel} targetId=${targetId || "default"} fullPage=${fullPage} ref=${ref || "—"} element=${element || "—"}`,
+        );
+      }
       return await browserToolDeps.imageResultFromFile({
         label: "browser:screenshot",
         path: result.path,

@@ -5,8 +5,8 @@ import {
   resizeToJpeg,
 } from "../media/image-ops.js";
 
-export const DEFAULT_BROWSER_SCREENSHOT_MAX_SIDE = 2000;
-export const DEFAULT_BROWSER_SCREENSHOT_MAX_BYTES = 5 * 1024 * 1024;
+export const DEFAULT_BROWSER_SCREENSHOT_MAX_SIDE = 1024;
+export const DEFAULT_BROWSER_SCREENSHOT_MAX_BYTES = 1.5 * 1024 * 1024; // 1.5MB should be plenty for 1024px jpeg/png
 
 export async function normalizeBrowserScreenshot(
   buffer: Buffer,
@@ -55,4 +55,37 @@ export async function normalizeBrowserScreenshot(
   throw new Error(
     `Browser screenshot could not be reduced below ${(maxBytes / (1024 * 1024)).toFixed(0)}MB (got ${(best.byteLength / (1024 * 1024)).toFixed(2)}MB)`,
   );
+}
+
+export const DEFAULT_BROWSER_THUMBNAIL_SIDE = 250;
+
+/**
+ * Generate a small 250px (max side) WebP or JPEG thumbnail for the dashboard.
+ * WebP is preferred for dashboard performance; falls back to JPEG if needed.
+ */
+export async function generateBrowserThumbnail(
+  buffer: Buffer,
+  opts?: { maxSide?: number },
+): Promise<{ buffer: Buffer; contentType: "image/webp" | "image/jpeg" }> {
+  const maxSide = opts?.maxSide ?? DEFAULT_BROWSER_THUMBNAIL_SIDE;
+  try {
+    // Attempt WebP for best dashboard performance
+    const { resizeToWebp } = await import("../media/image-ops.js");
+    const out = await resizeToWebp({
+      buffer,
+      maxSide,
+      quality: 70,
+      withoutEnlargement: true,
+    });
+    return { buffer: out, contentType: "image/webp" };
+  } catch {
+    // Fallback to JPEG
+    const out = await resizeToJpeg({
+      buffer,
+      maxSide,
+      quality: 70,
+      withoutEnlargement: true,
+    });
+    return { buffer: out, contentType: "image/jpeg" };
+  }
 }

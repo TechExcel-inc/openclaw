@@ -8,7 +8,7 @@ const log = createSubsystemLogger("project-run-pace");
  * Default minimum time between successive LLM turns inside a Project Run (multi-tool loops).
  * Spreads provider RPM/TPM; too low increases rate-limit risk on screenshot-heavy runs.
  */
-export const PROJECT_RUN_MIN_LLM_INTERVAL_MS = 40_000;
+export const PROJECT_RUN_MIN_LLM_INTERVAL_MS = 30_000;
 
 /**
  * Embeddable extension: enforces a minimum delay before each LLM turn after the first

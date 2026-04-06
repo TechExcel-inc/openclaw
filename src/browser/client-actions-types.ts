@@ -9,6 +9,7 @@ export type BrowserActionTabResult = {
 export type BrowserActionPathResult = {
   ok: true;
   path: string;
+  thumbnailPath?: string;
   targetId: string;
   url?: string;
 };

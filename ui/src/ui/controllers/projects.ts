@@ -10,11 +10,7 @@ import {
   buildEadProjectChatSessionKey,
   stripEadProjectSuffix,
 } from "../chat/ead-project-session-key.ts";
-import {
-  abortChatRun,
-  clearProjectRunInterTurnPlaceholderIfTerminal,
-  type ChatState,
-} from "./chat.ts";
+import { abortChatRun, type ChatState } from "./chat.ts";
 
 export type TemplatesListResult = {
   templates: ProjectTemplate[];
@@ -36,12 +32,7 @@ type ChatHistoryResult = {
 type ProjectAuthMode = NonNullable<ProjectTemplate["authMode"]>;
 type ProjectAuthDraft = Pick<
   ProjectTemplate,
-  | "authMode"
-  | "authLoginUrl"
-  | "authSessionProfile"
-  | "authInstructions"
-  | "timeBudgetMinutes"
-  | "costBudgetDollars"
+  "authMode" | "authLoginUrl" | "authSessionProfile" | "authInstructions" | "timeBudgetMinutes"
 >;
 
 export type ProjectsState = {
@@ -258,7 +249,6 @@ export async function createTemplate(
       authSessionProfile: auth?.authSessionProfile ?? "",
       authInstructions: auth?.authInstructions ?? "",
       timeBudgetMinutes: auth?.timeBudgetMinutes,
-      costBudgetDollars: auth?.costBudgetDollars,
     });
     if (res) {
       state.templatesList.push(res);
@@ -297,7 +287,6 @@ export async function updateTemplate(
     authSessionProfile?: string;
     authInstructions?: string;
     timeBudgetMinutes?: number;
-    costBudgetDollars?: number;
   },
 ) {
   if (!state.client || !state.connected) {
@@ -451,7 +440,6 @@ export async function loadGlobalExecutions(state: ProjectsState) {
     state.executionsError = String(err);
   } finally {
     state.globalExecutionsLoading = false;
-    clearProjectRunInterTurnPlaceholderIfTerminal(state as ProjectRunChatSyncHost);
   }
 }
 
@@ -471,7 +459,6 @@ export async function loadExecutionDetail(
     if (res) {
       state.executionDetail = res;
       void syncProjectRunChatIfTerminal(state as ProjectRunChatSyncHost);
-      clearProjectRunInterTurnPlaceholderIfTerminal(state as ProjectRunChatSyncHost);
     }
     return res;
   } catch (err) {
@@ -495,7 +482,6 @@ export async function runExecution(
     authSessionProfile?: string;
     authInstructions?: string;
     timeBudgetMinutes?: number;
-    costBudgetDollars?: number;
     showLocalBrowser?: boolean;
   },
 ) {
@@ -607,7 +593,6 @@ function mergeGlobalExecution(state: ProjectsState, res: ProjectExecute) {
   } else {
     state.globalExecutionsList = [...list, res];
   }
-  clearProjectRunInterTurnPlaceholderIfTerminal(state as ProjectRunChatSyncHost);
 }
 
 async function runExecutionPoller(state: ProjectsState, executionId: string) {

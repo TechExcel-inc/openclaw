@@ -957,8 +957,9 @@ export function renderChat(props: ChatProps) {
     );
   };
 
-  const chatItems = buildChatItems(props);
-  const isEmpty = chatItems.length === 0 && !props.loading;
+  const { main: chatMainItems, pending: chatPendingItems } = buildChatThreadItems(props);
+  const queueLen = Array.isArray(props.queue) ? props.queue.length : 0;
+  const isEmpty = chatMainItems.length === 0 && queueLen === 0 && !props.loading;
 
   const projectRunBanner = props.projectRunStatusBanner?.headline
     ? html`
@@ -993,6 +994,41 @@ export function renderChat(props: ChatProps) {
         </div>
       `
     : nothing;
+
+  const pendingDock =
+    chatPendingItems.length > 0
+      ? html`
+          <div
+            class="chat-pending-queue-dock"
+            role="region"
+            aria-label="Queued messages, sent in order when the assistant is free"
+          >
+            ${
+              queueLen > 1
+                ? html`
+                    <div class="chat-pending-queue-dock__hint">
+                      Messages are sent in order. The assistant responds to the first queued message before the next is
+                      sent.
+                    </div>
+                  `
+                : nothing
+            }
+            ${repeat(
+              chatPendingItems,
+              (item) => item.key,
+              (item) => {
+                if (item.kind !== "pending-user") {
+                  return nothing;
+                }
+                return renderPendingQueueBubble(item, {
+                  basePath: props.basePath,
+                  onRemove: () => props.onQueueRemove(item.queueId),
+                });
+              },
+            )}
+          </div>
+        `
+      : nothing;
 
   const thread = html`
     <div
@@ -1046,7 +1082,7 @@ export function renderChat(props: ChatProps) {
           : nothing
       }
       ${repeat(
-        chatItems,
+        chatMainItems,
         (item) => item.key,
         (item) => {
           if (item.kind === "divider") {
@@ -1070,12 +1106,6 @@ export function renderChat(props: ChatProps) {
               props.basePath,
               showReasoning,
             );
-          }
-          if (item.kind === "pending-user") {
-            return renderPendingQueueBubble(item, {
-              basePath: props.basePath,
-              onRemove: () => props.onQueueRemove(item.queueId),
-            });
           }
           if (item.kind === "group") {
             if (deleted.has(item.key)) {
@@ -1523,6 +1553,7 @@ export function renderChat(props: ChatProps) {
                   ></resizable-divider>
                   <div class="chat-main chat-main--with-left-chat" style="flex: 1 1 auto; min-width: 0">
                     ${thread}
+                    ${pendingDock}
                     ${chatFooterBlock}
                   </div>
                 </div>
@@ -1533,6 +1564,7 @@ export function renderChat(props: ChatProps) {
                   style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
                 >
                   ${thread}
+                  ${pendingDock}
                 </div>
               `
         }
@@ -1616,7 +1648,10 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
   return result;
 }
 
-function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
+function buildChatThreadItems(props: ChatProps): {
+  main: Array<ChatItem | MessageGroup>;
+  pending: ChatItem[];
+} {
   const items: ChatItem[] = [];
   const history = Array.isArray(props.messages) ? props.messages : [];
   const tools = Array.isArray(props.toolMessages) ? props.toolMessages : [];
@@ -1710,11 +1745,14 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
     }
   }
 
+  const main = mergeAdjacentToolMessageGroups(groupMessages(items));
+
   const queue = Array.isArray(props.queue) ? props.queue : [];
+  const pending: ChatItem[] = [];
   for (let q = 0; q < queue.length; q++) {
     const qItem = queue[q];
     const attachmentCount = qItem.attachments?.length ?? 0;
-    items.push({
+    pending.push({
       kind: "pending-user",
       key: `pending-queue:${qItem.id}`,
       queueId: qItem.id,
@@ -1724,7 +1762,7 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
     });
   }
 
-  return mergeAdjacentToolMessageGroups(groupMessages(items));
+  return { main, pending };
 }
 
 /** Merge consecutive tool-only groups so multiple browser steps render as one card + thumbnail strip. */

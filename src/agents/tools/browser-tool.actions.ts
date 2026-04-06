@@ -268,6 +268,7 @@ export async function executeSnapshotAction(params: {
       labelsCount: snapshot.labelsCount,
       labelsSkipped: snapshot.labelsSkipped,
       imagePath: snapshot.imagePath,
+      thumbnailPath: snapshot.thumbnailPath,
       imageType: snapshot.imageType,
       externalContent: {
         untrusted: true,
@@ -281,6 +282,7 @@ export async function executeSnapshotAction(params: {
       return await browserToolActionDeps.imageResultFromFile({
         label: "browser:snapshot",
         path: snapshot.imagePath,
+        thumbnailPath: snapshot.thumbnailPath,
         extraText: wrappedSnapshot,
         details: safeDetails,
       });

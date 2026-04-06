@@ -2,7 +2,49 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Deploy: production (build + SSH)",
+      "label": "1) Check — lint + format (run before deploy)",
+      "type": "shell",
+      "command": "pnpm check",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "2) Build — openclaw + Control UI",
+      "type": "shell",
+      "command": "pnpm build && pnpm ui:build",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "3) Git — push current branch to origin",
+      "type": "shell",
+      "command": "git push origin \"$(git branch --show-current)\"",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "4) Deploy — production (local build + SSH pull/build/restart)",
       "type": "shell",
       "command": "bash scripts/deploy-remote-production.sh",
       "options": {
@@ -17,7 +59,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Deploy: production (SSH only, no local build)",
+      "label": "4b) Deploy — production (SSH only, skip local build)",
       "type": "shell",
       "command": "bash scripts/deploy-remote-production.sh",
       "options": {
@@ -25,6 +67,20 @@
         "env": {
           "SKIP_LOCAL_BUILD": "1"
         }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Tests — full suite (optional before deploy)",
+      "type": "shell",
+      "command": "pnpm test",
+      "options": {
+        "cwd": "${workspaceFolder}"
       },
       "presentation": {
         "reveal": "always",

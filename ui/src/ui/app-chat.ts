@@ -157,7 +157,12 @@ async function sendChatMessageNow(
   return ok;
 }
 
-/** Drains one queued user message when the chat is idle. Safe to call after clearing busy state. */
+/**
+ * Drains one queued user message when the chat is idle. Safe to call after clearing busy state.
+ * Queue order is FIFO: the first queued message is sent first; the next is not sent until the
+ * previous turn completes (no `chatRunId` / not sending), so the agent always receives follow-ups
+ * in order and responds to the earliest pending message before the next is dispatched from the UI.
+ */
 export async function flushChatQueue(host: ChatHost) {
   if (!host.connected || isChatBusy(host)) {
     return;

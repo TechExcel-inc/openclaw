@@ -312,19 +312,27 @@ export async function imageResult(params: {
 export async function imageResultFromFile(params: {
   label: string;
   path: string;
+  thumbnailPath?: string;
   extraText?: string;
   details?: Record<string, unknown>;
   imageSanitization?: ImageSanitizationLimits;
 }): Promise<AgentToolResult<unknown>> {
   const buf = await fs.readFile(params.path);
   const mimeType = (await detectMime({ buffer: buf.slice(0, 256) })) ?? "image/png";
+  const details = { ...params.details };
+  if (params.thumbnailPath) {
+    details.thumbnailPath = params.thumbnailPath;
+    if (details.media && typeof details.media === "object") {
+      (details.media as Record<string, unknown>).thumbnailUrl = params.thumbnailPath;
+    }
+  }
   return await imageResult({
     label: params.label,
     path: params.path,
     base64: buf.toString("base64"),
     mimeType,
     extraText: params.extraText,
-    details: params.details,
+    details,
     imageSanitization: params.imageSanitization,
   });
 }

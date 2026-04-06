@@ -92,6 +92,7 @@ export type SnapshotResult =
       labelsCount?: number;
       labelsSkipped?: number;
       imagePath?: string;
+      thumbnailPath?: string;
       imageType?: "png" | "jpeg";
     };
 

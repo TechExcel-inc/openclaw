@@ -205,6 +205,30 @@ function projectRunClientAgentBusy(state: AppViewState): boolean {
   );
 }
 
+/**
+ * Show Finish/Cancel when the execution is still active, or when the server row is already
+ * terminal but the client still has an in-flight chat turn ("Finishing…"). In the latter case the
+ * operator must be able to force-clear streaming state; see `syncProjectRunChatIfTerminal`.
+ */
+export function shouldShowProjectRunStopButtons(state: AppViewState, executionId: string): boolean {
+  const id = executionId.trim();
+  if (!id) {
+    return false;
+  }
+  const runExec = resolveExecutionForProjectRun(state, id);
+  if (!runExec || runExec.id !== id) {
+    return false;
+  }
+  const status = runExec.status;
+  if (status === "pending" || status === "running") {
+    return true;
+  }
+  if (state.chatProjectRunExecutionId?.trim() !== id) {
+    return false;
+  }
+  return isTerminalExecutionStatusForProjectRun(status) && projectRunClientAgentBusy(state);
+}
+
 export function resolveExecutionForProjectRun(
   state: AppViewState,
   runId: string,
@@ -1313,7 +1337,7 @@ export function renderProjectRunToolbar(state: AppViewState) {
   const runId = state.chatProjectRunExecutionId?.trim();
   const runExec = runId ? resolveExecutionForProjectRun(state, runId) : undefined;
   const status = runExec?.status;
-  const canStop = Boolean(runId && (status === "pending" || status === "running"));
+  const canStop = Boolean(runId && shouldShowProjectRunStopButtons(state, runId));
 
   const finishingUi =
     Boolean(runExec && isTerminalExecutionStatusForProjectRun(status)) &&

@@ -406,6 +406,30 @@ export async function resizeToPng(params: {
     .toBuffer();
 }
 
+/**
+ * Resizes an image to WebP format.
+ */
+export async function resizeToWebp(params: {
+  buffer: Buffer;
+  maxSide: number;
+  quality?: number;
+  withoutEnlargement?: boolean;
+}): Promise<Buffer> {
+  const sharp = await loadSharp();
+  const quality = params.quality ?? 80;
+
+  return await sharp(params.buffer)
+    .rotate()
+    .resize({
+      width: params.maxSide,
+      height: params.maxSide,
+      fit: "inside",
+      withoutEnlargement: params.withoutEnlargement !== false,
+    })
+    .webp({ quality })
+    .toBuffer();
+}
+
 export async function optimizeImageToPng(
   buffer: Buffer,
   maxBytes: number,

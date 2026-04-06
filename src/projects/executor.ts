@@ -16,6 +16,19 @@ import type {
 
 const executionControllers = new Map<string, AbortController>();
 
+/** Cap how many auto-continuations we inject per execution (safety valve). */
+const PROJECT_RUN_MAX_AUTO_CONTINUES = 200;
+/** Minimum ms between auto-continue sends to avoid duplicate chat.send while session row is still `done`. */
+const PROJECT_RUN_CONTINUE_COOLDOWN_MS = 2500;
+
+const projectRunAutoContinueCounts = new Map<string, number>();
+const projectRunLastContinueAtMs = new Map<string, number>();
+
+function clearProjectRunAutoContinueState(executionId: string): void {
+  projectRunAutoContinueCounts.delete(executionId);
+  projectRunLastContinueAtMs.delete(executionId);
+}
+
 type ExploreCandidateKind = "button" | "link" | "menuitem" | "tab";
 type ExploreCandidatePurpose = "detail" | "section";
 type RawExploreCandidate = {
@@ -174,6 +187,12 @@ async function updateExecutionSnapshot(
   update(snap.execution);
   const afterStatus = snap.execution.status;
   await persistExecution(storePath, snap.store);
+  if (
+    isTerminalProjectExecutionStatus(afterStatus) &&
+    !isTerminalProjectExecutionStatus(beforeStatus)
+  ) {
+    clearProjectRunAutoContinueState(executionId);
+  }
   if (
     isTerminalProjectExecutionStatus(afterStatus) &&
     !isTerminalProjectExecutionStatus(beforeStatus) &&
@@ -597,18 +616,21 @@ async function extractProgressLogFromTranscript(
 
         if (base64Data) {
           const { uploadBrowserScreenshot } = await import("./s3-storage.js");
-          let url = await uploadBrowserScreenshot(base64Data, executionId);
-          if (!url) {
+          const uploadResult = await uploadBrowserScreenshot(base64Data, executionId);
+          let imageUrl = uploadResult?.imageUrl;
+          let thumbnailUrl = uploadResult?.thumbnailUrl;
+          if (!imageUrl) {
             // Fallback to storing the image directly as a localized Data URL
-            url = `data:image/png;base64,${base64Data}`;
+            imageUrl = `data:image/png;base64,${base64Data}`;
+            thumbnailUrl = imageUrl;
           }
-          if (url) {
+          if (imageUrl) {
             entries.push({
               ts,
               kind: "tool_result",
               text: "Captured browser screenshot.",
-              imageUrl: url,
-              thumbnailUrl: url,
+              imageUrl,
+              thumbnailUrl: thumbnailUrl ?? imageUrl,
             });
           }
         }
@@ -1214,21 +1236,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
       if (current.timeBudgetMinutes && elapsedTimeMs > current.timeBudgetMinutes * 60 * 1000) {
         await updateExecutionSnapshot(storePath, executionId, (entry) => {
           entry.status = "error";
-          entry.lastErrorMessage = `Project Run forcibly stopped: Exceeded time budget of ${current.timeBudgetMinutes} minutes.`;
-          entry.executorHint = resolveTerminalHint("error");
-          entry.durationMs = elapsedTimeMs;
-        });
-        // Important: Stop the OpenClaw session properly? We don't have the context here, but setting status to error stops the loop.
-        // The background session might continue until the next turn, but this halts the project execution orchestrator.
-        return;
-      }
-
-      // Rough cost approximation: assume combined input/output cost averages around $3.00 per 1M tokens.
-      const calculatedCostDollars = (currentTokens || 0) * (3.0 / 1000000);
-      if (current.costBudgetDollars && calculatedCostDollars >= current.costBudgetDollars) {
-        await updateExecutionSnapshot(storePath, executionId, (entry) => {
-          entry.status = "error";
-          entry.lastErrorMessage = `Project Run forcibly stopped: Exceeded cost budget of $${current.costBudgetDollars}.`;
+          entry.lastErrorMessage = "AI terminated the running due to the time limit reached.";
           entry.executorHint = resolveTerminalHint("error");
           entry.durationMs = elapsedTimeMs;
         });
@@ -1323,6 +1331,81 @@ export async function runProjectExecution(executionId: string): Promise<void> {
 
       if (rowStatus === "done" || rowStatus === "failed") {
         const terminalStatus = rowStatus === "failed" ? "failed" : "completed";
+
+        if (rowStatus === "failed") {
+          const now = Date.now();
+          const firstFailedAt = current.firstFailedAt ?? now;
+          const failureElapsedMs = now - firstFailedAt;
+          const RECOVERY_WINDOW_MS = 10 * 60 * 1000;
+
+          if (failureElapsedMs < RECOVERY_WINDOW_MS) {
+            await updateExecutionSnapshot(storePath, executionId, (entry) => {
+              entry.status = "running";
+              entry.firstFailedAt = firstFailedAt;
+              const remainingSec = Math.max(
+                0,
+                Math.round((RECOVERY_WINDOW_MS - failureElapsedMs) / 1000),
+              );
+              entry.executorHint = `AI failed and is attempting to recover (timeout in ${remainingSec}s)...`;
+              appendProgressLog(entry, newProgressEntries, transcript.messageCount);
+            });
+            await sleepWithAbort(abortController.signal, 5_000);
+            continue;
+          }
+        }
+
+        if (rowStatus === "done") {
+          const budgetMs =
+            current.timeBudgetMinutes && current.timeBudgetMinutes > 0
+              ? current.timeBudgetMinutes * 60 * 1000
+              : null;
+          const withinBudget =
+            budgetMs !== null && Number.isFinite(budgetMs) && elapsedTimeMs < budgetMs;
+          const continueCount = projectRunAutoContinueCounts.get(executionId) ?? 0;
+          const canAutoContinue =
+            withinBudget && continueCount < PROJECT_RUN_MAX_AUTO_CONTINUES && !current.paused;
+
+          if (canAutoContinue) {
+            const lastContinueAt = projectRunLastContinueAtMs.get(executionId) ?? 0;
+            if (Date.now() - lastContinueAt < PROJECT_RUN_CONTINUE_COOLDOWN_MS) {
+              await sleepWithAbort(abortController.signal, 1_200);
+              continue;
+            }
+
+            const continuationSeq = continueCount + 1;
+            const { sendProjectRunAutoContinueFromExecutor } =
+              await import("../gateway/project-run-auto-continue.js");
+            const { buildProjectRunAutoContinueUserMessage } =
+              await import("./project-run-messages.js");
+            const sendResult = await sendProjectRunAutoContinueFromExecutor({
+              sessionKey: activeSessionKey,
+              executionId,
+              continuationSeq,
+              message: buildProjectRunAutoContinueUserMessage(current),
+            });
+
+            if (sendResult.ok) {
+              projectRunAutoContinueCounts.set(executionId, continuationSeq);
+              projectRunLastContinueAtMs.set(executionId, Date.now());
+              await updateExecutionSnapshot(storePath, executionId, (entry) => {
+                entry.status = "running";
+                entry.executorHint =
+                  "OpenClaw is continuing this Project Run until the time budget or Instructions are complete.";
+                entry.progressPercentage = Math.max(
+                  entry.progressPercentage,
+                  resolveActiveRunProgress(transcript.messageCount),
+                );
+                appendProgressLog(entry, newProgressEntries, transcript.messageCount);
+                if (typeof currentTokens === "number") {
+                  entry.logTokens = currentTokens;
+                }
+              });
+              await sleepWithAbort(abortController.signal, 1_500);
+              continue;
+            }
+          }
+        }
+
         await updateExecutionSnapshot(storePath, executionId, (entry) => {
           entry.status = terminalStatus;
           entry.paused = false;
@@ -1333,7 +1416,7 @@ export async function runProjectExecution(executionId: string): Promise<void> {
               tailTextForFailureHints: transcript.tailTextForFailureHints,
             });
             entry.executorHint = hints.executorHint;
-            entry.lastErrorMessage = hints.lastErrorMessage;
+            entry.lastErrorMessage = "AI - Fail Stop"; // Exact string requested
           } else {
             entry.executorHint = resolveTerminalHint("completed");
           }

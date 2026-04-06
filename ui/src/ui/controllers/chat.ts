@@ -1,7 +1,5 @@
 import type { ProjectExecute } from "../../../../src/projects/types.js";
-import { resolveExecutionForProjectRun } from "../app-render.helpers.ts";
 import { resetToolStream } from "../app-tool-stream.ts";
-import type { AppViewState } from "../app-view-state.ts";
 import { extractText } from "../chat/message-extract.ts";
 import { formatConnectError } from "../connect-error.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
@@ -66,30 +64,8 @@ export type ChatEventPayload = {
   errorMessage?: string;
 };
 
-function isTerminalProjectExecutionStatus(status: ProjectExecute["status"] | undefined): boolean {
-  if (!status) {
-    return false;
-  }
-  return (
-    status === "completed" || status === "failed" || status === "cancelled" || status === "error"
-  );
-}
-
-/** After a chat `final`, the embedded agent may continue (tools, project-run pace). Show reading dots until the next delta. */
-function projectRunShouldShowInterTurnWorking(state: ChatState): boolean {
-  if (state.tab !== "chatProjectRun") {
-    return false;
-  }
-  const id = state.chatProjectRunExecutionId?.trim();
-  if (!id) {
-    return false;
-  }
-  const ex = resolveExecutionForProjectRun(state as unknown as AppViewState, id);
-  return Boolean(ex && (ex.status === "running" || ex.status === "pending") && !ex.paused);
-}
-
 /**
- * `loadChatHistory` must not wipe the reading indicator / in-flight stream. Background reloads
+ * `loadChatHistory` must not wipe the in-flight stream. Background reloads
  * (e.g. after another run's `final` or tool persistence) would otherwise clear `chatStream` while
  * the operator is still waiting for a reply.
  */
@@ -97,42 +73,7 @@ function shouldPreserveStreamingDuringHistoryReload(state: ChatState): boolean {
   if (state.chatRunId?.trim()) {
     return true;
   }
-  if (!projectRunShouldShowInterTurnWorking(state)) {
-    return false;
-  }
   return state.chatStream !== null;
-}
-
-/**
- * Clear synthetic `chatStream === ""` inter-turn placeholder when the execution row becomes terminal.
- * Called after executions.get / list merges so the thread does not show “working” after the run ends.
- */
-export function clearProjectRunInterTurnPlaceholderIfTerminal(host: {
-  /** Inter-turn placeholder uses `""`; omit or null when not used (Project Run host may omit these). */
-  chatStream?: string | null;
-  chatStreamStartedAt?: number | null;
-  tab?: string;
-  chatProjectRunExecutionId?: string | null;
-  globalExecutionsList?: ProjectExecute[];
-  executionDetail?: ProjectExecute | null;
-  executionDetailLoading?: boolean;
-}): void {
-  if (host.tab !== "chatProjectRun") {
-    return;
-  }
-  if (host.chatStream !== "") {
-    return;
-  }
-  const id = host.chatProjectRunExecutionId?.trim();
-  if (!id) {
-    return;
-  }
-  const ex = resolveExecutionForProjectRun(host as unknown as AppViewState, id);
-  if (!ex || !isTerminalProjectExecutionStatus(ex.status)) {
-    return;
-  }
-  host.chatStream = null;
-  host.chatStreamStartedAt = null;
 }
 
 function maybeResetToolStream(state: ChatState) {
@@ -230,6 +171,39 @@ function mergeMissingUserMessagesFromHistory(server: unknown[], previous: unknow
   return missing.length > 0 ? [...server, ...missing] : server;
 }
 
+function getMessageTimestampMs(message: unknown): number | null {
+  const m = message as Record<string, unknown>;
+  const t = m.timestamp;
+  if (typeof t === "number" && Number.isFinite(t)) {
+    return t;
+  }
+  return null;
+}
+
+/**
+ * Order chat rows by recorded timestamp when **both** rows have a finite `timestamp`. Used after
+ * `mergeMissingUserMessagesFromHistory`, which appends locally preserved user rows to the end of
+ * the server batch and can invert chronology when the server already returned newer messages.
+ * If either row lacks a timestamp, original merge order is preserved (stable by index) so batches
+ * without per-message times are not reshuffled.
+ */
+export function sortChatMessagesChronologically(messages: unknown[]): unknown[] {
+  const indexed = messages.map((m, i) => ({ m, i, ts: getMessageTimestampMs(m) }));
+  indexed.sort((a, b) => {
+    const ta = a.ts;
+    const tb = b.ts;
+    if (ta !== null && tb !== null) {
+      if (ta !== tb) {
+        return ta - tb;
+      }
+    } else {
+      return a.i - b.i;
+    }
+    return a.i - b.i;
+  });
+  return indexed.map((x) => x.m);
+}
+
 export async function loadChatHistory(state: ChatState) {
   if (!state.client || !state.connected) {
     return;
@@ -247,7 +221,9 @@ export async function loadChatHistory(state: ChatState) {
     const messages = Array.isArray(res.messages) ? res.messages : [];
     const previousLocal = state.chatMessages;
     const merged = mergeMissingUserMessagesFromHistory(messages, previousLocal);
-    state.chatMessages = merged.filter((message) => !isAssistantSilentReply(message));
+    state.chatMessages = sortChatMessagesChronologically(merged).filter(
+      (message) => !isAssistantSilentReply(message),
+    );
     state.chatThinkingLevel = res.thinkingLevel ?? null;
     const preserveStream = shouldPreserveStreamingDuringHistoryReload(state);
     const savedStream = state.chatStream;
@@ -376,7 +352,7 @@ export async function sendChatMessage(
   state.lastError = null;
   const runId = generateUUID();
   state.chatRunId = runId;
-  state.chatStream = "";
+  state.chatStream = null;
   state.chatStreamStartedAt = now;
 
   // Convert attachments to API format
@@ -457,6 +433,30 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       const finalMessage = normalizeFinalAssistantMessage(payload.message);
       if (finalMessage && !isAssistantSilentReply(finalMessage)) {
         state.chatMessages = [...state.chatMessages, finalMessage];
+      } else if (
+        state.tab === "chatProjectRun" &&
+        state.chatStream?.trim() &&
+        !isSilentReplyStream(state.chatStream)
+      ) {
+        state.chatMessages = [
+          ...state.chatMessages,
+          {
+            role: "assistant",
+            content: [{ type: "text", text: state.chatStream }],
+            timestamp: Date.now(),
+          },
+        ];
+      }
+      // Project Run: server run id (bootstrap / agent) almost never matches the client's
+      // idempotency UUID. If we return null here, we never clear chatRunId and handleTerminalChatEvent
+      // never runs — queued operator messages stay stuck and the UI looks "finished" with pending sends.
+      if (state.tab === "chatProjectRun") {
+        state.chatStream = null;
+        state.chatRunId = null;
+        state.chatStreamStartedAt = null;
+        return "final";
+      }
+      if (finalMessage && !isAssistantSilentReply(finalMessage)) {
         return null;
       }
       return "final";
@@ -501,10 +501,6 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
-    if (projectRunShouldShowInterTurnWorking(state)) {
-      state.chatStream = "";
-      state.chatStreamStartedAt = Date.now();
-    }
   } else if (payload.state === "aborted") {
     const normalizedMessage = normalizeAbortedAssistantMessage(payload.message);
     if (normalizedMessage && !isAssistantSilentReply(normalizedMessage)) {

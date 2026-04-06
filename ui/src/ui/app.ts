@@ -445,7 +445,6 @@ export class OpenClawApp extends LitElement {
   @state() createFormAuthSessionProfile = "";
   @state() createFormAuthInstructions = "";
   @state() createFormTimeBudgetMinutes: number = 60;
-  @state() createFormCostBudgetDollars: number = 2.0;
   /** Run modal: open a visible local browser window for this Project Run (headed). */
   @state() createFormShowLocalBrowser = false;
   @state() projectAuthProfilesLoading = false;
@@ -698,7 +697,11 @@ export class OpenClawApp extends LitElement {
       const reason = prefix + this.projectRunStopReasonDraft.trim();
       this.projectRunStopReasonDraft = "";
       const mode: "finish" | "cancel" = kind === "stop_finish" ? "finish" : "cancel";
-      void this.handleExecutionCancel(id, reason.trim() || undefined, mode);
+      void (async () => {
+        await this.handleExecutionCancel(id, reason.trim() || undefined, mode);
+        const { syncProjectRunChatIfTerminal } = await import("./controllers/projects.js");
+        await syncProjectRunChatIfTerminal(this as never);
+      })();
     } else if (kind === "remove") {
       this.exitProjectRunRemoveFromNav();
     }
@@ -968,7 +971,6 @@ export class OpenClawApp extends LitElement {
       authSessionProfile?: string;
       authInstructions?: string;
       timeBudgetMinutes?: number;
-      costBudgetDollars?: number;
     },
   ) {
     const { createTemplate } = await import("./controllers/projects.js");
@@ -998,7 +1000,6 @@ export class OpenClawApp extends LitElement {
       authSessionProfile?: string;
       authInstructions?: string;
       timeBudgetMinutes?: number;
-      costBudgetDollars?: number;
     },
   ) {
     const { updateTemplate } = await import("./controllers/projects.js");
@@ -1015,7 +1016,6 @@ export class OpenClawApp extends LitElement {
       authSessionProfile?: string;
       authInstructions?: string;
       timeBudgetMinutes?: number;
-      costBudgetDollars?: number;
       showLocalBrowser?: boolean;
     },
   ) {

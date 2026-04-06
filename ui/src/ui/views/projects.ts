@@ -6,81 +6,69 @@ import type {
   StepResult,
   TestCaseRun,
 } from "../../../../src/projects/types.js";
+import { shouldShowProjectRunStopButtons } from "../app-render.helpers.js";
 import type { AppViewState } from "../app-view-state.js";
 import { icons } from "../icons.js";
 import { toSanitizedMarkdownHtml } from "../markdown.js";
 import { renderChat, type ChatProps } from "./chat.js";
 
-const DEFAULT_AI_PROMPT = `# Role & Objective
-Act as an Expert Automated Website Documentation Agent. Your objective is to systematically explore a target web application and generate comprehensive, production-ready Markdown documentation complete with screenshots. This documentation will serve as a user manual, system guide, and training material.
+/** Default EAD instructions for new templates. Stored per template as `aiPrompt`; gateway bootstrap in `src/projects/project-run-messages.ts` should stay aligned when changing phases or cadence. */
+const DEFAULT_AI_PROMPT = `# Role
+You apply the EAD (Entity–Action–Diagram) method: map the product as **PFM (Product Feature Map) nodes**, organize them in a hierarchical mind map, and attach **executable test cases** to each node. Describe only what you observe.
 
-# Project Run chat first (before heavy automation)
-- When a run starts, the **executor may pause** so the human can message here **before** the browser automation continues.
-- **Always prioritize this chat** for: login URL, username/password or secure handoff, which **modules or areas** to test first, compliance constraints, and test data rules.
-- Do **not** assume credentials are in the Test Plan alone; ask in chat if anything is missing.
-- After the user signals readiness (e.g. **Resume run** in the UI), coordinate with any live browser capture and keep answering questions here.
+# Phase 0 — Opening (before exploration or PFM work)
+- **First**: Send one **well-formatted** assistant message (Markdown: short title, bullets, optional subheadings). Do **not** start deep exploration, PFM mapping, or long tool chains before this.
+- Include in that message: (1) **Goal** — what you understand this run will deliver; (2) **Target** — URL and scope; (3) **Authentication** — whether login appears required (from Instructions, Authentication notes, and—only if needed—a single light check of the target); (4) **Plan** — ordered steps: **login (if needed) → explore → PFM and test cases**.
+- If credentials are not clearly in Instructions, Authentication notes, or prior chat, **ask the operator** in that message and **wait** before typing into login fields.
+- After the opening, follow **login → explore → PFM** in order. Do not treat exploration or deliverables as started until auth is resolved or confirmed unnecessary.
 
-# Operating Context & Setup
-- **Browser State**: Open the target web application at 1920x1080 resolution.
-- **Authentication**: If credentials are provided, locate the login page, enter the username/password, submit the form, and verify successful authentication before proceeding.
+# Project Run chat
+- Prioritize this chat for credentials, scope, compliance, and test data rules.
+- After **Resume run**, stay in sync with browser work and this chat.
 
-# Execution discipline (Learning runs)
-- Navigate the **entire** functional surface of the target web application (major modules, workflows, and interactive controls) unless blocked by access, environment, or explicit scope limits.
-- **Exercise and verify** major features and user-visible flows (not only page loads): use controls, submit forms where safe, and confirm expected behavior when you can.
-- **Keep progressing** through the run until the operator stops or pauses it, or the plan is complete.
-- When **human input** is required (credentials, confirmations, ambiguous choices), ask clearly in **this Project Run chat** and wait for the user before continuing.
+# Phase 1 — Environment
+- **Viewport**: 1024×768 (cost-optimized).
+- **Initial wait**: After the target URL loads, wait **20 seconds** before substantive interaction (scripts, WebSockets, heavy UI).
+- **Navigation**: If the layout hides primary nav at this size, open the menu (e.g. hamburger) before exploring.
 
-# Exploration Strategy (Top-Down)
-Explore the application methodically to ensure 100% coverage:
-1. **Global Scan**: Map out the top navigation, sidebars, menus, tabs, and dashboards.
-2. **Deep Traversal**: Move from main modules to sub-modules, and overview pages to detailed views. 
-3. **Thoroughness**: Do not skip *any* component. Visit all forms, popups, configuration screens, list/detail views, and operational workflows. Do not omit pages just because they look similar. 
+# Phase 2 — Authentication (login name and password)
+- **Never guess, infer, or invent** a username or password. Do not fill login fields from assumptions, partial hints, or “typical” selectors until the operator has **explicitly confirmed** what to use for **this** run.
+- **Before the first login attempt:** In chat, either (1) ask the operator to **provide** the login name and password you should use, or (2) if they already appear in Instructions or Authentication notes, **quote them and ask the operator to confirm** that you should use those exact values. **Wait** for a clear operator reply. Only then use browser tools to fill and submit **once**.
+- **After a failed login:** Describe what happened (error message, page state, or tool error). **Ask the operator again** for corrected or new credentials—**do not** silently retry with the same values, and do not chain another login attempt without a new operator message confirming what to try next.
+- If you are logged out later in the run, follow the same **confirm → attempt → report if failed** pattern before re-authenticating.
 
-# Data Capture & Documentation Rules
-For *every single page* visited, you must capture and document the following:
+# Operator questions (throughout the run)
+- When you **finish** the current task or tool batch, check chat. If the operator asked something, answer the **first unanswered question** in a clear, well-formatted reply, then continue. Do not bury answers after unrelated work.
 
-## 1. Visual Capture (Screenshots)
-- **Timing**: Wait until the page has fully loaded and all dynamic content has rendered.
-- **Scrolling**: For long pages, take multiple overlapping screenshots to capture everything.
-- **Naming Convention**: Save all images in an \`img/\` directory using the lowercase format: \`[module]-[feature].png\`.
-- **Referencing**: Use relative paths in the markdown (e.g., \`![Login View](./img/auth-login.png)\`).
+# Phase 3 — Explore (EXP)
+- **Goal**: Identify every **PFM node**—a distinct, testable UI or logic capability that delivers value. Use depth-first exploration of the functional surface.
+- **Keys**: Assign each node a unique hierarchical id: \`[Module]_[Entity]_[SubEntity]_[Action]\`.
+- **Decompose** if a node would exceed ~50 words or ~10 steps to describe.
+- Move **top-down** from product shell → areas → leaf behaviors. Trigger hovers, tabs, modals, and “Advanced” controls where relevant.
+- **Saturation**: Exploration is complete when new findings only fit existing nodes.
+- **Value filter**: Ignore purely decorative links; a node must change system state or produce data. If a control does nothing observable, record it as a **dead node**.
 
-## 2. Page Metadata
-- Module Name and exact Navigation Path.
-- The primary business purpose of the page.
+# Phase 4 — EAD story and test cases
+For each PFM node, capture:
+- **User value** and **operational logic** (how interaction produces the outcome).
+- **Test cases** derived from your actual steps: title, procedure (clicks/inputs), **expected** UI or state changes, and **negative** cases (validation boundaries) when seen.
+- Use consistent dummy data in forms when it is safe and helps exercise logic.
 
-## 3. UI Element Breakdown
-Document all interactive and static elements thoroughly. Never assume a control is simply "self-explanatory":
-- **Element Types**: Input fields, dropdowns, checkboxes, date pickers, rich text editors, buttons, charts, tables, filters, modals, etc.
-- **Field Details**: List the Name, Type, Status (Required/Optional), Default Value, Placeholder Text, Purpose, Dependencies, and Validation Rules.
-- **System States**: Document any dynamic notifications, alerts, and error/validation messages. 
+# Phase 5 — Deliverable
+Produce \`system-pfm-map.md\` with:
+1. **Architectural overview**: text tree of the PFM from top-level areas to leaf nodes.
+2. **Functional dictionary**: for each node—id/key, value description, and a test suite table:
 
-## 4. Workflow & Feature Mapping
-Describe every feature and action available on the page:
-- **Description**: What does the feature do?
-- **Triggers**: How is it initiated (e.g., button click, automatic)?
-- **Requirements**: Prerequisites and necessary inputs.
-- **Outcomes**: System feedback, outputs, and resulting behavior.
-- **Business Workflows**: Map end-to-end journeys for common processes (Create, Read, Update, Delete, Approve, Export). Detail decision points, success states, and failure states.
+| Test Case ID | Title | Steps | Expected result |
+| :--- | :--- | :--- | :--- |
+| TC-01 | … | 1. … | … |
 
-# Output Format Requirements
-Generate a master Markdown file (e.g., \`system-documentation.md\`) structured exactly as follows:
-1. **System Information**: URL, viewport resolution, and scan date.
-2. **System Overview**: High-level summary of the application's purpose.
-3. **Module Index**: A linked table of contents for major modules.
-4. **Detailed Module Sections**: 
-   - Page-by-page breakdown with embedded screenshots.
-   - Field descriptions and UI element tables.
-   - Key workflows and feature descriptions.
-5. **Appendix**: Glossary, FAQs, or troubleshooting notes (if applicable).
-
-# Quality Assurance & Constraints
-- Prioritize absolute completeness and thoroughness for onboarding and auditing purposes. 
-- Before finalizing the output, self-verify that:
-  - All screenshots are accounted for in the \`img/\` directory.
-  - All relative image links in the Markdown evaluate correctly.
-  - No major modules, operational workflows, or subpages were missed.
-- If the user later requests expansions or additional screenshots, continue extending the document strictly adhering to this exact structure and style.`;
+# Screenshots and rigor
+- Save screenshots under \`img/\` using a stable name tied to the PFM node; scroll long content into view.
+- **Telemetry**: Your recorded clicks and inputs are the source material for test procedures—keep them accurate.
+- **Breadcrumbs**: Know your path in the product before drilling into sub-nodes.
+- Use Markdown image links relative to the report (e.g. \`![Label](./img/node-key.png)\`).
+- Tone: concise, technical, engineering-style.`;
 
 function renderCustomChatHeader(state: AppViewState, chatProps?: ChatProps) {
   if (!chatProps) {
@@ -293,9 +281,6 @@ function renderTemplateList(state: AppViewState) {
             state.createFormTimeBudgetMinutes = Number(
               localStorage.getItem("ead_defaultTimeBudget") || 30,
             );
-            state.createFormCostBudgetDollars = Number(
-              localStorage.getItem("ead_defaultCostBudget") || 1,
-            );
             state.createFormShowLocalBrowser = false;
             state.showCreateModal = true;
           }}
@@ -326,9 +311,6 @@ function renderTemplateList(state: AppViewState) {
                 state.templateModalPreviewMarkdown = false;
                 state.createFormTimeBudgetMinutes = Number(
                   localStorage.getItem("ead_defaultTimeBudget") || 30,
-                );
-                state.createFormCostBudgetDollars = Number(
-                  localStorage.getItem("ead_defaultCostBudget") || 1,
                 );
                 state.createFormShowLocalBrowser = false;
                 state.showCreateModal = true;
@@ -472,9 +454,6 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                   state.createFormTimeBudgetMinutes =
                     template.timeBudgetMinutes ??
                     Number(localStorage.getItem("ead_defaultTimeBudget") || 30);
-                  state.createFormCostBudgetDollars =
-                    template.costBudgetDollars ??
-                    Number(localStorage.getItem("ead_defaultCostBudget") || 1);
                   state.createFormShowLocalBrowser = false;
                   state.showCreateModal = true;
                 }}
@@ -539,9 +518,6 @@ function renderTemplateDetail(state: AppViewState, _chatProps?: ChatProps) {
                       state.createFormTimeBudgetMinutes =
                         template.timeBudgetMinutes ??
                         Number(localStorage.getItem("ead_defaultTimeBudget") || 30);
-                      state.createFormCostBudgetDollars =
-                        template.costBudgetDollars ??
-                        Number(localStorage.getItem("ead_defaultCostBudget") || 1);
                       state.createFormShowLocalBrowser = false;
                       state.showCreateModal = true;
                     }}
@@ -722,7 +698,6 @@ function renderCreateModal(state: AppViewState) {
                       authSessionProfile: state.createFormAuthSessionProfile.trim(),
                       authInstructions: state.createFormAuthInstructions.trim(),
                       timeBudgetMinutes: state.createFormTimeBudgetMinutes,
-                      costBudgetDollars: state.createFormCostBudgetDollars,
                       ...(state.createFormShowLocalBrowser ? { showLocalBrowser: true } : {}),
                     });
                     state.showCreateModal = false;
@@ -743,7 +718,6 @@ function renderCreateModal(state: AppViewState) {
                     authSessionProfile: state.createFormAuthSessionProfile.trim(),
                     authInstructions: state.createFormAuthInstructions.trim(),
                     timeBudgetMinutes: state.createFormTimeBudgetMinutes,
-                    costBudgetDollars: state.createFormCostBudgetDollars,
                   });
                   state.showCreateModal = false;
                 } else {
@@ -758,7 +732,6 @@ function renderCreateModal(state: AppViewState) {
                       authSessionProfile: state.createFormAuthSessionProfile.trim(),
                       authInstructions: state.createFormAuthInstructions.trim(),
                       timeBudgetMinutes: state.createFormTimeBudgetMinutes,
-                      costBudgetDollars: state.createFormCostBudgetDollars,
                     },
                   );
                 }
@@ -770,56 +743,29 @@ function renderCreateModal(state: AppViewState) {
         </div>
 
         <div style="overflow-y: auto; flex: 1; padding-right: 8px;">
-          <div class="project-create-modal__field" style="display: flex; gap: 16px;">
-            <div style="flex: 1;">
-              <label class="project-create-modal__label">Maximum Duration</label>
-              <select
-                class="project-create-modal__input"
-                .value=${String(state.createFormTimeBudgetMinutes ?? 30)}
-                @change=${(e: Event) => {
-                  const val = Number((e.target as HTMLSelectElement).value);
-                  state.createFormTimeBudgetMinutes = val;
-                  localStorage.setItem("ead_defaultTimeBudget", String(val));
-                }}
-              >
-                <option value="5">5 min</option>
-                <option value="15">15 min</option>
-                <option value="30">30 min</option>
-                <option value="60">1 hour</option>
-                <option value="120">2 hour</option>
-                <option value="240">4 hour</option>
-                <option value="480">8 hour</option>
-                <option value="1440">1 day</option>
-                <option value="2880">2 day</option>
-                <option value="7200">5 days</option>
-                <option value="14400">10 days</option>
-              </select>
-            </div>
-            <div style="flex: 1;">
-              <label class="project-create-modal__label">Budget Under</label>
-              <select
-                class="project-create-modal__input"
-                .value=${String(state.createFormCostBudgetDollars ?? 1)}
-                @change=${(e: Event) => {
-                  const val = Number((e.target as HTMLSelectElement).value);
-                  state.createFormCostBudgetDollars = val;
-                  localStorage.setItem("ead_defaultCostBudget", String(val));
-                }}
-              >
-                <option value="0.1">$0.1</option>
-                <option value="0.2">$0.2</option>
-                <option value="0.5">$0.5</option>
-                <option value="1">$1</option>
-                <option value="2">$2</option>
-                <option value="5">$5</option>
-                <option value="10">$10</option>
-                <option value="50">$50</option>
-                <option value="100">$100</option>
-                <option value="500">$500</option>
-                <option value="1000">$1000</option>
-                <option value="10000">$10,000</option>
-              </select>
-            </div>
+          <div class="project-create-modal__field">
+            <label class="project-create-modal__label">Maximum Duration</label>
+            <select
+              class="project-create-modal__input"
+              .value=${String(state.createFormTimeBudgetMinutes ?? 30)}
+              @change=${(e: Event) => {
+                const val = Number((e.target as HTMLSelectElement).value);
+                state.createFormTimeBudgetMinutes = val;
+                localStorage.setItem("ead_defaultTimeBudget", String(val));
+              }}
+            >
+              <option value="5">5 min</option>
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">1 hour</option>
+              <option value="120">2 hour</option>
+              <option value="240">4 hour</option>
+              <option value="480">8 hour</option>
+              <option value="1440">1 day</option>
+              <option value="2880">2 day</option>
+              <option value="7200">5 days</option>
+              <option value="14400">10 days</option>
+            </select>
           </div>
           ${
             isRun
@@ -1247,7 +1193,7 @@ function renderExecutionDebugger(state: AppViewState, chatProps?: ChatProps) {
            </div>
            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
              ${
-               execution.status === "running" || execution.status === "pending"
+               shouldShowProjectRunStopButtons(state, execution.id)
                  ? html`
                      ${
                        execution.status === "running"

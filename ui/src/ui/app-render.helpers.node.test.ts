@@ -10,6 +10,7 @@ import {
   resolveActiveTemplateIdForProjectNav,
   resolveExecutionForProjectRun,
   resolveSessionDisplayName,
+  shouldShowProjectRunStopButtons,
   visibleGlobalExecutionsForNav,
   visibleTemplateExecutionsChronological,
 } from "./app-render.helpers.ts";
@@ -652,5 +653,67 @@ describe("projectRunScreenshotSteps", () => {
     expect(steps).toHaveLength(1);
     expect(steps[0]?.label).toBe("Step A");
     expect(steps[0]?.url).toMatch(/^data:image\/png/);
+  });
+});
+
+describe("shouldShowProjectRunStopButtons", () => {
+  const mkExec = (id: string, status: ProjectExecute["status"]): ProjectExecute => ({
+    id,
+    linkedTemplateId: "t",
+    name: "n",
+    description: "",
+    targetUrl: "",
+    aiPrompt: "",
+    status,
+    steps: [],
+    progressPercentage: 0,
+    startTime: Date.now(),
+    durationMs: null,
+    results: [],
+  });
+
+  it("returns true for running execution", () => {
+    const id = "00000000-0000-4000-8000-0000000000a1";
+    const ex = mkExec(id, "running");
+    const state = projectNavState({
+      globalExecutionsList: [ex],
+      chatProjectRunExecutionId: id,
+    });
+    expect(shouldShowProjectRunStopButtons(state, id)).toBe(true);
+  });
+
+  it("returns true when execution is terminal but Project Run chat is still busy (Finishing)", () => {
+    const id = "00000000-0000-4000-8000-0000000000a2";
+    const ex = mkExec(id, "cancelled");
+    const state = projectNavState({
+      globalExecutionsList: [ex],
+      chatProjectRunExecutionId: id,
+      chatRunId: "in-flight",
+    });
+    expect(shouldShowProjectRunStopButtons(state, id)).toBe(true);
+  });
+
+  it("returns false when terminal and client is idle", () => {
+    const id = "00000000-0000-4000-8000-0000000000a3";
+    const ex = mkExec(id, "completed");
+    const state = projectNavState({
+      globalExecutionsList: [ex],
+      chatProjectRunExecutionId: id,
+      chatRunId: null,
+      chatStream: null,
+      chatSending: false,
+    });
+    expect(shouldShowProjectRunStopButtons(state, id)).toBe(false);
+  });
+
+  it("returns false for terminal+busy when chat is bound to a different execution", () => {
+    const id = "00000000-0000-4000-8000-0000000000a4";
+    const ex = mkExec(id, "cancelled");
+    const state = projectNavState({
+      globalExecutionsList: [ex],
+      chatProjectRunExecutionId: "other-id",
+      chatRunId: "in-flight",
+    });
+    expect(shouldShowProjectRunStopButtons(state, id)).toBe(false);
   });
 });

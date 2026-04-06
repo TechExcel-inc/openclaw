@@ -399,7 +399,6 @@ export type AppViewState = {
     createFormAuthSessionProfile: string;
     createFormAuthInstructions: string;
     createFormTimeBudgetMinutes: number;
-    createFormCostBudgetDollars: number;
     createFormShowLocalBrowser: boolean;
     projectAuthProfilesLoading: boolean;
     projectAuthProfilesError: string | null;
@@ -445,7 +444,6 @@ export type AppViewState = {
         authSessionProfile?: string;
         authInstructions?: string;
         timeBudgetMinutes?: number;
-        costBudgetDollars?: number;
       },
     ) => Promise<void>;
     handleTemplateDelete: (id: string) => Promise<void>;
@@ -462,7 +460,6 @@ export type AppViewState = {
         authSessionProfile?: string;
         authInstructions?: string;
         timeBudgetMinutes?: number;
-        costBudgetDollars?: number;
       },
     ) => Promise<void>;
     handleExecutionSetActive: (id: string | null) => void;
@@ -476,7 +473,6 @@ export type AppViewState = {
         authSessionProfile?: string;
         authInstructions?: string;
         timeBudgetMinutes?: number;
-        costBudgetDollars?: number;
         showLocalBrowser?: boolean;
       },
     ) => Promise<import("../../../src/projects/types.js").ProjectExecute | undefined>;

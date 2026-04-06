@@ -20,6 +20,7 @@ import { getBrowserProfileCapabilities } from "../profile-capabilities.js";
 import {
   DEFAULT_BROWSER_SCREENSHOT_MAX_BYTES,
   DEFAULT_BROWSER_SCREENSHOT_MAX_SIDE,
+  generateBrowserThumbnail,
   normalizeBrowserScreenshot,
 } from "../screenshot.js";
 import type { BrowserRouteContext } from "../server-context.js";
@@ -138,10 +139,14 @@ async function saveNormalizedScreenshotResponse(params: {
     maxSide: DEFAULT_BROWSER_SCREENSHOT_MAX_SIDE,
     maxBytes: DEFAULT_BROWSER_SCREENSHOT_MAX_BYTES,
   });
+  const thumb = await generateBrowserThumbnail(normalized.buffer);
+
   await saveBrowserMediaResponse({
     res: params.res,
     buffer: normalized.buffer,
+    thumbnailBuffer: thumb.buffer,
     contentType: normalized.contentType ?? `image/${params.type}`,
+    thumbnailContentType: thumb.contentType,
     maxBytes: DEFAULT_BROWSER_SCREENSHOT_MAX_BYTES,
     targetId: params.targetId,
     url: params.url,
@@ -151,21 +156,25 @@ async function saveNormalizedScreenshotResponse(params: {
 async function saveBrowserMediaResponse(params: {
   res: BrowserResponse;
   buffer: Buffer;
+  thumbnailBuffer?: Buffer;
   contentType: string;
+  thumbnailContentType?: string;
   maxBytes: number;
   targetId: string;
   url: string;
 }) {
   await ensureMediaDir();
-  const saved = await saveMediaBuffer(
-    params.buffer,
-    params.contentType,
-    "browser",
-    params.maxBytes,
-  );
+  const [saved, savedThumb] = await Promise.all([
+    saveMediaBuffer(params.buffer, params.contentType, "browser", params.maxBytes),
+    params.thumbnailBuffer && params.thumbnailContentType
+      ? saveMediaBuffer(params.thumbnailBuffer, params.thumbnailContentType, "browser/thumbnails")
+      : Promise.resolve(undefined),
+  ]);
+
   params.res.json({
     ok: true,
     path: path.resolve(saved.path),
+    thumbnailPath: savedThumb ? path.resolve(savedThumb.path) : undefined,
     targetId: params.targetId,
     url: params.url,
   });
@@ -455,12 +464,18 @@ export function registerBrowserAgentSnapshotRoutes(
               maxSide: DEFAULT_BROWSER_SCREENSHOT_MAX_SIDE,
               maxBytes: DEFAULT_BROWSER_SCREENSHOT_MAX_BYTES,
             });
+            const thumb = await generateBrowserThumbnail(normalized.buffer);
             await ensureMediaDir();
             const saved = await saveMediaBuffer(
               normalized.buffer,
               normalized.contentType ?? "image/png",
               "browser",
               DEFAULT_BROWSER_SCREENSHOT_MAX_BYTES,
+            );
+            const savedThumb = await saveMediaBuffer(
+              thumb.buffer,
+              thumb.contentType,
+              "browser/thumbnails",
             );
             return res.json({
               ok: true,
@@ -471,6 +486,7 @@ export function registerBrowserAgentSnapshotRoutes(
               labelsCount: labelResult.labels,
               labelsSkipped: labelResult.skipped,
               imagePath: path.resolve(saved.path),
+              thumbnailPath: path.resolve(savedThumb.path),
               imageType: normalized.contentType?.includes("jpeg") ? "jpeg" : "png",
               ...built,
             });
@@ -536,12 +552,18 @@ export function registerBrowserAgentSnapshotRoutes(
             maxSide: DEFAULT_BROWSER_SCREENSHOT_MAX_SIDE,
             maxBytes: DEFAULT_BROWSER_SCREENSHOT_MAX_BYTES,
           });
+          const thumb = await generateBrowserThumbnail(normalized.buffer);
           await ensureMediaDir();
           const saved = await saveMediaBuffer(
             normalized.buffer,
             normalized.contentType ?? "image/png",
             "browser",
             DEFAULT_BROWSER_SCREENSHOT_MAX_BYTES,
+          );
+          const savedThumb = await saveMediaBuffer(
+            thumb.buffer,
+            thumb.contentType,
+            "browser/thumbnails",
           );
           const imageType = normalized.contentType?.includes("jpeg") ? "jpeg" : "png";
           return res.json({
@@ -553,6 +575,7 @@ export function registerBrowserAgentSnapshotRoutes(
             labelsCount: labeled.labels,
             labelsSkipped: labeled.skipped,
             imagePath: path.resolve(saved.path),
+            thumbnailPath: path.resolve(savedThumb.path),
             imageType,
             ...snap,
           });

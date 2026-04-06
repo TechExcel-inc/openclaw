@@ -177,6 +177,8 @@ export type ProjectExecute = {
   progressLog?: ProgressLogEntry[];
   /** Number of transcript messages already processed for the progress log. */
   progressLogSeq?: number;
+  /** Timestamp of the first time the run entered a failed state (for recovery timeout). */
+  firstFailedAt?: number;
 };
 
 export type ProjectsStoreFile = {

@@ -1,8 +1,19 @@
 import { Type } from "@sinclair/typebox";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { countScreenshotsInProgressLog } from "../../projects/progress-log.js";
 import { loadProjectsStore, resolveProjectsStorePath } from "../../projects/store.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult } from "./common.js";
+
+const projectRunActivityLog = createSubsystemLogger("project-run-activity");
+
+function truncateForLog(text: string, max = 160): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (t.length <= max) {
+    return t;
+  }
+  return `${t.slice(0, max - 1)}…`;
+}
 
 export { countScreenshotsInProgressLog } from "../../projects/progress-log.js";
 
@@ -33,10 +44,20 @@ export function createReportRunningStepTool(): AnyAgentTool {
       "Record a milestone for the Project Run dashboard (Running Step Log) and chat thumbnails. Call promptly after each Task or significant milestone — not only when the run ends — so the operator sees progress in real time. Pass thumbnailUrl or thumbnailUrls (up to 3) with the best screenshot URLs from recent browser tool results for this step; otherwise a recent screenshot may be attached automatically. Put the current screenshotsRecorded count (from read_ead_execution) in the description when you summarize the step.",
     parameters: REPORT_STEP_SCHEMA,
     async execute(_toolCallId, params) {
-      const p = params as { title?: string; description?: string };
+      const p = params as {
+        title?: string;
+        description?: string;
+        thumbnailUrl?: string;
+        thumbnailUrls?: string[];
+      };
       if (!p.title?.trim() || !p.description?.trim()) {
         return jsonResult({ error: "title and description are required" });
       }
+      const extraThumbs = Array.isArray(p.thumbnailUrls) ? p.thumbnailUrls.filter(Boolean) : [];
+      const thumbCount = (p.thumbnailUrl ? 1 : 0) + extraThumbs.length;
+      projectRunActivityLog.info(
+        `report_running_step title=${JSON.stringify(p.title.trim())} thumbnails=${thumbCount} description=${JSON.stringify(truncateForLog(p.description.trim()))}`,
+      );
       return jsonResult({ ok: true });
     },
   };

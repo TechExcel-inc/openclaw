@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildProjectRunAutoContinueUserMessage,
   buildProjectRunContextMessage,
   buildProjectRunTerminalStatusInjectMessage,
 } from "./project-run-messages.js";
 import type { ProjectExecute } from "./types.js";
 
 describe("project-run-messages", () => {
+  it("buildProjectRunAutoContinueUserMessage references execution and continuation intent", () => {
+    const text = buildProjectRunAutoContinueUserMessage({
+      id: "exec-ac",
+      name: "My Plan",
+    });
+    expect(text).toContain("exec-ac");
+    expect(text).toContain("My Plan");
+    expect(text).toContain("time budget");
+    expect(text).toContain("report_running_step");
+  });
+
   it("buildProjectRunContextMessage includes dashboard status", () => {
     const text = buildProjectRunContextMessage({
       id: "exec-1",
@@ -27,6 +39,11 @@ describe("project-run-messages", () => {
     expect(text).toContain("much sooner");
     expect(text).toContain("Credential fields:");
     expect(text).toContain("one minute");
+    expect(text).toContain("Before you treat a turn as complete");
+    expect(text).toContain("Termination policy:");
+    expect(text).toContain("at least 10 minutes");
+    expect(text).toContain("AI terminated the running due to the time limit reached.");
+    expect(text).toContain("AI - Fail Stop");
   });
 
   it("buildProjectRunContextMessage notes paused state", () => {

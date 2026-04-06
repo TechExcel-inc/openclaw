@@ -6,6 +6,7 @@ import {
   handleChatEvent,
   loadChatHistory,
   sendChatMessage,
+  sortChatMessagesChronologically,
   type ChatEventPayload,
   type ChatState,
 } from "./chat.ts";
@@ -100,6 +101,30 @@ describe("handleChatEvent", () => {
     expect(state.chatStream).toBe("Exploring the target site…");
   });
 
+  it("Project Run: final from server run id clears client chatRunId and returns final so queue can flush", () => {
+    const state = createState({
+      sessionKey: "main",
+      tab: "chatProjectRun",
+      chatRunId: "client-idempotency-uuid",
+      chatStream: "Partial…",
+      chatStreamStartedAt: 999,
+    });
+    const payload: ChatEventPayload = {
+      runId: "project-run-bootstrap:exec-1",
+      sessionKey: "main",
+      state: "final",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Done with this step." }],
+      },
+    };
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatRunId).toBe(null);
+    expect(state.chatStream).toBe(null);
+    expect(state.chatStreamStartedAt).toBe(null);
+    expect(state.chatMessages).toHaveLength(1);
+  });
+
   it("ignores NO_REPLY delta updates", () => {
     const state = createState({
       sessionKey: "main",
@@ -182,7 +207,7 @@ describe("handleChatEvent", () => {
     expect(state.chatMessages).toEqual([]);
   });
 
-  it("shows inter-turn working placeholder after final when project run execution is still running", () => {
+  it("does not show inter-turn working placeholder after final even when project run execution is still running", () => {
     const state = createState({
       sessionKey: "main",
       tab: "chatProjectRun",
@@ -219,11 +244,11 @@ describe("handleChatEvent", () => {
     };
     expect(handleChatEvent(state, payload)).toBe("final");
     expect(state.chatRunId).toBe(null);
-    expect(state.chatStream).toBe("");
-    expect(state.chatStreamStartedAt).not.toBe(null);
+    expect(state.chatStream).toBe(null);
+    expect(state.chatStreamStartedAt).toBe(null);
   });
 
-  it("shows inter-turn working placeholder after final when project run execution is pending", () => {
+  it("does not show inter-turn working placeholder after final even when project run execution is pending", () => {
     const state = createState({
       sessionKey: "main",
       tab: "chatProjectRun",
@@ -259,8 +284,8 @@ describe("handleChatEvent", () => {
       },
     };
     expect(handleChatEvent(state, payload)).toBe("final");
-    expect(state.chatStream).toBe("");
-    expect(state.chatStreamStartedAt).not.toBe(null);
+    expect(state.chatStream).toBe(null);
+    expect(state.chatStreamStartedAt).toBe(null);
   });
 
   it("does not show inter-turn placeholder after final when project run execution is completed", () => {
@@ -1486,5 +1511,65 @@ describe("loadChatHistory", () => {
     expect(state.chatThinkingLevel).toBeNull();
     expect(state.lastError).toContain("operator.read");
     expect(state.chatLoading).toBe(false);
+  });
+
+  it("reorders merged messages by timestamp when both server and preserved user rows have times", async () => {
+    const serverMsgs = [
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "newer" }],
+        timestamp: 2000,
+      },
+      {
+        role: "toolResult",
+        content: [{ type: "tool_result", text: "ok" }],
+        timestamp: 2001,
+      },
+    ];
+    const olderUser = {
+      role: "user",
+      content: [{ type: "text", text: "Earlier question" }],
+      timestamp: 1000,
+    };
+    const request = vi.fn().mockResolvedValue({ messages: serverMsgs });
+    const state = createState({
+      connected: true,
+      client: { request } as unknown as ChatState["client"],
+      chatMessages: [...serverMsgs, olderUser],
+    });
+
+    await loadChatHistory(state);
+
+    expect(state.chatMessages).toEqual([olderUser, ...serverMsgs]);
+  });
+});
+
+describe("sortChatMessagesChronologically", () => {
+  it("orders by timestamp when both messages have timestamps", () => {
+    const newer = {
+      role: "assistant",
+      content: [{ type: "text", text: "b" }],
+      timestamp: 2000,
+    };
+    const older = {
+      role: "user",
+      content: [{ type: "text", text: "a" }],
+      timestamp: 1000,
+    };
+    expect(sortChatMessagesChronologically([newer, older])).toEqual([older, newer]);
+  });
+
+  it("preserves merge order when a message lacks a timestamp", () => {
+    const noTs = { role: "user", content: [{ type: "text", text: "x" }] };
+    const withTs = { role: "user", content: [{ type: "text", text: "y" }], timestamp: 100 };
+    expect(sortChatMessagesChronologically([noTs, withTs])).toEqual([noTs, withTs]);
+  });
+
+  it("is stable for equal timestamps", () => {
+    const one = { role: "user", content: [{ type: "text", text: "1" }], timestamp: 100 };
+    const two = { role: "user", content: [{ type: "text", text: "2" }], timestamp: 100 };
+    const out = sortChatMessagesChronologically([one, two]);
+    expect(out[0]).toBe(one);
+    expect(out[1]).toBe(two);
   });
 });
