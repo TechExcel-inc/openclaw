@@ -113,6 +113,53 @@ export function resolveSubagentToolPolicyForSession(
   return { allow: mergedAllow, deny };
 }
 
+import { isProjectRunSessionKey } from "../projects/project-run-session-guard.js";
+
+/**
+ * Tools denied for project-run main sessions — forces delegation via sub-agents
+ * so the main agent stays free to respond to operator chat.
+ */
+const PROJECT_RUN_MAIN_DENY = [
+  // Browser / navigation tools — these take 10+ seconds and block the agent
+  "browser",
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_click",
+  "browser_type",
+  "browser_fill",
+  "browser_select",
+  "browser_hover",
+  "browser_scroll",
+  "browser_wait",
+  "browser_screenshot",
+  "browser_evaluate",
+  "browser_close",
+  "browser_new_page",
+  "nodes", // PFM / node-based tools
+  "read_ead_execution",
+  "report_running_step",
+  // Long-running exec
+  "exec",
+  "bash",
+  "shell",
+  // Memory (sub-agents get context via prompt, not direct access)
+  "memory_search",
+  "memory_get",
+];
+
+export function resolveProjectRunToolPolicy(
+  sessionKey: string,
+  cfg?: OpenClawConfig,
+): SandboxToolPolicy {
+  const basePolicy = resolveSubagentToolPolicyForSession(cfg, sessionKey);
+  if (!isProjectRunSessionKey(sessionKey)) {
+    return basePolicy;
+  }
+  const baseDeny = Array.isArray(basePolicy.deny) ? [...basePolicy.deny] : [];
+  const uniqueDeny = [...new Set([...baseDeny, ...PROJECT_RUN_MAIN_DENY])];
+  return { allow: basePolicy.allow, deny: uniqueDeny };
+}
+
 export function filterToolsByPolicy(tools: AnyAgentTool[], policy?: SandboxToolPolicy) {
   if (!policy) {
     return tools;

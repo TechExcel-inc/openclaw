@@ -26,6 +26,7 @@ import {
   isToolAllowedByPolicies,
   resolveEffectiveToolPolicy,
   resolveGroupToolPolicy,
+  resolveProjectRunToolPolicy,
   resolveSubagentToolPolicyForSession,
 } from "./pi-tools.policy.js";
 import {
@@ -330,6 +331,7 @@ export function createOpenClawCodingTools(options?: {
     isSubagentSessionKey(options?.sessionKey) && options?.sessionKey
       ? resolveSubagentToolPolicyForSession(options.config, options.sessionKey)
       : undefined;
+  const projectRunPolicy = resolveProjectRunToolPolicy(options?.sessionKey ?? "", options?.config);
   const allowBackground = isToolAllowedByPolicies("process", [
     profilePolicyWithAlsoAllow,
     providerProfilePolicyWithAlsoAllow,
@@ -340,6 +342,7 @@ export function createOpenClawCodingTools(options?: {
     groupPolicy,
     sandbox?.tools,
     subagentPolicy,
+    projectRunPolicy,
   ]);
   const execConfig = resolveExecConfig({ cfg: options?.config, agentId });
   const fsConfig = resolveToolFsConfig({ cfg: options?.config, agentId });
