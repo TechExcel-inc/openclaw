@@ -119,10 +119,36 @@ describe("handleChatEvent", () => {
       },
     };
     expect(handleChatEvent(state, payload)).toBe("final");
+    // When there IS an active in-flight user response (both chatRunId and chatStream are
+    // non-null), preserve them so loadChatHistory doesn't wipe the in-flight reply.
+    expect(state.chatRunId).toBe("client-idempotency-uuid");
+    expect(state.chatStream).toBe("Partial…");
+    expect(state.chatStreamStartedAt).toBe(999);
+    expect(state.chatMessages).toHaveLength(1);
+  });
+
+  it("Project Run: cross-run final with no in-flight stream still cleans up state", () => {
+    const state = createState({
+      sessionKey: "main",
+      tab: "chatProjectRun",
+      chatRunId: "client-idempotency-uuid",
+      chatStream: null,
+      chatStreamStartedAt: 999,
+    });
+    const payload: ChatEventPayload = {
+      runId: "project-run-bootstrap:exec-1",
+      sessionKey: "main",
+      state: "final",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Done with this step." }],
+      },
+    };
+    expect(handleChatEvent(state, payload)).toBe("final");
+    // No in-flight response (chatStream is null) → clean up as before.
     expect(state.chatRunId).toBe(null);
     expect(state.chatStream).toBe(null);
     expect(state.chatStreamStartedAt).toBe(null);
-    expect(state.chatMessages).toHaveLength(1);
   });
 
   it("ignores NO_REPLY delta updates", () => {

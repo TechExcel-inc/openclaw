@@ -451,9 +451,17 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       // idempotency UUID. If we return null here, we never clear chatRunId and handleTerminalChatEvent
       // never runs — queued operator messages stay stuck and the UI looks "finished" with pending sends.
       if (state.tab === "chatProjectRun") {
-        state.chatStream = null;
-        state.chatRunId = null;
-        state.chatStreamStartedAt = null;
+        // Preserve in-flight stream state when a user message is actively being processed.
+        // An active chatRunId + non-empty chatStream means the user's message is still being
+        // processed — clearing them here would wipe the response and trigger loadChatHistory,
+        // which destroys the in-flight reply even though shouldPreserveStreamingDuringHistoryReload
+        // would have protected it (if state hadn't been nulled first).
+        const hasInFlightResponse = state.chatRunId?.trim() && state.chatStream?.trim();
+        if (!hasInFlightResponse) {
+          state.chatStream = null;
+          state.chatRunId = null;
+          state.chatStreamStartedAt = null;
+        }
         return "final";
       }
       if (finalMessage && !isAssistantSilentReply(finalMessage)) {
