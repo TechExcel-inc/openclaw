@@ -28,6 +28,7 @@ import {
   renderTopbarThemeModeToggle,
   switchChatSession,
 } from "./app-render.helpers.ts";
+import { getToolActivitySummary } from "./app-tool-stream.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import {
   formatExecutionProjectMarkdown,
@@ -557,6 +558,7 @@ export function renderApp(state: AppViewState) {
         state.chatMessages = [];
         state.chatStream = null;
         state.chatRunId = null;
+        state.chatWaitingUserRunId = null;
         await loadChatHistory(state);
       } catch (err) {
         state.lastError = String(err);
@@ -600,6 +602,12 @@ export function renderApp(state: AppViewState) {
     assistantName: projectChatTitle ?? projectChatAssistantName,
     assistantAvatar: state.assistantAvatar,
     basePath: state.basePath ?? "",
+    waitingRunId: state.chatWaitingUserRunId,
+    waitingSentAt: state.chatStreamStartedAt,
+    activityHint: getToolActivitySummary(
+      state as unknown as Parameters<typeof getToolActivitySummary>[0],
+    ),
+    queueFull: state.chatQueue.length >= 5 && state.sessionKey.includes(":eadproj:run:"),
   };
 
   return html`
@@ -1804,6 +1812,13 @@ export function renderApp(state: AppViewState) {
                     : state.assistantName,
                 assistantAvatar: state.assistantAvatar,
                 basePath: state.basePath ?? "",
+                waitingRunId: state.chatWaitingUserRunId,
+                waitingSentAt: state.chatStreamStartedAt,
+                activityHint: getToolActivitySummary(
+                  state as unknown as Parameters<typeof getToolActivitySummary>[0],
+                ),
+                queueFull:
+                  state.chatQueue.length >= 5 && state.sessionKey.includes(":eadproj:run:"),
               })
             : nothing
         }

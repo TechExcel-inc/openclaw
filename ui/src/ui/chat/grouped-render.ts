@@ -75,6 +75,43 @@ export function renderReadingIndicatorGroup(assistant?: AssistantIdentity, baseP
   `;
 }
 
+export function renderWaitingUserGroup(
+  item: Extract<ChatItem, { kind: "waiting-user" }>,
+  opts: { basePath?: string; elapsed?: string | null; activityHint?: string | null },
+) {
+  const preview = item.text.trim() || "(sent)";
+  const timestamp = new Date(item.sentAt).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const elapsed = opts.elapsed;
+  const hint = opts.activityHint;
+  return html`
+    <div class="chat-group user chat-group--waiting" role="status" aria-live="polite">
+      ${renderAvatar("user", undefined, opts.basePath)}
+      <div class="chat-group-messages">
+        <div class="chat-bubble chat-bubble--waiting-user fade-in">
+          <div class="chat-waiting-user__body">${preview}</div>
+        </div>
+        <div class="chat-group-footer">
+          <span class="chat-sender-name">You</span>
+          <span class="chat-waiting-user__badge">
+            <span class="chat-waiting-user__pulse" aria-hidden="true"></span>
+            Waiting for response${elapsed ? ` (${elapsed})` : ""}
+          </span>
+          <span class="chat-group-timestamp">${timestamp}</span>
+        </div>
+        <div class="chat-waiting-user__hint" aria-live="polite">
+          <span class="chat-reading-indicator__dots chat-reading-indicator__dots--small" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </span>
+          ${hint ?? "Agent is thinking..."}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderPendingQueueBubble(
   item: Extract<ChatItem, { kind: "pending-user" }>,
   opts: { basePath?: string; onRemove: () => void },

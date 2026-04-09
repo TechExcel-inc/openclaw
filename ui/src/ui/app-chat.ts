@@ -6,6 +6,7 @@ import { resetToolStream } from "./app-tool-stream.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import type { OpenClawApp } from "./app.ts";
 import { applyEadChatSessionToState } from "./chat/ead-chat-sync.ts";
+import { EAD_PROJECT_MARKER } from "./chat/ead-project-session-key.ts";
 import { executeSlashCommand } from "./chat/slash-command-executor.ts";
 import { parseSlashCommand } from "./chat/slash-commands.ts";
 import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat.ts";
@@ -26,6 +27,8 @@ export type ChatHost = {
   chatAttachments: ChatAttachment[];
   chatQueue: ChatQueueItem[];
   chatRunId: string | null;
+  chatWaitingUserRunId: string | null;
+  chatLastWaitDurationMs: number | null;
   chatSending: boolean;
   lastError?: string | null;
   sessionKey: string;
@@ -42,6 +45,9 @@ export type ChatHost = {
 };
 
 export const CHAT_SESSIONS_ACTIVE_MINUTES = 120;
+
+/** Max queued messages for Project Run sessions before the compose input is disabled. */
+const PROJECT_RUN_CHAT_QUEUE_MAX = 5;
 
 export function isChatBusy(host: ChatHost) {
   return host.chatSending || Boolean(host.chatRunId);
@@ -95,6 +101,12 @@ function enqueueChatMessage(
   const trimmed = text.trim();
   const hasAttachments = Boolean(attachments && attachments.length > 0);
   if (!trimmed && !hasAttachments) {
+    return;
+  }
+  // Cap queue size for Project Run sessions to prevent unbounded growth.
+  const isProjectRun = host.sessionKey.includes(`${EAD_PROJECT_MARKER}run:`);
+  if (isProjectRun && host.chatQueue.length >= PROJECT_RUN_CHAT_QUEUE_MAX) {
+    host.lastError = `Queue full (max ${PROJECT_RUN_CHAT_QUEUE_MAX}). Wait for a response before sending more messages.`;
     return;
   }
   host.chatQueue = [
@@ -346,6 +358,7 @@ async function clearChatHistory(host: ChatHost) {
     host.chatMessages = [];
     host.chatStream = null;
     host.chatRunId = null;
+    host.chatWaitingUserRunId = null;
     await loadChatHistory(host as unknown as OpenClawApp);
   } catch (err) {
     host.lastError = String(err);

@@ -49,6 +49,8 @@ function minimalHost(overrides: Record<string, unknown> = {}) {
     chatQueue: [] as unknown[],
     chatStreamStartedAt: null,
     chatRunId: null,
+    chatWaitingUserRunId: null,
+    chatLastWaitDurationMs: null,
     settings,
     tab: "chatProjectRun",
     chatProjectRunExecutionId: "run_b",

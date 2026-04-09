@@ -97,6 +97,8 @@ function createHost() {
     serverVersion: null,
     sessionKey: "main",
     chatRunId: null,
+    chatWaitingUserRunId: null,
+    chatLastWaitDurationMs: null,
     refreshSessionsAfterChat: new Set<string>(),
     execApprovalQueue: [],
     execApprovalError: null,

@@ -39,6 +39,8 @@ export function switchChatSession(state: AppViewState, nextSessionKey: string) {
   state.chatQueue = [];
   state.chatStreamStartedAt = null;
   state.chatRunId = null;
+  state.chatWaitingUserRunId = null;
+  state.chatLastWaitDurationMs = null;
   host.resetToolStream();
   host.resetChatScroll();
   state.applySettings({

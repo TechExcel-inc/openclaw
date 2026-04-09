@@ -118,6 +118,8 @@ function createChatHeaderState(
     chatStream: null,
     chatStreamStartedAt: null,
     chatRunId: null,
+    chatWaitingUserRunId: null,
+    chatLastWaitDurationMs: null,
     chatQueue: [],
     chatMessages: [],
     chatLoading: false,

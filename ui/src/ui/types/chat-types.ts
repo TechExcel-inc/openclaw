@@ -9,6 +9,13 @@ export type ChatItem =
   | { kind: "stream"; key: string; text: string; startedAt: number }
   | { kind: "reading-indicator"; key: string }
   | {
+      kind: "waiting-user";
+      key: string;
+      runId: string;
+      text: string;
+      sentAt: number;
+    }
+  | {
       kind: "pending-user";
       key: string;
       queueId: string;

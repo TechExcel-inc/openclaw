@@ -54,6 +54,10 @@ export type ChatState = {
   globalExecutionsList?: ProjectExecute[];
   executionDetail?: ProjectExecute | null;
   executionDetailLoading?: boolean;
+  /** Run id of the user message currently awaiting a response; used to render “waiting” state on the user bubble. */
+  chatWaitingUserRunId: string | null;
+  /** Duration (ms) of the most recently completed wait; used for “answered after Xs” badge. */
+  chatLastWaitDurationMs: number | null;
 };
 
 export type ChatEventPayload = {
@@ -354,6 +358,8 @@ export async function sendChatMessage(
   state.chatRunId = runId;
   state.chatStream = null;
   state.chatStreamStartedAt = now;
+  state.chatWaitingUserRunId = runId;
+  state.chatLastWaitDurationMs = null;
 
   // Convert attachments to API format
   const apiAttachments = hasAttachments
@@ -386,6 +392,7 @@ export async function sendChatMessage(
     state.chatRunId = null;
     state.chatStream = null;
     state.chatStreamStartedAt = null;
+    state.chatWaitingUserRunId = null;
     state.lastError = error;
     state.chatMessages = [
       ...state.chatMessages,
@@ -416,6 +423,16 @@ export async function abortChatRun(state: ChatState): Promise<boolean> {
     state.lastError = formatConnectError(err);
     return false;
   }
+}
+
+function clearChatRunState(state: ChatState) {
+  if (state.chatStreamStartedAt) {
+    state.chatLastWaitDurationMs = Date.now() - state.chatStreamStartedAt;
+  }
+  state.chatStream = null;
+  state.chatRunId = null;
+  state.chatStreamStartedAt = null;
+  state.chatWaitingUserRunId = null;
 }
 
 export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
@@ -458,9 +475,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
         // would have protected it (if state hadn't been nulled first).
         const hasInFlightResponse = state.chatRunId?.trim() && state.chatStream?.trim();
         if (!hasInFlightResponse) {
-          state.chatStream = null;
-          state.chatRunId = null;
-          state.chatStreamStartedAt = null;
+          clearChatRunState(state);
         }
         return "final";
       }
@@ -506,9 +521,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
         },
       ];
     }
-    state.chatStream = null;
-    state.chatRunId = null;
-    state.chatStreamStartedAt = null;
+    clearChatRunState(state);
   } else if (payload.state === "aborted") {
     const normalizedMessage = normalizeAbortedAssistantMessage(payload.message);
     if (normalizedMessage && !isAssistantSilentReply(normalizedMessage)) {
@@ -526,13 +539,9 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
         ];
       }
     }
-    state.chatStream = null;
-    state.chatRunId = null;
-    state.chatStreamStartedAt = null;
+    clearChatRunState(state);
   } else if (payload.state === "error") {
-    state.chatStream = null;
-    state.chatRunId = null;
-    state.chatStreamStartedAt = null;
+    clearChatRunState(state);
     state.lastError = payload.errorMessage ?? "chat error";
   }
   return payload.state;

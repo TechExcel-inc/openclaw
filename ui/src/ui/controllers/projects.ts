@@ -88,6 +88,7 @@ export type ProjectRunChatSyncHost = ProjectsState & {
   chatProjectRunExecutionId?: string | null;
   sessionKey?: string;
   chatRunId?: string | null;
+  chatWaitingUserRunId?: string | null;
   chatStream?: string | null;
   chatStreamStartedAt?: number | null;
   chatSending?: boolean;
@@ -170,6 +171,7 @@ export async function syncProjectRunChatIfTerminal(host: ProjectRunChatSyncHost)
     await abortChatRun(host as unknown as ChatState);
   }
   host.chatRunId = null;
+  host.chatWaitingUserRunId = null;
   host.chatStream = null;
   host.chatStreamStartedAt = null;
   host.chatSending = false;

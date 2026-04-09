@@ -13,8 +13,10 @@ import {
   renderPendingQueueBubble,
   renderReadingIndicatorGroup,
   renderStreamingGroup,
+  renderWaitingUserGroup,
 } from "../chat/grouped-render.ts";
 import { InputHistory } from "../chat/input-history.ts";
+import { extractTextCached } from "../chat/message-extract.ts";
 import {
   messageHasRecordedTimestamp,
   normalizeMessage,
@@ -134,6 +136,14 @@ export type ChatProps = {
   projectRunStatusBanner?: { headline: string; sub?: string; tone: string } | null;
   onChatScroll?: (event: Event) => void;
   basePath?: string;
+  /** Run id of the currently waiting user message; set when agent is processing a user question. */
+  waitingRunId?: string | null;
+  /** Timestamp when the waiting message was sent; used for elapsed timer. */
+  waitingSentAt?: number | null;
+  /** Short summary of current agent activity (e.g. "Running: bash"). */
+  activityHint?: string | null;
+  /** When true, the compose input is disabled because the message queue is at capacity. */
+  queueFull?: boolean;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -179,6 +189,10 @@ interface ChatEphemeralState {
   commandsMenuOpen: boolean;
   /** Last session key we applied to the compose box (avoid clobbering draft while typing). */
   lastDraftSessionKey: string;
+  /** Interval timer for updating the "waiting" elapsed time display. */
+  chatWaitingTimer: number | null;
+  /** Formatted elapsed time string for the currently waiting user message. */
+  chatWaitingElapsed: string | null;
 }
 
 function createChatEphemeralState(): ChatEphemeralState {
@@ -196,10 +210,24 @@ function createChatEphemeralState(): ChatEphemeralState {
     pinnedExpanded: false,
     commandsMenuOpen: false,
     lastDraftSessionKey: "",
+    chatWaitingTimer: null,
+    chatWaitingElapsed: null,
   };
 }
 
 const vs = createChatEphemeralState();
+
+/** Format elapsed time since `sentAt` for the waiting indicator (e.g. "1m 23s"). */
+function formatWaitingElapsed(sentAt: number): string {
+  const elapsedMs = Date.now() - sentAt;
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
 
 /**
  * Reset chat view ephemeral state when navigating away.
@@ -208,6 +236,9 @@ const vs = createChatEphemeralState();
 export function resetChatViewState() {
   if (vs.sttRecording) {
     stopStt();
+  }
+  if (vs.chatWaitingTimer !== null) {
+    clearInterval(vs.chatWaitingTimer);
   }
   Object.assign(vs, createChatEphemeralState());
 }
@@ -900,7 +931,7 @@ function renderSlashMenu(
 }
 
 export function renderChat(props: ChatProps) {
-  const canCompose = props.connected;
+  const canCompose = props.connected && !props.queueFull;
   const isBusy = props.sending || props.stream !== null;
   const canAbort = Boolean(props.canAbort && props.onAbort);
   const activeSession = props.sessions?.sessions?.find((row) => row.key === props.sessionKey);
@@ -930,6 +961,23 @@ export function renderChat(props: ChatProps) {
 
   const requestUpdate = props.onRequestUpdate ?? (() => {});
   const getDraft = props.getDraft ?? (() => props.draft);
+
+  // ── Waiting-state timer: updates elapsed time every 30s while the agent is busy ──
+  if (props.waitingRunId && props.waitingSentAt) {
+    if (vs.chatWaitingTimer === null) {
+      vs.chatWaitingElapsed = formatWaitingElapsed(props.waitingSentAt);
+      vs.chatWaitingTimer = window.setInterval(() => {
+        vs.chatWaitingElapsed = formatWaitingElapsed(props.waitingSentAt!);
+        requestUpdate();
+      }, 30_000);
+    }
+  } else {
+    if (vs.chatWaitingTimer !== null) {
+      clearInterval(vs.chatWaitingTimer);
+      vs.chatWaitingTimer = null;
+      vs.chatWaitingElapsed = null;
+    }
+  }
 
   const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
@@ -1095,7 +1143,20 @@ export function renderChat(props: ChatProps) {
             `;
           }
           if (item.kind === "reading-indicator") {
+            // Suppress the standalone reading indicator when a waiting-user
+            // item is already showing — the waiting state integrates its own
+            // progress indicator so we avoid visual duplication.
+            if (props.waitingRunId) {
+              return nothing;
+            }
             return renderReadingIndicatorGroup(assistantIdentity, props.basePath);
+          }
+          if (item.kind === "waiting-user") {
+            return renderWaitingUserGroup(item, {
+              basePath: props.basePath,
+              elapsed: vs.chatWaitingElapsed,
+              activityHint: props.activityHint,
+            });
           }
           if (item.kind === "stream") {
             return renderStreamingGroup(
@@ -1287,7 +1348,7 @@ export function renderChat(props: ChatProps) {
         <textarea
           ${ref((el) => syncComposeDraft(el, props, vs))}
           dir=${detectTextDirection(getDraft())}
-          ?disabled=${!props.connected}
+          ?disabled=${!props.connected || props.queueFull}
           @keydown=${handleKeyDown}
           @input=${handleInput}
           @blur=${(e: FocusEvent) => {
@@ -1295,7 +1356,7 @@ export function renderChat(props: ChatProps) {
             props.onDraftChange(t.value);
           }}
           @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
-          placeholder=${vs.sttRecording ? "Listening..." : placeholder}
+          placeholder=${props.queueFull ? "Queue full — waiting for responses..." : vs.sttRecording ? "Listening..." : placeholder}
           rows="1"
         ></textarea>
 
@@ -1472,7 +1533,7 @@ export function renderChat(props: ChatProps) {
                       }
                       props.onSend();
                     }}
-                    ?disabled=${!props.connected || props.sending}
+                    ?disabled=${!props.connected || props.sending || props.queueFull}
                     title=${isBusy ? "Queue" : "Send"}
                     aria-label=${isBusy ? "Queue message" : "Send message"}
                   >
@@ -1656,6 +1717,20 @@ function buildChatThreadItems(props: ChatProps): {
   const history = Array.isArray(props.messages) ? props.messages : [];
   const tools = Array.isArray(props.toolMessages) ? props.toolMessages : [];
   const historyStart = Math.max(0, history.length - CHAT_HISTORY_RENDER_LIMIT);
+
+  // Find the index of the last user message in history so we can mark it as
+  // "waiting-user" when the agent is actively processing it.
+  let lastUserMsgIdx = -1;
+  if (props.waitingRunId) {
+    for (let i = history.length - 1; i >= historyStart; i--) {
+      const msg = history[i] as Record<string, unknown>;
+      if (typeof msg.role === "string" && msg.role.toLowerCase() === "user") {
+        lastUserMsgIdx = i;
+        break;
+      }
+    }
+  }
+
   if (historyStart > 0) {
     items.push({
       kind: "message",
@@ -1699,6 +1774,20 @@ function buildChatThreadItems(props: ChatProps): {
 
     // Apply search filter if active
     if (vs.searchOpen && vs.searchQuery.trim() && !messageMatchesSearchQuery(msg, vs.searchQuery)) {
+      continue;
+    }
+
+    // When the agent is busy, replace the last user message with a "waiting-user" item
+    // so it shows a "waiting for response" state instead of looking like a completed turn.
+    if (i === lastUserMsgIdx && props.waitingRunId) {
+      const text = extractTextCached(msg) ?? "";
+      items.push({
+        kind: "waiting-user",
+        key: `waiting:${messageKey(msg, i)}`,
+        runId: props.waitingRunId,
+        text,
+        sentAt: props.waitingSentAt ?? normalized.timestamp ?? Date.now(),
+      });
       continue;
     }
 

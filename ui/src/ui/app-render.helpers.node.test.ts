@@ -700,6 +700,8 @@ describe("shouldShowProjectRunStopButtons", () => {
       globalExecutionsList: [ex],
       chatProjectRunExecutionId: id,
       chatRunId: null,
+      chatWaitingUserRunId: null,
+      chatLastWaitDurationMs: null,
       chatStream: null,
       chatSending: false,
     });

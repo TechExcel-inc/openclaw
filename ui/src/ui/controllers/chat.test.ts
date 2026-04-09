@@ -35,6 +35,8 @@ function createState(overrides: Partial<ChatState> = {}): ChatState {
     chatMessage: "",
     chatMessages: [],
     chatRunId: null,
+    chatWaitingUserRunId: null,
+    chatLastWaitDurationMs: null,
     chatSending: false,
     chatStream: null,
     chatStreamStartedAt: null,

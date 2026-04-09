@@ -28,6 +28,8 @@ export type ToolStreamEntry = {
 type ToolStreamHost = {
   sessionKey: string;
   chatRunId: string | null;
+  chatWaitingUserRunId: string | null;
+  chatLastWaitDurationMs: number | null;
   chatStream: string | null;
   chatStreamStartedAt: number | null;
   chatStreamSegments: Array<{ text: string; ts: number }>;
@@ -242,6 +244,34 @@ export function resetToolStream(host: ToolStreamHost) {
   host.toolStreamOrder = [];
   host.chatToolMessages = [];
   host.chatStreamSegments = [];
+}
+
+/**
+ * Derive a short activity summary from the current tool stream for use as a
+ * progress hint in the "waiting for response" UI. Returns something like
+ * "Running: bash" or "Completed: read_file" or null if no tool activity.
+ */
+export function getToolActivitySummary(host: {
+  toolStreamOrder: string[];
+  toolStreamById: Map<string, ToolStreamEntry>;
+}): string | null {
+  const order = host.toolStreamOrder;
+  if (order.length === 0) {
+    return null;
+  }
+  // Find the most recent in-progress tool (last entry without output)
+  for (let i = order.length - 1; i >= 0; i--) {
+    const entry = host.toolStreamById.get(order[i]);
+    if (!entry) {
+      continue;
+    }
+    const name = entry.name || "tool";
+    if (entry.output) {
+      return `Completed: ${name}`;
+    }
+    return `Running: ${name}`;
+  }
+  return null;
 }
 
 export type CompactionStatus = {
